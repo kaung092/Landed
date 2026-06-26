@@ -1,0 +1,172 @@
+@import "tailwindcss";
+
+/* Dark is the default cockpit; a light theme is opt-in via the .light class on <html>
+   (toggled top-right, persisted to localStorage). Native controls follow color-scheme. */
+:root {
+  color-scheme: dark;
+  --background: #09090b; /* zinc-950 */
+  --foreground: #ededed;
+}
+
+/* Light theme — instead of re-styling 38 files, we mirror the zinc ramp (Tailwind v4 exposes
+   every color as a CSS var, and utilities reference it). So bg-zinc-900 → a light panel,
+   text-zinc-100 → near-black, etc., everywhere at once. Accent hues (emerald/sky/…) are left
+   as-is. Pairs swap: 50↔950, 100↔900, 200↔800, 300↔700, 400↔600; 500 is the shared midpoint. */
+.light {
+  color-scheme: light;
+  --background: #f7f7f8;
+  --foreground: #18181b;
+  --color-zinc-50: #09090b;
+  --color-zinc-100: #18181b;
+  --color-zinc-200: #27272a;
+  --color-zinc-300: #3f3f46;
+  --color-zinc-400: #52525b;
+  /* muted-text shades: a pure mirror is too faint on light, so darken these for real contrast */
+  --color-zinc-500: #5b5b61;
+  --color-zinc-600: #7c7c83;
+  --color-zinc-700: #d4d4d8;
+  --color-zinc-800: #e4e4e7;
+  --color-zinc-900: #f4f4f5;
+  --color-zinc-950: #fafafa;
+  /* Accent TEXT shades (100–400) are tuned for dark backgrounds; on light they wash out. Darken
+     them (these shades are used only as text/dots/bars/thin borders — the vivid fills use 500). */
+  --color-emerald-100: #064e3b;
+  --color-emerald-200: #065f46;
+  --color-emerald-300: #047857;
+  --color-emerald-400: #059669;
+  --color-amber-200: #92400e;
+  --color-amber-300: #b45309;
+  --color-amber-400: #d97706;
+  --color-yellow-200: #854d0e;
+  --color-sky-300: #0369a1;
+  --color-sky-400: #0284c7;
+  --color-rose-300: #be123c;
+  --color-violet-300: #6d28d9;
+  --color-red-300: #dc2626;
+  --color-red-400: #b91c1c;
+  --color-orange-300: #c2410c;
+}
+.light body {
+  background:
+    radial-gradient(ellipse 90% 55% at 50% -15%, rgba(16, 185, 129, 0.06), transparent 70%),
+    var(--background);
+}
+.light ::selection {
+  background: rgba(16, 185, 129, 0.22);
+  color: #09090b;
+}
+.light * {
+  scrollbar-color: #c4c4ca transparent;
+}
+.light *::-webkit-scrollbar-thumb {
+  background: #cfcfd6;
+  border: 2px solid transparent;
+  background-clip: content-box;
+}
+.light *::-webkit-scrollbar-thumb:hover {
+  background: #a1a1aa;
+  background-clip: content-box;
+}
+/* Markdown preview readability on light */
+.light .prose-instructions { color: #3f3f46; }
+.light .prose-instructions h1,
+.light .prose-instructions h2,
+.light .prose-instructions h3 { color: #18181b; }
+.light .prose-instructions h2 { border-bottom-color: #e4e4e7; }
+.light .prose-instructions a { color: #0284c7; }
+.light .prose-instructions code { background: #e4e4e7; }
+.light .prose-instructions pre { background: #f4f4f5; }
+.light .prose-instructions blockquote { border-left-color: #d4d4d8; color: #71717a; }
+.light .prose-instructions th,
+.light .prose-instructions td { border-color: #e4e4e7; }
+.light .prose-instructions th { background: #f4f4f5; }
+.light .prose-instructions hr { border-top-color: #e4e4e7; }
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+}
+
+body {
+  /* faint top glow over near-black so the canvas has depth, not a flat void */
+  background:
+    radial-gradient(ellipse 90% 55% at 50% -15%, rgba(16, 185, 129, 0.05), transparent 70%),
+    var(--background);
+  color: var(--foreground);
+  font-family: var(--font-geist-sans), system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+/* Text selection — subtle emerald tint to match the accent */
+::selection {
+  background: rgba(16, 185, 129, 0.28);
+  color: #fafafa;
+}
+
+/* Slim dark scrollbars (the default ones read as light/bright in dark UIs) */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: #3f3f46 transparent;
+}
+*::-webkit-scrollbar {
+  width: 9px;
+  height: 9px;
+}
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+*::-webkit-scrollbar-thumb {
+  background: #2e2e35;
+  border: 2px solid transparent;
+  background-clip: content-box;
+  border-radius: 9999px;
+}
+*::-webkit-scrollbar-thumb:hover {
+  background: #52525b;
+  background-clip: content-box;
+}
+
+/* Readable markdown rendering for the instructions preview */
+.prose-instructions {
+  color: #d4d4d8;
+  line-height: 1.7;
+  font-size: 0.925rem;
+}
+.prose-instructions h1 { font-size: 1.5rem; font-weight: 700; margin: 1.2em 0 0.5em; color: #fafafa; }
+.prose-instructions h2 { font-size: 1.2rem; font-weight: 600; margin: 1.4em 0 0.5em; color: #fafafa; border-bottom: 1px solid #27272a; padding-bottom: 0.25em; }
+.prose-instructions h3 { font-size: 1.02rem; font-weight: 600; margin: 1.2em 0 0.4em; color: #f4f4f5; }
+.prose-instructions p { margin: 0.7em 0; }
+.prose-instructions ul, .prose-instructions ol { margin: 0.6em 0; padding-left: 1.4em; }
+.prose-instructions li { margin: 0.25em 0; }
+.prose-instructions ul { list-style: disc; }
+.prose-instructions ol { list-style: decimal; }
+.prose-instructions a { color: #38bdf8; text-decoration: underline; }
+.prose-instructions code { background: #27272a; padding: 0.1em 0.4em; border-radius: 4px; font-size: 0.85em; font-family: var(--font-geist-mono), monospace; }
+.prose-instructions pre { background: #18181b; padding: 1em; border-radius: 8px; overflow-x: auto; margin: 0.8em 0; }
+.prose-instructions pre code { background: none; padding: 0; }
+.prose-instructions blockquote { border-left: 3px solid #3f3f46; padding-left: 1em; color: #a1a1aa; margin: 0.8em 0; }
+.prose-instructions table { border-collapse: collapse; margin: 0.8em 0; width: 100%; font-size: 0.85em; }
+.prose-instructions th, .prose-instructions td { border: 1px solid #27272a; padding: 0.4em 0.7em; text-align: left; }
+.prose-instructions th { background: #18181b; font-weight: 600; }
+.prose-instructions hr { border: none; border-top: 1px solid #27272a; margin: 1.5em 0; }
+
+/* CoWork "is working" indicator (FloatingQueue robot): the icon spins slowly while the violet box
+   breathes a glow — picked from the robot-lab showcase (variant 14). */
+@keyframes cowork-spin { to { transform: rotate(360deg); } }
+@keyframes cowork-glow {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(139, 92, 246, 0.55), 0 8px 20px rgba(139, 92, 246, 0.3); }
+  50% { box-shadow: 0 0 24px 7px rgba(139, 92, 246, 0.9), 0 8px 22px rgba(139, 92, 246, 0.5); }
+}
+.cowork-working-box { animation: cowork-glow 1.2s ease-in-out infinite; }
+.cowork-working-icon { animation: cowork-spin 2.2s linear infinite; }
+
+/* A job-type tab blinks while it has a job in progress (live wip) — a hard on/off toggle (not a gentle
+   fade) plus a sky "in-progress" glow, so active work is unmistakable. */
+@keyframes cowork-blink {
+  0%, 49.9% { opacity: 1; box-shadow: 0 0 10px 1px rgba(56, 189, 248, 0.85); }
+  50%, 100% { opacity: 0.4; box-shadow: 0 0 0 0 rgba(56, 189, 248, 0); }
+}
+.cowork-blink { animation: cowork-blink 1s linear infinite; }

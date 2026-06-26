@@ -1,0 +1,555 @@
+import { eq, asc, desc } from "drizzle-orm";
+import { db } from "./index";
+import { prepQuestions, prepAttempts, prepProgress, prepCompany } from "./schema";
+import type { PrepQuestionRow, PrepAttemptRow, PrepCompanyRow } from "./schema";
+import { canonical, norm } from "@/lib/agents/canonical";
+import { str, num } from "@/lib/coerce";
+import type { ChangeDetail } from "@/lib/agents/types";
+
+// ── Public shapes (JSON-parsed, derived stats folded in) ──
+
+export type AttemptStatus = "solved" | "partial" | "failed";
+
+export type PrepContent = {
+  why?: string;
+  note?: string;
+  approach?: string[];
+  followUps?: string[];
+  gotchas?: string[];
+  keyComponents?: string[];
+  deepDive?: string[];
+  monitoring?: string[];
+  category?: string;
+  tier?: number;
+};
+
+export type PrepPlan = {
+  day?: number;
+  week?: number;
+  pattern?: string;
+  anchor?: boolean;
+  extra?: boolean;
+};
+
+// Per-company framing for a shared question: which category it sits in for that company,
+// its order within that category, and an optional company-specific note.
+export type CompanyMetaEntry = { category?: string; sortOrder?: number; note?: string };
+export type CompanyMeta = Record<string, CompanyMetaEntry>;
+
+export type PrepTrack = "coding" | "system_design" | "behavioral" | "other";
+
+export type PrepQuestion = {
+  id: string;
+  track: PrepTrack;
+  name: string;
+  prompt?: string;
+  difficulty?: string;
+  priority?: string;
+  url?: string;
+  leetcodeNum?: number;
+  tags: string[];
+  companies: string[];
+  companyMeta: CompanyMeta;
+  content: PrepContent;
+  plan?: PrepPlan;
+  sortOrder?: number;
+  // Set only when listQuestions is filtered to one company — the per-company framing
+  // folded in from companyMeta[slug] so the view can group/order without re-parsing.
+  companyCategory?: string;
+  companyNote?: string;
+  // derived progress
+  timesDone: number;
+  bestSec?: number;
+  lastStatus?: AttemptStatus;
+  lastAttemptAt?: string;
+  lastAttemptId?: number;
+  done: boolean;
+  noted: boolean;
+  redo: boolean;
+};
+
+export type PrepAttempt = {
+  id: number;
+  questionId: string;
+  attemptedAt: string;
+  durationSec?: number;
+  status: AttemptStatus;
+  notes?: string;
+};
+
+// ── Mappers ──
+
+function parseJSON<T>(raw: string | null, fallback: T): T {
+  if (!raw) return fallback;
+  try {
+    return JSON.parse(raw) as T;
+  } catch {
+    return fallback;
+  }
+}
+
+const toAttempt = (r: PrepAttemptRow): PrepAttempt => ({
+  id: r.id,
+  questionId: r.questionId,
+  attemptedAt: r.attemptedAt,
+  durationSec: r.durationSec ?? undefined,
+  status: r.status as AttemptStatus,
+  notes: r.notes ?? undefined,
+});
+
+type Stats = {
+  timesDone: number;
+  bestSec?: number;
+  lastStatus?: AttemptStatus;
+  lastAttemptAt?: string;
+  lastAttemptId?: number;
+  done: boolean;
+};
+
+function statsFor(attempts: PrepAttemptRow[]): Stats {
+  if (attempts.length === 0) return { timesDone: 0, done: false };
+  const durations = attempts.map((a) => a.durationSec).filter((d): d is number => d != null);
+  // attempts come in ascending id; the last is the most recent.
+  const last = attempts[attempts.length - 1];
+  return {
+    timesDone: attempts.length,
+    bestSec: durations.length ? Math.min(...durations) : undefined,
+    lastStatus: last.status as AttemptStatus,
+    lastAttemptAt: last.attemptedAt,
+    lastAttemptId: last.id,
+    done: attempts.some((a) => a.status === "solved"),
+  };
+}
+
+function toQuestion(
+  r: PrepQuestionRow,
+  stats: Stats,
+  flags: { noted: boolean; redo: boolean },
+  company?: string
+): PrepQuestion {
+  const companyMeta = parseJSON<CompanyMeta>(r.companyMeta, {});
+  const lens = company ? companyMeta[company] : undefined;
+  return {
+    id: r.id,
+    track: r.track as PrepTrack,
+    name: r.name,
+    prompt: r.prompt ?? undefined,
+    difficulty: r.difficulty ?? undefined,
+    priority: r.priority ?? undefined,
+    url: r.url ?? undefined,
+    leetcodeNum: r.leetcodeNum ?? undefined,
+    tags: parseJSON<string[]>(r.tags, []),
+    companies: parseJSON<string[]>(r.companies, []),
+    companyMeta,
+    content: parseJSON<PrepContent>(r.content, {}),
+    plan: r.plan ? parseJSON<PrepPlan>(r.plan, {}) : undefined,
+    sortOrder: r.sortOrder ?? undefined,
+    companyCategory: lens?.category,
+    companyNote: lens?.note,
+    ...stats,
+    noted: flags.noted,
+    redo: flags.redo,
+  };
+}
+
+// ── Queries ──
+
+// All questions for a track, optionally narrowed to one company lens, each joined
+// with its derived attempt stats + progress flags. Generic views pass no company;
+// company views pass a slug (matched against the `companies` JSON array).
+export function listQuestions(opts: { track?: string; company?: string } = {}): PrepQuestion[] {
+  let rows = db.select().from(prepQuestions).all();
+  if (opts.track) rows = rows.filter((r) => r.track === opts.track);
+  if (opts.company) {
+    rows = rows.filter((r) => parseJSON<string[]>(r.companies, []).includes(opts.company!));
+  }
+
+  // Load attempts + progress once, bucket in memory (small table).
+  const attempts = db.select().from(prepAttempts).orderBy(asc(prepAttempts.id)).all();
+  const byQ = new Map<string, PrepAttemptRow[]>();
+  for (const a of attempts) {
+    const list = byQ.get(a.questionId) ?? [];
+    list.push(a);
+    byQ.set(a.questionId, list);
+  }
+  const progress = db.select().from(prepProgress).all();
+  const flagsByQ = new Map(progress.map((p) => [p.questionId, { noted: p.noted, redo: p.redo }]));
+
+  const out = rows.map((r) =>
+    toQuestion(r, statsFor(byQ.get(r.id) ?? []), flagsByQ.get(r.id) ?? { noted: false, redo: false }, opts.company)
+  );
+  // Company lens orders by the per-company sortOrder (companyMeta); generic views use the
+  // global sortOrder. Either way fall back to 0 so untagged rows sort stably.
+  return opts.company
+    ? out.sort((a, b) => (a.companyMeta[opts.company!]?.sortOrder ?? 0) - (b.companyMeta[opts.company!]?.sortOrder ?? 0))
+    : out.sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0));
+}
+
+// ── Company prep profiles (CoWork research output) ──
+
+export type PrepRound = { name: string; format?: string; focus?: string };
+export type PrepCategory = {
+  key: string;
+  label: string;
+  description?: string;
+  kind: PrepTrack; // coding | system_design | behavioral | other — picks the card style
+};
+export type PrepSource = { label: string; url?: string };
+
+export type CompanyProfile = {
+  slug: string;
+  name: string;
+  process?: string;
+  rounds: PrepRound[];
+  categories: PrepCategory[];
+  sources: PrepSource[];
+  researchedAt?: string;
+};
+
+function toProfile(r: PrepCompanyRow): CompanyProfile {
+  return {
+    slug: r.slug,
+    name: r.name,
+    process: r.process ?? undefined,
+    rounds: parseJSON<PrepRound[]>(r.rounds, []),
+    categories: parseJSON<PrepCategory[]>(r.categories, []),
+    sources: parseJSON<PrepSource[]>(r.sources, []),
+    researchedAt: r.researchedAt ?? undefined,
+  };
+}
+
+export function listCompanyProfiles(): CompanyProfile[] {
+  return db
+    .select()
+    .from(prepCompany)
+    .all()
+    .map(toProfile)
+    .sort((a, b) => a.name.localeCompare(b.name));
+}
+
+export function getCompanyProfile(slug: string): CompanyProfile | null {
+  const r = db.select().from(prepCompany).where(eq(prepCompany.slug, slug)).get();
+  return r ? toProfile(r) : null;
+}
+
+export function listAttempts(questionId: string): PrepAttempt[] {
+  return db
+    .select()
+    .from(prepAttempts)
+    .where(eq(prepAttempts.questionId, questionId))
+    .orderBy(desc(prepAttempts.id))
+    .all()
+    .map(toAttempt);
+}
+
+// Log one practice attempt and return it plus the question's refreshed derived stats.
+export function logAttempt(input: {
+  questionId: string;
+  durationSec?: number;
+  status?: AttemptStatus;
+  notes?: string;
+}): { attempt: PrepAttempt; stats: Stats } {
+  const row = db
+    .insert(prepAttempts)
+    .values({
+      questionId: input.questionId,
+      attemptedAt: new Date().toISOString(),
+      durationSec: input.durationSec ?? null,
+      status: input.status ?? "solved",
+      notes: input.notes?.trim() || null,
+    })
+    .returning()
+    .get();
+  const all = db
+    .select()
+    .from(prepAttempts)
+    .where(eq(prepAttempts.questionId, input.questionId))
+    .orderBy(asc(prepAttempts.id))
+    .all();
+  return { attempt: toAttempt(row), stats: statsFor(all) };
+}
+
+export function deleteAttempt(id: number): boolean {
+  return db.delete(prepAttempts).where(eq(prepAttempts.id, id)).run().changes > 0;
+}
+
+// ── CoWork prep handoff (ingest practice progress) ──
+// CoWork practices coding with You and writes a result file the app ingests, one
+// record per question worked. Identity is resolved against the catalog by leetcodeNum
+// first, then normalized name; an unrecognized question is inserted (track=coding) so
+// the attempt has a home — see prep.md.
+
+const PREP_STATUSES: AttemptStatus[] = ["solved", "partial", "failed"];
+const asStatus = (v: unknown): AttemptStatus =>
+  PREP_STATUSES.includes(v as AttemptStatus) ? (v as AttemptStatus) : "solved";
+
+const slug = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+
+function resolveQuestionId(rec: Record<string, unknown>, catalog: PrepQuestionRow[]): string | null {
+  const ln = num(rec.leetcodeNum);
+  if (ln != null) {
+    const m = catalog.find((q) => q.leetcodeNum === ln);
+    if (m) return m.id;
+  }
+  const name = str(rec.name);
+  if (name) {
+    const n = norm(name);
+    const m = catalog.find((q) => norm(q.name) === n);
+    if (m) return m.id;
+  }
+  return null;
+}
+
+function newQuestionId(rec: Record<string, unknown>, taken: Set<string>): string {
+  const ln = num(rec.leetcodeNum);
+  const base = ln != null ? `lc-${ln}` : slug(str(rec.name) ?? "q") || "q";
+  let id = base;
+  for (let i = 2; taken.has(id); i++) id = `${base}-${i}`;
+  return id;
+}
+
+export type PrepIngestResult = {
+  inserted: number; // new catalog questions
+  attempts: number; // practice attempts logged
+  flagged: number; // noted/redo flag updates
+  details: ChangeDetail[];
+};
+
+// Ingest CoWork's prep result records. dryRun computes the same outcome without writing
+// (powers the preview). Matching + dedupe happen against an in-memory catalog snapshot so
+// a new question referenced twice in one batch is inserted once.
+export function ingestPrepRecords(records: Record<string, unknown>[], dryRun = false): PrepIngestResult {
+  const catalog = db.select().from(prepQuestions).all();
+  const taken = new Set(catalog.map((q) => q.id));
+  let maxSort = catalog.reduce((m, q) => Math.max(m, q.sortOrder ?? 0), 0);
+
+  let inserted = 0;
+  let attempts = 0;
+  let flagged = 0;
+  const details: ChangeDetail[] = [];
+
+  for (const rec of records) {
+    let qid = resolveQuestionId(rec, catalog);
+    let label: string;
+
+    if (!qid) {
+      const name = str(rec.name);
+      if (!name) {
+        details.push({ action: "skip", summary: "prep record with no catalog match and no name — skipped" });
+        continue;
+      }
+      qid = newQuestionId(rec, taken);
+      taken.add(qid);
+      maxSort += 1;
+      const row = {
+        id: qid,
+        track: "coding" as const,
+        name,
+        prompt: str(rec.prompt) ?? null,
+        difficulty: str(rec.difficulty) ?? null,
+        priority: str(rec.priority) ?? null,
+        url: str(rec.url) ?? null,
+        leetcodeNum: num(rec.leetcodeNum),
+        tags: JSON.stringify(Array.isArray(rec.tags) ? rec.tags : []),
+        companies: JSON.stringify([]),
+        content: JSON.stringify(rec.content ?? {}),
+        plan: null,
+        sortOrder: maxSort,
+      };
+      if (!dryRun) db.insert(prepQuestions).values(row).run();
+      catalog.push(row as PrepQuestionRow); // so later records in the batch resolve to it
+      inserted++;
+      label = name;
+      details.push({ action: "insert", summary: `new coding Q — ${name}${rec.leetcodeNum ? ` (LC ${rec.leetcodeNum})` : ""}` });
+    } else {
+      label = catalog.find((q) => q.id === qid)?.name ?? qid;
+    }
+
+    const status = asStatus(rec.status);
+    const durationSec = num(rec.durationSec);
+    if (!dryRun) {
+      db.insert(prepAttempts)
+        .values({
+          questionId: qid,
+          attemptedAt: str(rec.attemptedAt) ?? new Date().toISOString(),
+          durationSec,
+          status,
+          notes: str(rec.notes) ?? null,
+        })
+        .run();
+    }
+    attempts++;
+    const dur = durationSec != null ? ` · ${Math.round(durationSec / 60)}m` : "";
+    details.push({ action: "attempt", summary: `${label} · ${status}${dur}` });
+
+    const noted = typeof rec.noted === "boolean" ? rec.noted : undefined;
+    const redo = typeof rec.redo === "boolean" ? rec.redo : undefined;
+    if (noted !== undefined || redo !== undefined) {
+      if (!dryRun) setProgress(qid, { noted, redo });
+      flagged++;
+    }
+  }
+
+  return { inserted, attempts, flagged, details };
+}
+
+// Upsert per-question flags (noted / redo). Returns the resulting flag pair.
+export function setProgress(
+  questionId: string,
+  patch: { noted?: boolean; redo?: boolean }
+): { questionId: string; noted: boolean; redo: boolean } {
+  const existing = db
+    .select()
+    .from(prepProgress)
+    .where(eq(prepProgress.questionId, questionId))
+    .get();
+  const noted = patch.noted ?? existing?.noted ?? false;
+  const redo = patch.redo ?? existing?.redo ?? false;
+  const now = new Date().toISOString();
+  const redoAddedAt = patch.redo === true ? now : patch.redo === false ? null : existing?.redoAddedAt ?? null;
+
+  if (existing) {
+    db.update(prepProgress)
+      .set({ noted, redo, redoAddedAt, updatedAt: now })
+      .where(eq(prepProgress.questionId, questionId))
+      .run();
+  } else {
+    db.insert(prepProgress).values({ questionId, noted, redo, redoAddedAt, updatedAt: now }).run();
+  }
+  return { questionId, noted, redo };
+}
+
+// ── CoWork prep-research handoff (per-company interview prep) ──
+// CoWork researches a company's interview process and submits one batch: a single profile
+// record ({ type:"profile", ... }) plus N question records ({ type:"question", category, ... }).
+// Questions reuse the shared bank — a coding/system_design record that matches an existing
+// catalog question by leetcodeNum (or name) is TAGGED onto the company (companies += slug,
+// companyMeta[slug] set) rather than duplicated, so its attempt history carries over. Bespoke
+// (behavioral/other) questions are inserted. The profile drives the company view's sections.
+
+// Canonical company key, shared with prepQuestions.companies / companyMeta. Falls back to a
+// plain slug when the name doesn't canonicalize (keeps an oddly-named company addressable).
+export const companySlug = (name: string): string => canonical(name)?.key ?? slug(name);
+
+const TRACKS: PrepTrack[] = ["coding", "system_design", "behavioral", "other"];
+const asTrack = (rec: Record<string, unknown>): PrepTrack => {
+  const t = str(rec.track);
+  if (t && TRACKS.includes(t as PrepTrack)) return t as PrepTrack;
+  return num(rec.leetcodeNum) != null ? "coding" : "other"; // LC# ⇒ coding; else bespoke
+};
+
+export type PrepResearchResult = {
+  profile: number; // profiles upserted (0 or 1)
+  reused: number; // existing questions tagged onto the company
+  inserted: number; // new bespoke questions
+  details: ChangeDetail[];
+};
+
+export function ingestPrepResearch(
+  records: Record<string, unknown>[],
+  dryRun = false
+): PrepResearchResult {
+  const profileRec = records.find((r) => str(r.type) === "profile");
+  const questionRecs = records.filter((r) => str(r.type) !== "profile");
+
+  const details: ChangeDetail[] = [];
+  let profile = 0;
+  let reused = 0;
+  let inserted = 0;
+
+  // Resolve the company slug from the profile (preferred) or the first question record.
+  const companyName = str(profileRec?.company) ?? str(questionRecs[0]?.company);
+  if (!companyName) {
+    return { profile: 0, reused: 0, inserted: 0, details: [{ action: "skip", summary: "prep-research: no company — skipped" }] };
+  }
+  const cslug = str(profileRec?.slug) ?? companySlug(companyName);
+
+  // ── upsert the profile ──
+  if (profileRec) {
+    const row = {
+      slug: cslug,
+      name: companyName,
+      process: str(profileRec.process) ?? null,
+      rounds: JSON.stringify(Array.isArray(profileRec.rounds) ? profileRec.rounds : []),
+      categories: JSON.stringify(Array.isArray(profileRec.categories) ? profileRec.categories : []),
+      sources: JSON.stringify(Array.isArray(profileRec.sources) ? profileRec.sources : []),
+      researchedAt: str(profileRec.researchedAt) ?? new Date().toISOString(),
+    };
+    if (!dryRun) {
+      db.insert(prepCompany)
+        .values(row)
+        .onConflictDoUpdate({ target: prepCompany.slug, set: row })
+        .run();
+    }
+    profile = 1;
+    const nCat = Array.isArray(profileRec.categories) ? profileRec.categories.length : 0;
+    details.push({ action: "update", summary: `profile — ${companyName} (${nCat} categor${nCat === 1 ? "y" : "ies"})` });
+  }
+
+  // ── upsert the questions ──
+  const catalog = db.select().from(prepQuestions).all();
+  const taken = new Set(catalog.map((q) => q.id));
+  let maxSort = catalog.reduce((m, q) => Math.max(m, q.sortOrder ?? 0), 0);
+
+  questionRecs.forEach((rec, i) => {
+    const meta: CompanyMetaEntry = {
+      category: str(rec.category) ?? undefined,
+      sortOrder: num(rec.sortOrder) ?? i + 1,
+      note: str(rec.note) ?? undefined,
+    };
+
+    // Resolve to the shared bank first — a reuse record (e.g. just a leetcodeNum) needs no name.
+    const existingId = resolveQuestionId(rec, catalog);
+    if (existingId) {
+      // reuse: tag the existing question onto this company, preserving its attempt history.
+      const row = catalog.find((q) => q.id === existingId)!;
+      const companies = parseJSON<string[]>(row.companies, []);
+      const companyMeta = parseJSON<CompanyMeta>(row.companyMeta, {});
+      if (!companies.includes(cslug)) companies.push(cslug);
+      companyMeta[cslug] = meta;
+      if (!dryRun) {
+        db.update(prepQuestions)
+          .set({ companies: JSON.stringify(companies), companyMeta: JSON.stringify(companyMeta) })
+          .where(eq(prepQuestions.id, existingId))
+          .run();
+      }
+      row.companies = JSON.stringify(companies); // keep snapshot consistent for the batch
+      row.companyMeta = JSON.stringify(companyMeta);
+      reused++;
+      details.push({ action: "update", summary: `reuse — ${row.name} → ${companyName}/${meta.category ?? "?"}` });
+      return;
+    }
+
+    // new bespoke question (or unmatched LC) — insert, tagged to this company. Needs a name.
+    const name = str(rec.name);
+    if (!name) {
+      details.push({ action: "skip", summary: "prep-research question — no catalog match and no name, skipped" });
+      return;
+    }
+    const qid = newQuestionId(rec, taken);
+    taken.add(qid);
+    maxSort += 1;
+    const row: PrepQuestionRow = {
+      id: qid,
+      track: asTrack(rec),
+      name,
+      prompt: str(rec.prompt) ?? null,
+      difficulty: str(rec.difficulty) ?? null,
+      priority: str(rec.priority) ?? null,
+      url: str(rec.url) ?? null,
+      leetcodeNum: num(rec.leetcodeNum),
+      tags: JSON.stringify(Array.isArray(rec.tags) ? rec.tags : []),
+      companies: JSON.stringify([cslug]),
+      companyMeta: JSON.stringify({ [cslug]: meta }),
+      content: JSON.stringify(rec.content ?? {}),
+      plan: null,
+      sortOrder: maxSort,
+    };
+    if (!dryRun) db.insert(prepQuestions).values(row).run();
+    catalog.push(row);
+    inserted++;
+    details.push({ action: "insert", summary: `new ${row.track} Q — ${name} (${companyName}/${meta.category ?? "?"})` });
+  });
+
+  return { profile, reused, inserted, details };
+}

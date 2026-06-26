@@ -1,0 +1,75 @@
+// Test helpers. Imported only AFTER ./setup (which configures DB_PATH/ASSET_ROOT),
+// so the "@/lib/*" imports below bind to the temp DB + temp asset dir.
+import { db } from "@/lib/db";
+import {
+  postings, companies, events, interviews, jobs, appConfig, agentRuns, pendingMatches, todos,
+} from "@/lib/db/schema";
+import type { Status } from "@/lib/types";
+
+export { db, postings, companies, events, jobs };
+
+// Wipe all rows between tests. (The job queue + ledger live in the `jobs` table now —
+// there are no queue/result/context files to clean.)
+export function reset() {
+  // Children before parents — interviews FK→postings, postings FK→companies — so FK enforcement
+  // (foreign_keys=ON) doesn't reject the deletes once interview rows actually exist.
+  for (const t of [interviews, postings, pendingMatches, events, jobs, agentRuns, appConfig, todos]) db.delete(t).run();
+  db.delete(companies).run();
+}
+
+// Seed a company (created once per name) + one tracker posting (a candidate in a tracker stage);
+// returns its id. One unified model now — the tracker lives in `postings`.
+export function seedApp(opts: {
+  company: string;
+  role?: string;
+  status?: Status;
+  tier?: "top_target" | "target" | "practice";
+  interviewed?: boolean;
+  appliedDate?: string;
+}): number {
+  const existing = db.select().from(companies).all().find((c) => c.name === opts.company);
+  const companyId =
+    existing?.id ??
+    db.insert(companies).values({ name: opts.company, tier: opts.tier ?? "practice" }).returning({ id: companies.id }).get().id;
+  return db
+    .insert(postings)
+    .values({
+      companyId,
+      title: opts.role ?? "Engineer",
+      verdict: "kept",
+      state: (opts.status ?? "applied") as typeof postings.$inferInsert.state,
+      interviewed: opts.interviewed ?? false,
+      appliedDate: opts.appliedDate ?? "2026-06-01",
+      updatedAt: "2026-06-01",
+      scannedAt: "2026-06-01T00:00:00.000Z",
+    })
+    .returning({ id: postings.id })
+    .get().id;
+}
+
+// Seed a company (created once per name) + one candidate (discovery side); returns its id.
+export function seedCandidate(opts: {
+  company: string;
+  title?: string;
+  url?: string;
+  state?: "filtered" | "matched" | "review" | "dismissed" | "fit_queue" | "assessed" | "apply_later" | "tailoring" | "tailored" | "applied";
+  verdict?: "kept" | "dropped";
+}): number {
+  const existing = db.select().from(companies).all().find((c) => c.name === opts.company);
+  const companyId =
+    existing?.id ??
+    db.insert(companies).values({ name: opts.company, tier: "practice" }).returning({ id: companies.id }).get().id;
+  return db
+    .insert(postings)
+    .values({
+      companyId,
+      title: opts.title ?? "Engineer",
+      url: opts.url ?? null,
+      verdict: opts.verdict ?? "kept",
+      state: opts.state ?? "fit_queue",
+      scannedAt: "2026-06-01T00:00:00.000Z",
+    })
+    .returning({ id: postings.id })
+    .get().id;
+}
+
