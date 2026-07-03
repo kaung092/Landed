@@ -131,14 +131,15 @@ function resolveCompany(key: string, name: string, actor: string, source: string
   const all = db.select().from(companies).all();
   const existing = all.find((c) => canonical(c.name)?.key === key);
   if (existing) {
-    if (existing.name !== name) db.update(companies).set({ name }).where(eq(companies.id, existing.id)).run();
+    if (existing.name !== name) db.update(companies).set({ name, updatedAt: new Date().toISOString() }).where(eq(companies.id, existing.id)).run();
     return { co: { ...existing, name }, isNew: false };
   }
   const tier = defaultTier(key);
-  const id = db.insert(companies).values({ name, tier }).returning({ id: companies.id }).get().id;
+  const ts = new Date().toISOString();
+  const id = db.insert(companies).values({ name, tier, createdAt: ts, updatedAt: ts }).returning({ id: companies.id }).get().id;
   logEvent({ actor, source, entity: "company", entityId: id, action: "insert", summary: `new company ${name} [${tier}]` });
   return {
-    co: { id, name, tier, careersUrl: null, ats: null, fetchMethod: null, fetchRecipe: null, notes: null, slug: null, endpoint: null, targetTitles: null, targetLocation: null, leveling: null, lastScrapedAt: null, watchlist: false },
+    co: { id, name, tier, careersUrl: null, ats: null, fetchMethod: null, fetchRecipe: null, notes: null, slug: null, endpoint: null, targetTitles: null, targetLocation: null, leveling: null, lastScrapedAt: null, watchlist: false, createdAt: ts, updatedAt: ts },
     isNew: true,
   };
 }

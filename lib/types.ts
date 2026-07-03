@@ -5,9 +5,11 @@
 import type { Leveling } from "@/lib/leveling";
 import type { DiffOp } from "@/lib/linediff";
 
-export type Tier = "top_target" | "target" | "practice";
+// Company tier, best → broadest. Stored as stable slugs (tier1/tier2/tier3); human labels
+// live in TIER_META (lib/pipeline.ts). tier1 = top target, tier3 = the broad practice pool.
+export type Tier = "tier1" | "tier2" | "tier3";
 
-// The pipeline stages, left-to-right. Practice-tier postings can jump straight
+// The pipeline stages, left-to-right. tier3 (practice) postings can jump straight
 // from "discovered" to "applied" (mass apply, no human gate).
 export type Status =
   | "discovered" // freshly scraped, untouched
@@ -96,7 +98,7 @@ export type EmailRefs = { applied?: string; rejected?: string; offer?: string; i
 
 // A personal comment You leaves on a posting (distinct from `note`, which is shared with
 // CoWork/historical sync). Stored as a JSON array on the posting; the funnel shows a count + popover.
-export type Comment = { text: string; at: string }; // at = ISO timestamp
+export type Comment = { text: string; at: string; editedAt?: string }; // at = created, editedAt = last edit (ISO timestamps)
 
 export type Posting = {
   id: string;
@@ -123,6 +125,8 @@ export type Posting = {
   appliedDate?: string;
   updatedAt?: string;
   note?: string; // freeform, also catches messy historical data
+  comp?: string; // interview-stage intel: comp structure (funding/runway, base, bonus, equity) — markdown
+  teamNotes?: string; // interview-stage intel: team / product / work / role focus — markdown
   comments?: Comment[]; // your personal comment thread on this posting (separate from `note`)
   history?: boolean; // true = imported from the old tracker.csv
   interviews?: InterviewRound[]; // interview-stage rounds (from inbox-sync), ordered by round

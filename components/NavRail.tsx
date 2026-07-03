@@ -3,20 +3,25 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Home, Briefcase, History, Bot, GraduationCap } from "lucide-react";
+import { Home, Briefcase, History, Bot, GraduationCap, FlaskConical, Plug } from "lucide-react";
 
 // Each item's optional `badge` carries its color; the live count is looked up by href
 // from the `counts` map below, so adding a new badge is a one-line data change.
 const ITEMS = [
   { href: "/", label: "Home", icon: Home },
   { href: "/prep", label: "Prep", icon: GraduationCap },
-  { href: "/cowork", label: "CoWork", icon: Bot },
+  { href: "/agents", label: "Agents", icon: Bot },
+  { href: "/mcp", label: "MCP", icon: Plug },
+  { href: "/fit-lab", label: "Fit Lab", icon: FlaskConical },
   { href: "/changes", label: "Changes", icon: History, badge: "bg-amber-500 text-amber-950" },
 ];
 
 export default function NavRail() {
   const pathname = usePathname();
   const [counts, setCounts] = useState<Record<string, number>>({});
+  // Last path visited within each section (keyed by base href) — so clicking a nav item returns you
+  // to exactly where you were (e.g. the company you were viewing), not the section's landing.
+  const [remembered, setRemembered] = useState<Record<string, string>>({});
 
   useEffect(() => {
     // refresh counts when navigating (e.g. after resolving a flag). The badge = everything awaiting
@@ -28,6 +33,22 @@ export default function NavRail() {
         setCounts({ "/changes": (events.needsReview?.length ?? 0) + (events.pendingMatches?.length ?? 0) }));
   }, [pathname]);
 
+  useEffect(() => {
+    // Rehydrate remembered paths, then record the current path under its section. Starts empty so the
+    // first (server-matched) render uses base hrefs — no hydration mismatch — then updates on mount.
+    const next: Record<string, string> = {};
+    for (const it of ITEMS) {
+      if (it.href === "/") continue;
+      try { const v = localStorage.getItem(`landed.nav.${it.href}`); if (v) next[it.href] = v; } catch { /* ignore */ }
+    }
+    const section = ITEMS.find((it) => it.href !== "/" && pathname.startsWith(it.href))?.href;
+    if (section) {
+      try { localStorage.setItem(`landed.nav.${section}`, pathname); } catch { /* quota */ }
+      next[section] = pathname;
+    }
+    setRemembered(next);
+  }, [pathname]);
+
   return (
     <nav className="flex w-16 shrink-0 flex-col items-center gap-1 border-r border-zinc-800/80 bg-zinc-950 py-4">
       <div className="mb-4 flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-emerald-400 to-sky-500 text-zinc-950 shadow-lg shadow-emerald-500/20">
@@ -36,10 +57,11 @@ export default function NavRail() {
       {ITEMS.map(({ href, label, icon: Icon, badge }) => {
         const active = href === "/" ? pathname === "/" : pathname.startsWith(href);
         const count = counts[href] ?? 0;
+        const target = href === "/" ? "/" : remembered[href] ?? href; // return to last view in this section
         return (
           <Link
             key={href}
-            href={href}
+            href={target}
             title={label}
             className={`group relative flex h-11 w-11 flex-col items-center justify-center rounded-xl transition ${
               active

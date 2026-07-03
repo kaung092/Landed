@@ -1,8 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import { Building2, X, ExternalLink, Link2, Trash2, Radar, GitCompareArrows, CheckCircle2, XCircle, Circle, MapPin, CalendarClock, RefreshCw, Pencil, FileText } from "lucide-react";
-import type { InterviewRound, Posting, RedoTurn, Status, Tier } from "@/lib/types";
+import { Building2, X, ExternalLink, Link2, Trash2, Radar, GitCompareArrows, CheckCircle2, XCircle, Circle, MapPin, CalendarClock, RefreshCw, Pencil, FileText, Sparkles, Plus } from "lucide-react";
+import type { InterviewKind, InterviewRound, Posting, RedoTurn, Status, Tier } from "@/lib/types";
 import { STATUS_ORDER } from "@/lib/types";
 import { reapplyInfo, STATUS_LABEL, STATUS_CHIP, TIER_META, TIERS } from "@/lib/pipeline";
 import { type CompanyAgg } from "@/lib/board";
@@ -76,6 +76,30 @@ function EditField({
   );
 }
 
+// Inline-editable multiline text (markdown). Uncontrolled; commits on blur, reverts on Escape.
+// Re-keyed by value so it resets to the server value after a commit + refresh.
+function EditArea({
+  value, onCommit, placeholder, rows = 4,
+}: {
+  value: string;
+  onCommit: (v: string) => void;
+  placeholder?: string;
+  rows?: number;
+}) {
+  return (
+    <textarea
+      key={value}
+      defaultValue={value}
+      placeholder={placeholder}
+      rows={rows}
+      onClick={(e) => e.stopPropagation()}
+      onBlur={(e) => { if (e.target.value !== value) onCommit(e.target.value); }}
+      onKeyDown={(e) => { if (e.key === "Escape") { (e.target as HTMLTextAreaElement).value = value; (e.target as HTMLTextAreaElement).blur(); } }}
+      className={`${EDIT_BASE} block w-full resize-y rounded-lg border border-zinc-800 bg-zinc-900/40 px-2.5 py-2 text-[13px] leading-relaxed text-zinc-300 focus:border-zinc-600`}
+    />
+  );
+}
+
 // A small section label.
 function SectionLabel({ children }: { children: React.ReactNode }) {
   return <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-wider text-zinc-500">{children}</p>;
@@ -130,6 +154,143 @@ function RoundsTimeline({ rounds }: { rounds: InterviewRound[] }) {
   );
 }
 
+const KIND_OPTIONS: InterviewKind[] = [
+  "recruiter_screen", "phone_screen", "technical", "system_design", "behavioral", "onsite", "hiring_manager", "final", "other",
+];
+const OUTCOME_META: Record<string, { label: string; cls: string }> = {
+  pending: { label: "pending", cls: "text-amber-300" },
+  passed: { label: "passed", cls: "text-emerald-400" },
+  rejected: { label: "rejected", cls: "text-rose-300" },
+};
+
+// The interview-stage rounds, EDITABLE — one row per round (kind · date · outcome · notes for the
+// format/focus the recruiter described), plus delete and "+ add round". Writes to the same
+// `interviews` table inbox-sync populates, so synced + hand-authored rounds coexist; the notes feed
+// prep-research. `onChanged` refreshes the parent so the drawer re-reads after each write.
+function EditableRounds({ postingId, rounds, onChanged }: { postingId: string; rounds: InterviewRound[]; onChanged?: () => void }) {
+  const [busy, setBusy] = useState(false);
+  const call = async (method: string, body: Record<string, unknown>) => {
+    setBusy(true);
+    try {
+      await fetch(`/api/applications/${postingId}/rounds`, {
+        method, headers: { "content-type": "application/json" }, body: JSON.stringify(body),
+      });
+      onChanged?.();
+    } finally {
+      setBusy(false);
+    }
+  };
+  const inputCls = "rounded bg-zinc-900 px-1.5 py-0.5 text-[12px] text-zinc-300 outline-none ring-1 ring-inset ring-zinc-800 focus:ring-zinc-600";
+  return (
+    <div className="space-y-2">
+      {rounds.length === 0 && (
+        <p className="rounded-lg border border-dashed border-zinc-800 px-3 py-3 text-center text-[12px] text-zinc-600">
+          No rounds yet — add the loop the recruiter described, or Sync Inbox to pull them from email.
+        </p>
+      )}
+      <ol className="space-y-2">
+        {rounds.map((r) => {
+          const outcome = r.outcome ?? "pending";
+          return (
+            <li key={r.id} className="space-y-2 rounded-lg border border-zinc-800 bg-zinc-900/40 p-2.5">
+              <div className="flex items-center gap-2">
+                <select
+                  value={r.kind ?? "other"}
+                  onChange={(e) => call("PATCH", { roundId: r.id, kind: e.target.value })}
+                  className={`${inputCls} cursor-pointer`}
+                >
+                  {KIND_OPTIONS.map((k) => <option key={k} value={k}>{KIND_LABEL[k]}</option>)}
+                </select>
+                <input
+                  key={`date-${r.date ?? ""}`}
+                  type="text"
+                  defaultValue={r.date ?? ""}
+                  placeholder="date / when"
+                  onBlur={(e) => { if (e.target.value !== (r.date ?? "")) call("PATCH", { roundId: r.id, date: e.target.value }); }}
+                  className={`${inputCls} w-28`}
+                />
+                <select
+                  value={outcome}
+                  onChange={(e) => call("PATCH", { roundId: r.id, outcome: e.target.value })}
+                  className={`${inputCls} ml-auto cursor-pointer ${OUTCOME_META[outcome].cls}`}
+                >
+                  {Object.entries(OUTCOME_META).map(([k, m]) => <option key={k} value={k}>{m.label}</option>)}
+                </select>
+                <button
+                  onClick={() => call("DELETE", { roundId: r.id })}
+                  title="Remove this round"
+                  className="rounded p-1 text-zinc-600 transition hover:bg-rose-500/10 hover:text-rose-300"
+                >
+                  <Trash2 size={12} />
+                </button>
+              </div>
+              <input
+                key={`notes-${r.notes ?? ""}`}
+                type="text"
+                defaultValue={r.notes ?? ""}
+                placeholder="format / focus — e.g. 75 min live coding · DS&A"
+                onBlur={(e) => { if (e.target.value !== (r.notes ?? "")) call("PATCH", { roundId: r.id, notes: e.target.value }); }}
+                className={`${inputCls} w-full`}
+              />
+            </li>
+          );
+        })}
+      </ol>
+      <button
+        disabled={busy}
+        onClick={() => call("POST", { kind: "other" })}
+        className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-[12px] font-medium text-zinc-400 ring-1 ring-inset ring-zinc-800 transition hover:bg-zinc-800 hover:text-zinc-200 disabled:opacity-50"
+      >
+        <Plus size={12} /> add round
+      </button>
+    </div>
+  );
+}
+
+// "Generate prep" — (re)queue the prep-research job for this company, carrying the comp/team/rounds
+// intel as authoritative input. The job builds the /prep/company/<slug> prep page; link to it once
+// queued (it appears after CoWork ingests).
+function GeneratePrep({ postingId }: { postingId: string }) {
+  const { bump } = useCoWorkQueue();
+  const [state, setState] = useState<"idle" | "queuing" | "queued">("idle");
+  const [slug, setSlug] = useState<string | null>(null);
+  const run = async () => {
+    setState("queuing");
+    try {
+      const res = await fetch(`/api/applications/${postingId}/prep`, { method: "POST" });
+      const data = (await res.json().catch(() => ({}))) as { slug?: string | null };
+      setSlug(data.slug ?? null);
+      setState("queued");
+      bump();
+    } catch {
+      setState("idle");
+    }
+  };
+  return (
+    <div className="rounded-lg border border-rose-500/20 bg-rose-500/[0.05] p-3">
+      <div className="flex items-center gap-2.5">
+        <Sparkles size={16} className="shrink-0 text-rose-300" />
+        <div className="min-w-0 flex-1">
+          <p className="text-[13px] font-medium text-zinc-200">Interview prep</p>
+          <p className="text-[12px] text-zinc-500">Build a prep guide from your comp · team · rounds intel.</p>
+        </div>
+        <button
+          onClick={run}
+          disabled={state === "queuing"}
+          className="shrink-0 rounded-md bg-rose-500/90 px-2.5 py-1 text-[13px] font-medium text-rose-950 transition hover:bg-rose-400 disabled:opacity-50"
+        >
+          {state === "queuing" ? "Queuing…" : state === "queued" ? "Re-generate" : "Generate prep"}
+        </button>
+      </div>
+      {state === "queued" && (
+        <p className="mt-2 text-[12px] text-emerald-300/90">
+          Queued in CoWork — building prep.{slug ? <> · <a href={`/prep/company/${slug}`} className="font-medium text-sky-300 hover:text-sky-200">view prep page →</a></> : null}
+        </p>
+      )}
+    </div>
+  );
+}
+
 // The fit assessment block — a COMPACT preview (summary + gaps). Click it to open the full detail
 // modal (level call, strengths, detailed gaps, history) where the redo composer lives. Decision
 // buttons stay here for one-click triage of an assessed posting.
@@ -164,6 +325,17 @@ function UsedForApp({ checked, onToggle }: { checked: boolean; onToggle: () => v
     <label className="inline-flex cursor-pointer items-center gap-1.5 text-[12px]" title="Mark this as the résumé you'll submit">
       <input type="checkbox" checked={checked} onChange={onToggle} className="h-3.5 w-3.5 rounded border-zinc-700 bg-zinc-800 accent-emerald-500" />
       <span className={checked ? "font-medium text-emerald-300" : "text-zinc-400"}>used for application</span>
+    </label>
+  );
+}
+
+// "interviewed" — reached an interview. Drives the reapply cooldown after a rejection, so it's
+// worth being able to set by hand (inbox-sync also sets it, but not every loop is emailed).
+function InterviewedToggle({ p, onSetInterviewed }: { p: Posting; onSetInterviewed: (p: Posting, v: boolean) => void }) {
+  return (
+    <label className="inline-flex cursor-pointer items-center gap-1.5 text-[13px]" title="Reached an interview — drives the reapply cooldown after a rejection">
+      <input type="checkbox" checked={!!p.interviewed} onChange={(e) => onSetInterviewed(p, e.target.checked)} className="h-3.5 w-3.5 rounded border-zinc-700 bg-zinc-800 accent-emerald-500" />
+      <span className={p.interviewed ? "font-medium text-emerald-300" : "text-zinc-400"}>interviewed</span>
     </label>
   );
 }
@@ -417,7 +589,7 @@ function StageRail({ current, selected, onSelect }: { current: number; selected:
 }
 
 export default function CompanyDrawer({
-  c, focusId, onClose, onSetStatus, onTier, onEditField, onMove, onDelete,
+  c, focusId, onClose, onSetStatus, onSetInterviewed, onTier, onEditField, onMove, onDelete, onChanged,
 }: {
   c: CompanyAgg;
   focusId?: string | null; // when set, scope the drawer to this single job (the only mode now)
@@ -430,6 +602,7 @@ export default function CompanyDrawer({
   onMove: (p: Posting, company: string) => void;
   onRename: (name: string) => void;
   onDelete: (p: Posting) => void;
+  onChanged?: () => void; // refresh the parent after a direct mutation (rounds CRUD)
 }) {
   // Job-scoped: the focused posting (fall back to the most recent if focusId is missing). Computed
   // before the hooks so the stepper's initial selection can key off it (the call site keys the
@@ -538,14 +711,36 @@ export default function CompanyDrawer({
           {selKey === "interview" && (
             <>
               <StageHighlight p={p} col="interviewing" rounds={rounds} reapply={reapply} />
-              <div><SectionLabel>Interview rounds</SectionLabel><RoundsTimeline rounds={rounds} /></div>
+              <InterviewedToggle p={p} onSetInterviewed={onSetInterviewed} />
+              <div>
+                <SectionLabel>Comp structure</SectionLabel>
+                <EditArea value={p.comp ?? ""} onCommit={(v) => onEditField(p, { comp: v })} placeholder="funding / runway · base · bonus · equity (value + strike)…" />
+              </div>
+              <div>
+                <SectionLabel>Team · product · work</SectionLabel>
+                <EditArea value={p.teamNotes ?? ""} onCommit={(v) => onEditField(p, { teamNotes: v })} placeholder="what they build, who for, team size/stage, the role's scope & focus…" />
+              </div>
+              <div>
+                <SectionLabel>Interview rounds</SectionLabel>
+                <EditableRounds postingId={p.id} rounds={rounds} onChanged={onChanged} />
+              </div>
+              <GeneratePrep postingId={p.id} />
             </>
           )}
 
           {selKey === "closed" && (
             <>
               <StageHighlight p={p} col="closed" rounds={rounds} reapply={reapply} />
+              <div className="flex flex-wrap items-center gap-x-5 gap-y-2 rounded-lg border border-zinc-800 bg-zinc-900/40 px-3 py-2.5">
+                <label className="flex items-center gap-2 text-[13px]" title="When this closed — sets the reapply cooldown clock">
+                  <span className="text-zinc-500">{STATUS_LABEL[p.status]} date</span>
+                  <EditField value={p.updatedAt ?? ""} onCommit={(v) => onEditField(p, { updatedAt: v.trim() || undefined })} placeholder="YYYY-MM-DD" className="w-28 tabular-nums text-zinc-200" />
+                </label>
+                <InterviewedToggle p={p} onSetInterviewed={onSetInterviewed} />
+              </div>
               {rounds.length > 0 && <div><SectionLabel>Interview history</SectionLabel><RoundsTimeline rounds={rounds} /></div>}
+              {p.comp && <div><SectionLabel>Comp structure</SectionLabel><p className="whitespace-pre-wrap rounded-lg border border-zinc-800 bg-zinc-900/40 px-3 py-2 text-[13px] leading-relaxed text-zinc-400">{p.comp}</p></div>}
+              {p.teamNotes && <div><SectionLabel>Team · product · work</SectionLabel><p className="whitespace-pre-wrap rounded-lg border border-zinc-800 bg-zinc-900/40 px-3 py-2 text-[13px] leading-relaxed text-zinc-400">{p.teamNotes}</p></div>}
             </>
           )}
 

@@ -1,4 +1,4 @@
-import { listJobs, inboxLastSynced, coworkContext, createJob, reconcileFitQueue, reconcileTailoringQueue } from "@/lib/jobs/store";
+import { listJobs, inboxLastSynced, coworkContext, createJob, reconcileFitQueue, reconcileTailoringQueue, reapStuckJobs } from "@/lib/jobs/store";
 import { JOB_DEFS, jobDef } from "@/lib/jobs/registry";
 
 export const dynamic = "force-dynamic";
@@ -15,6 +15,7 @@ export async function GET(request: Request) {
   try {
     reconcileFitQueue(); // keep CoWork's queue in sync with fit_queue candidates before listing
     reconcileTailoringQueue(); // and re-queue any tailoring candidate stranded without a live job
+    reapStuckJobs(); // watchdog tick: dead-letter poison jobs (claimed too many times, no result)
     const defs = Object.values(JOB_DEFS);
     const types = defs.filter((d) => !d.hidden).map((d) => ({ type: d.type, title: d.title, description: d.description, playbook: d.playbook }));
     const url = new URL(request.url);

@@ -4,6 +4,7 @@ import { ExternalLink, FileText, RotateCcw } from "lucide-react";
 import type { PrepQuestion } from "@/lib/db/prep";
 import { usePrep } from "@/hooks/usePrep";
 import AttemptControl from "./AttemptControl";
+import ConfidenceTag from "./ConfidenceTag";
 import { Badge, diffCls } from "./ui";
 
 // A single trackable coding problem (name, difficulty, note, flags, attempt control).
@@ -26,6 +27,7 @@ export default function QuestionRow({
       <div className="flex items-start gap-3">
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
+            <ConfidenceTag q={q} />
             {q.plan?.anchor && <Badge className="text-emerald-300 bg-emerald-500/10 ring-emerald-500/25">anchor</Badge>}
             {q.plan?.extra && <Badge className="text-zinc-400 bg-zinc-800/60 ring-zinc-700/50">extra</Badge>}
             {q.priority && <Badge className="text-rose-300 bg-rose-500/10 ring-rose-500/25">{q.priority}</Badge>}

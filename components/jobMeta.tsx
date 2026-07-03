@@ -7,6 +7,21 @@ export const JOB_ICON: Record<string, typeof Mail> = {
 };
 export const jobIcon = (type: string) => JOB_ICON[type] ?? Bot;
 
+// Agents all share the robot (Bot) icon, distinguished by colour per type. Used on the Agents page
+// and the floating queue so an agent reads the same everywhere.
+export const AGENT_COLOR: Record<string, string> = {
+  fit: "text-emerald-300",
+  tailoring: "text-violet-300",
+  "inbox-sync": "text-amber-300",
+  "watchlist-scan": "text-cyan-300",
+  "watchlist-add": "text-blue-300",
+  leveling: "text-fuchsia-300",
+  "prep-research": "text-teal-300",
+  prep: "text-lime-300",
+  discovery: "text-sky-300",
+};
+export const agentColor = (type: string) => AGENT_COLOR[type] ?? "text-sky-300";
+
 // Short verb label for a queued job, e.g. the chip on a queue row.
 export const JOB_VERB: Record<string, string> = {
   "watchlist-add": "Add company", "watchlist-scan": "Scan watchlist", "inbox-sync": "Sync inbox",

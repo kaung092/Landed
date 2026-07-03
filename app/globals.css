@@ -1,17 +1,20 @@
-@import "tailwindcss";
+/* `source(none)` disables Tailwind's automatic project-root content scan (which walks every dir,
+   including a root-owned `caddy/` it can't read → build 500s) and we point it only at the two dirs
+   that actually contain classes. */
+@import "tailwindcss" source(none);
+@source "../app";
+@source "../components";
 
-/* Dark is the default cockpit; a light theme is opt-in via the .light class on <html>
-   (toggled top-right, persisted to localStorage). Native controls follow color-scheme. */
+/* LIGHT is the only theme (dark mode removed). The app's components are authored with the dark
+   zinc ramp; rather than re-style 38 files, the `.light` class (always applied on <html>) mirrors
+   the zinc ramp via CSS vars — bg-zinc-900 → a light panel, text-zinc-100 → near-black — and darkens
+   every accent text shade so nothing is invisible on light. The :root values below are an inert
+   fallback (`.light` always wins). Pairs swap: 50↔950, 100↔900, 200↔800, 300↔700, 400↔600. */
 :root {
-  color-scheme: dark;
-  --background: #09090b; /* zinc-950 */
+  --background: #09090b;
   --foreground: #ededed;
 }
 
-/* Light theme — instead of re-styling 38 files, we mirror the zinc ramp (Tailwind v4 exposes
-   every color as a CSS var, and utilities reference it). So bg-zinc-900 → a light panel,
-   text-zinc-100 → near-black, etc., everywhere at once. Accent hues (emerald/sky/…) are left
-   as-is. Pairs swap: 50↔950, 100↔900, 200↔800, 300↔700, 400↔600; 500 is the shared midpoint. */
 .light {
   color-scheme: light;
   --background: #f7f7f8;
@@ -28,23 +31,48 @@
   --color-zinc-800: #e4e4e7;
   --color-zinc-900: #f4f4f5;
   --color-zinc-950: #fafafa;
-  /* Accent TEXT shades (100–400) are tuned for dark backgrounds; on light they wash out. Darken
-     them (these shades are used only as text/dots/bars/thin borders — the vivid fills use 500). */
+  /* Accent TEXT shades (100–400) are tuned for dark backgrounds; on light they wash out (light text
+     on a light tint = invisible). Darken EVERY accent shade used as text so nothing disappears.
+     Darkening also only helps the fills (a darker bg under light text = more contrast), so it's safe
+     both ways. Pattern: 100→900, 200→800, 300→700, 400→600 of the same hue. */
   --color-emerald-100: #064e3b;
   --color-emerald-200: #065f46;
   --color-emerald-300: #047857;
   --color-emerald-400: #059669;
+  --color-sky-100: #0c4a6e;
+  --color-sky-200: #075985;
+  --color-sky-300: #0369a1;
+  --color-sky-400: #0284c7;
+  --color-violet-100: #4c1d95;
+  --color-violet-200: #5b21b6;
+  --color-violet-300: #6d28d9;
+  --color-violet-400: #7c3aed;
+  --color-rose-100: #881337;
+  --color-rose-200: #9f1239;
+  --color-rose-300: #be123c;
+  --color-rose-400: #e11d48;
+  --color-amber-100: #78350f;
   --color-amber-200: #92400e;
   --color-amber-300: #b45309;
   --color-amber-400: #d97706;
+  --color-orange-200: #9a3412;
+  --color-orange-300: #c2410c;
+  --color-orange-400: #ea580c;
   --color-yellow-200: #854d0e;
-  --color-sky-300: #0369a1;
-  --color-sky-400: #0284c7;
-  --color-rose-300: #be123c;
-  --color-violet-300: #6d28d9;
+  --color-yellow-300: #a16207;
+  --color-fuchsia-300: #a21caf;
+  --color-fuchsia-400: #c026d3;
+  --color-cyan-300: #0e7490;
+  --color-cyan-400: #0891b2;
+  --color-teal-300: #0f766e;
+  --color-teal-400: #0d9488;
+  --color-indigo-300: #4338ca;
+  --color-indigo-400: #4f46e5;
+  --color-blue-300: #1d4ed8;
+  --color-blue-400: #2563eb;
+  --color-lime-300: #4d7c0f;
   --color-red-300: #dc2626;
   --color-red-400: #b91c1c;
-  --color-orange-300: #c2410c;
 }
 .light body {
   background:

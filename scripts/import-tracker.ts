@@ -6,17 +6,11 @@ import { companies, postings } from "../lib/db/schema";
 import { eq, sql, inArray } from "drizzle-orm";
 import { PATHS } from "../lib/config";
 import { TRACKER_STAGES } from "../lib/pipeline";
-
-const TARGETS = new Set(
-  [
-    "google", "meta", "netflix", "apple", "microsoft", "databricks", "anthropic",
-    "openai", "airbnb", "figma", "github", "spotify", "confluent", "perplexity",
-    "notion", "glean", "hugging face", "scale ai", "scaleai", "cursor", "datadog",
-  ].map((s) => s.toLowerCase())
-);
+import { norm } from "../lib/agents/canonical";
+import { isTarget } from "../lib/targets.mjs";
 
 const tierFor = (name: string) =>
-  TARGETS.has(name.trim().toLowerCase()) ? "target" : "practice";
+  isTarget(norm(name)) ? "tier2" : "tier3";
 
 function mapStatus(raw: string): { status: "applied" | "rejected"; channel?: "referral"; note?: string } {
   const s = raw.trim().toLowerCase();
@@ -54,7 +48,7 @@ function main() {
       const existingCo = db.select().from(companies).where(eq(companies.name, name)).get();
       cid =
         existingCo?.id ??
-        db.insert(companies).values({ name, tier: tierFor(name) }).returning({ id: companies.id }).get().id;
+        (() => { const ts = new Date().toISOString(); return db.insert(companies).values({ name, tier: tierFor(name), createdAt: ts, updatedAt: ts }).returning({ id: companies.id }).get().id; })();
       companyId.set(name.toLowerCase(), cid);
     }
 

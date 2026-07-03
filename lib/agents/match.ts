@@ -9,6 +9,11 @@ import type { IncomingApp } from "./types";
 
 export { norm };
 
+// Post-apply lifecycle outcomes — a status that can only be a PROGRESSION of an existing
+// application (you don't get rejected from / interviewed for a role you never applied to). A fresh
+// "applied" is deliberately excluded: it might be a second, different role at the same company.
+const OUTCOME_STATUS = new Set(["interview", "offer", "rejected", "ghost", "expired", "accepted", "withdrawn"]);
+
 export type MatchResult =
   | { kind: "unique"; app: PostingRow } // confident single match → auto-apply
   | { kind: "fuzzy"; candidates: PostingRow[] } // non-exact (e.g. email missing the team) → ALWAYS ask
@@ -46,7 +51,7 @@ export function exactMatch(pool: PostingRow[], rec: IncomingApp): MatchResult {
       }
       return { kind: "ambiguous", candidates: byRole };
     }
-    // Role given but matches nothing exactly → fall through to the fuzzy tier (handled by caller).
+    // Role given but matches nothing exactly → fall through to the caller's fuzzy / outcome tier.
     return { kind: "none" };
   }
 
@@ -83,10 +88,23 @@ export function matchPosting(
   opts: { fuzzyStates: Set<string> },
 ): MatchResult {
   const exact = exactMatch(pool, rec);
-  // Only reach for fuzzy when exact found nothing AND we have a role to fuzzy-match on.
-  const r = norm(rec.role ?? "");
-  if (exact.kind !== "none" || !r) return exact;
+  if (exact.kind === "unique") return exact; // confident → auto-apply
 
+  // A post-apply OUTCOME (rejected / interview / offer / …) belongs to an EXISTING application —
+  // you don't get rejected from a role you never applied to. So when the company already has any
+  // active posting, NEVER insert a new one: ask the user to confirm which posting it belongs to
+  // (the whole pool — incl. tracker stages — are candidates; a single candidate is a 1-click
+  // confirm). Only a company with NO postings falls through to insert (a historical outcome).
+  if (OUTCOME_STATUS.has(rec.status ?? "") && pool.length > 0) {
+    if (exact.kind === "ambiguous") return exact; // exact-title collisions → ask over that subset
+    return { kind: "fuzzy", candidates: pool }; // none/other → ask over all active candidates
+  }
+
+  // Otherwise (e.g. a fresh "applied"): take the exact result, or try a fuzzy title match over the
+  // pre-apply stages only (never auto-repoint an applied/closed row); else it's genuinely new.
+  if (exact.kind !== "none") return exact;
+  const r = norm(rec.role ?? "");
+  if (!r) return exact;
   const fuzzy = pool.filter(
     (a) => opts.fuzzyStates.has(a.state) && fuzzyTitleMatch(rec.role ?? "", a.title ?? ""),
   );

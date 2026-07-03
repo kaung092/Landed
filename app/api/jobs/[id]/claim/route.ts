@@ -15,7 +15,8 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   } catch {
     // body is optional
   }
-  const job = claimJob(id, by);
+  // Stamp the claiming CoWork chat (thread) — see claim-next route.
+  const job = claimJob(id, by, request.headers.get("x-jobhunt-thread"));
   return job
     ? Response.json({ claimed: true, job })
     : Response.json({ claimed: false, reason: "not claimable (already claimed, ingested, or missing)" });

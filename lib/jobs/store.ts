@@ -1,7 +1,7 @@
-import { and, eq, inArray, or, lt, isNull } from "drizzle-orm";
+import { and, eq, ne, inArray, or, lt, isNull, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { jobs, postings, companies, prepCompany } from "@/lib/db/schema";
-import { getConfig, setConfig } from "@/lib/db/config-store";
+import { jobs, postings, companies, prepCompany, threads } from "@/lib/db/schema";
+import { getConfig, setConfig, deleteConfig } from "@/lib/db/config-store";
 import { logEvent, getPosting } from "@/lib/db/queries";
 import { reconcile } from "@/lib/agents/reconcile";
 import { norm, canonical } from "@/lib/agents/canonical";
@@ -29,13 +29,23 @@ export function coworkContext() {
 
 const now = () => new Date().toISOString();
 
-// A claim is a *lease*, not a permanent lock. An agent flips a job to `wip` before working it, but
-// nothing in the pipeline ever sets `failed` — so if that agent crashes, abandons the run, or stalls,
-// the claim would otherwise pin the job in `wip` forever, recoverable only by a manual requeue. After
-// the lease expires the job is treated as abandoned: claimable again (claimJob wins against it) and
-// surfaced as pending in listings, so the next CoWork run reclaims it with no manual step. A `wip` row
+// A claim is a *lease*, not a permanent lock. An agent flips a job to `wip` before working it; if that
+// agent crashes, abandons the run, or stalls, the claim would otherwise pin the job in `wip` forever.
+// After the lease expires the job is treated as abandoned: claimable again (claimJob wins against it)
+// and surfaced as pending in listings, so the next run reclaims it with no manual step. A `wip` row
 // with a null claimedAt (legacy/torn write) counts as stale too, so it can never get stuck.
 const CLAIM_LEASE_MS = 60 * 60 * 1000;
+// …but lease-reclaim alone loops a POISON job forever (it fails, expires, re-runs, fails…). So cap it:
+// after this many claims with no result, reapStuckJobs() dead-letters it to `failed`. This is the
+// reliable, AGENT-INDEPENDENT stuck signal — the app counts claims itself; it never trusts the agent
+// to report failure (an LLM agent may crash or silently give up). 3 = one real try + two reclaims.
+const CLAIM_MAX_ATTEMPTS = 3;
+// The 60-min lease is sized for the SLOWEST job, so it's far too long to notice a fast job's agent
+// died. The faster signal is the per-thread HEARTBEAT: the app stamps threads.lastSeenAt on every MCP
+// call, so a working agent pings constantly. A `wip` job whose owning thread has been silent this long
+// is treated as abandoned and reclaimed — ~minutes instead of an hour. Generous enough to not reclaim
+// a healthy job mid-work (an agent can go quiet on us while reasoning / running a Bash scrape).
+const HEARTBEAT_SILENCE_MS = 15 * 60 * 1000;
 const isStaleClaim = (status: string, claimedAt?: string | null): boolean =>
   status === "wip" && (!claimedAt || Date.parse(claimedAt) < Date.now() - CLAIM_LEASE_MS);
 // The SQL form of the lease cutoff: ISO strings are fixed-width UTC, so a text `<` compares correctly.
@@ -74,10 +84,13 @@ export type JobView = {
   status: string;
   claimedAt?: string | null;
   claimedBy?: string | null;
+  ingestedAt?: string | null;
   summary?: string | null;
   playbook?: string | null;
   task?: string | null;
   params?: Record<string, unknown>;
+  attempts?: number;
+  error?: string | null;
 };
 
 // The full job ledger + live queue (one table now). Newest first. `queued` rows are pending work
@@ -92,10 +105,43 @@ export function listJobs(): JobView[] {
       // A wip row whose lease expired reads back as `queued` — it's up for grabs again (the agent
       // and both queue UIs key off status, so it shows as pending and gets reclaimed/removable).
       status: isStaleClaim(r.status, r.claimedAt) ? "queued" : r.status,
-      claimedAt: r.claimedAt, claimedBy: r.claimedBy,
+      claimedAt: r.claimedAt, claimedBy: r.claimedBy, ingestedAt: r.ingestedAt,
       summary: r.summary, playbook: r.playbook, task: r.task, params: parseParams(r.params),
+      attempts: r.attempts, error: r.error,
     }))
     .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+}
+
+// The mechanical stuck-job watchdog — the RELIABLE backbone (never depends on the agent reporting
+// anything). Run as a tick on the /api/jobs poll. A `wip` job is ABANDONED when its agent is gone,
+// detected two ways (whichever fires first):
+//   • heartbeat — its owning thread (agent) hasn't made an MCP call in HEARTBEAT_SILENCE_MS (~min), OR
+//   • lease — the 60-min lease expired (the backstop, e.g. a job with no thread).
+// (The third signal, "agent moved on to another job", is handled instantly in tryClaim.)
+// For each abandoned job: if it's been claimed ≥ CLAIM_MAX_ATTEMPTS with no result it's poison →
+// dead-letter to `failed` (shows in "needs attention"); otherwise it still has budget → back to
+// `queued` NOW so the next agent reclaims it in minutes, not an hour. Returns how many it actioned.
+export function reapStuckJobs(): number {
+  const leaseCut = claimLeaseCutoff();
+  const beatCut = new Date(Date.now() - HEARTBEAT_SILENCE_MS).toISOString();
+  const lastSeen = new Map(db.select({ id: threads.id, seen: threads.lastSeenAt }).from(threads).all().map((t) => [t.id, t.seen]));
+  let actioned = 0;
+  for (const j of db.select().from(jobs).where(eq(jobs.status, "wip")).all()) {
+    const leaseExpired = !j.claimedAt || j.claimedAt < leaseCut;
+    const seen = j.threadId ? lastSeen.get(j.threadId) ?? null : null;
+    const threadSilent = !!j.threadId && (!seen || seen < beatCut); // the agent (thread) went quiet
+    if (!leaseExpired && !threadSilent) continue; // still actively worked — leave it
+    if ((j.attempts ?? 0) >= CLAIM_MAX_ATTEMPTS) {
+      const reason = j.error ?? `stuck: claimed ${j.attempts}× with no result (auto-failed after ${CLAIM_MAX_ATTEMPTS} attempts)`;
+      db.update(jobs).set({ status: "failed", error: reason, claimedAt: null, claimedBy: null }).where(eq(jobs.id, j.id)).run();
+      logEvent({ entity: "job", action: "flag", source: "cowork", actor: "CoWork", summary: `job ${j.id} (${j.type}) auto-failed — ${reason}` });
+    } else {
+      db.update(jobs).set({ status: "queued", claimedAt: null, claimedBy: null }).where(eq(jobs.id, j.id)).run();
+      logEvent({ entity: "job", action: "update", source: "cowork", actor: "CoWork", summary: `job ${j.id} (${j.type}) abandoned (${threadSilent ? "agent silent" : "lease expired"}) → requeued` });
+    }
+    actioned++;
+  }
+  return actioned;
 }
 
 // Queue a job (app→CoWork handoff, or CoWork self-queue via the createJob MCP tool).
@@ -106,6 +152,11 @@ export function createJob(spec: {
   createdBy?: string | null;
   task?: string;
   params?: Record<string, unknown>;
+  // Re-stamp `createdAt` to now when re-queuing an existing job, so it re-sorts as freshly queued
+  // and its "queued Xm ago" resets. Set ONLY for genuine user re-submissions (a redo) — the
+  // idempotent reconcile/sync paths that re-assert a job every poll leave it off so they don't
+  // keep resetting a job's age on each poll.
+  bumpQueuedAt?: boolean;
 }): string {
   const def = jobDef(spec.type);
   const id = spec.id?.trim() || `${spec.type}-${Date.now().toString(36)}`;
@@ -119,7 +170,10 @@ export function createJob(spec: {
     })
     // Re-queuing supersedes any prior result (e.g. a redo, or a fit re-queue) — back to pending,
     // clearing the ingested run AND any stale claim so the ledger row reflects the live queued state.
-    .onConflictDoUpdate({ target: jobs.id, set: { status: "queued", task, params, ingestedAt: null, result: null, summary: null, claimedAt: null, claimedBy: null } })
+    // A redo also bumps createdAt so it re-sorts to the top with a fresh queued time.
+    // A deliberate re-queue is a FRESH run, so reset the attempt count + dead-letter reason (a poison
+    // job auto-failed by reapStuckJobs gets its retry budget back when you re-queue it by hand).
+    .onConflictDoUpdate({ target: jobs.id, set: { status: "queued", task, params, ingestedAt: null, result: null, summary: null, claimedAt: null, claimedBy: null, attempts: 0, error: null, ...(spec.bumpQueuedAt ? { createdAt: now() } : {}) } })
     .run();
   return id;
 }
@@ -142,6 +196,21 @@ export function queueStaleWatchlistScans(staleDays = 3): { queued: number; skipp
     queued++;
   }
   return { queued, skipped, total: stale.length };
+}
+
+// Queue a `watchlist-scan` job for ONE watchlisted company on demand (the per-row "Scan now"
+// button) — same deterministic id (`watchlist-scan-<id>`) and idempotency as the bulk path, so it
+// dedups against an in-flight scan and won't duplicate a company already queued by "Scrape watchlist".
+// Unlike the bulk sweep, staleness is ignored — an explicit per-company scan always queues.
+export function queueWatchlistScan(name: string): { status: "queued" | "in-flight" | "not-found"; company?: string } {
+  const key = canonical(name)?.key;
+  const co = key ? db.select().from(companies).where(eq(companies.watchlist, true)).all().find((c) => canonical(c.name)?.key === key) : undefined;
+  if (!co) return { status: "not-found" };
+  const jid = `watchlist-scan-${co.id}`;
+  const st = new Map(listJobs().map((j) => [j.id, j.status])).get(jid);
+  if (st === "queued" || st === "wip") return { status: "in-flight", company: co.name };
+  createJob({ id: jid, type: "watchlist-scan", createdBy: "You", params: { company: co.name } });
+  return { status: "queued", company: co.name };
 }
 
 // Remove a job from the queue (the floating CoWork queue / CoWork page). Only `queued` rows are
@@ -244,10 +313,15 @@ export function activeQueueType(): string | null {
 // The UPDATE only matches a row still `queued` (or one whose lease expired, see CLAIM_LEASE_MS), so
 // concurrent claims race on the DB and exactly one wins (changes === 1). Returns the claimed job for
 // that winner, else null. Reclaiming a stale lease re-stamps claimedAt.
-function tryClaim(id: string, by?: string | null): JobView | null {
+function tryClaim(id: string, by?: string | null, threadId?: string | null): JobView | null {
   const claimedBy = by?.trim() || "CoWork";
+  const tid = threadId?.trim() || null;
   const res = db.update(jobs)
-    .set({ status: "wip", claimedAt: now(), claimedBy })
+    // Stamp the CoWork chat (thread) that won the claim so the job groups under it in the CoWork
+    // page. Server-derived from the per-chat MCP process's header — the agent passes nothing.
+    // Bump `attempts` on EVERY claim (incl. lease-expiry reclaims) — this is the mechanical,
+    // agent-independent count reapStuckJobs() uses to dead-letter a job that never produces a result.
+    .set({ status: "wip", claimedAt: now(), claimedBy, attempts: sql`${jobs.attempts} + 1`, ...(tid ? { threadId: tid } : {}) })
     .where(and(eq(jobs.id, id), or(
       eq(jobs.status, "queued"),
       // an abandoned claim: wip past its lease, or a wip row that never got a claimedAt stamp
@@ -255,6 +329,17 @@ function tryClaim(id: string, by?: string | null): JobView | null {
     )))
     .run();
   if (res.changes === 0) return null; // not claimable: a live lease holds it, or it isn't queued
+  // Moved-on release: an agent works ONE job at a time, so if this thread was still holding an OLDER
+  // `wip` job, it abandoned it the moment it claimed this one — kick that one back to the queue NOW
+  // (don't wait out its 60-min lease). This catches the gap the per-thread heartbeat can't: the agent
+  // is alive (working this job), but the old one is dead.
+  if (tid) {
+    const released = db.update(jobs)
+      .set({ status: "queued", claimedAt: null, claimedBy: null })
+      .where(and(eq(jobs.threadId, tid), eq(jobs.status, "wip"), ne(jobs.id, id)))
+      .run();
+    if (released.changes) logEvent({ entity: "job", action: "update", source: "cowork", actor: "CoWork", summary: `released ${released.changes} stale wip job(s) — agent moved on to ${id}` });
+  }
   const job = listJobs().find((j) => j.id === id) ?? null;
   if (job) logEvent({ entity: "job", action: "update", source: "cowork", actor: "CoWork", summary: `claimed ${job.type} job ${id} (wip)` });
   return job;
@@ -263,8 +348,8 @@ function tryClaim(id: string, by?: string | null): JobView | null {
 // Claim a SPECIFIC job by id, so two agents never run the same one. Any type is claimable (parallel
 // runs across types are allowed); returns the claimed job, or null when it lost the race / the job is
 // already done or missing. `by` tags the holder.
-export function claimJob(id: string, by?: string | null): JobView | null {
-  return tryClaim(id, by);
+export function claimJob(id: string, by?: string | null, threadId?: string | null): JobView | null {
+  return tryClaim(id, by, threadId);
 }
 
 // Atomically lease the single oldest claimable job and return it WITH its task/params — the dequeue
@@ -273,25 +358,54 @@ export function claimJob(id: string, by?: string | null): JobView | null {
 // different types in parallel; keep passing the same `type` for the whole run. Omit it to take the
 // active type (joins whatever's in flight, so a plain "clear my queue" run stays on one type). One job
 // per call, so N agents still share the queue. `by` tags the holder.
-export function claimNext(by?: string | null, type?: string | null): JobView | null {
+export function claimNext(by?: string | null, type?: string | null, threadId?: string | null): JobView | null {
+  // Watchdog tick BEFORE dequeuing — so a drain loop can terminate honestly. An abandoned job under
+  // budget is requeued (reclaimable); one claimed ≥ CLAIM_MAX_ATTEMPTS with no result is dead-lettered
+  // to `failed` (no longer claimable). Without this, an uncompletable job (e.g. a browser-only
+  // `leveling` job a headless runner can't finish) re-leases forever and the loop never reaches
+  // "no job". Previously this watchdog only ran on the /api/jobs UI poll, not in the claim path.
+  reapStuckJobs();
   const target = type ?? activeQueueType();
   if (!target) return null;
   const claimable = listJobs()
     .filter((j) => j.status === "queued" && j.type === target)
     .sort((a, b) => a.createdAt.localeCompare(b.createdAt)); // oldest first
   for (const cand of claimable) {
-    const won = tryClaim(cand.id, by); // atomic; loses the race → try the next candidate
+    const won = tryClaim(cand.id, by, threadId); // atomic; loses the race → try the next candidate
     if (won) return won;
   }
   return null;
 }
 
+// ── App → CoWork wake signal ──
+// A pinned CoWork chat loops on the `waitForWork` MCP tool (→ /api/jobs/wait), which blocks until
+// there's claimable work of its type OR the user clicks "Drain" in the app. That click sets this
+// one-shot trigger; the next wait poll consumes it and the agent wakes. This is what lets the app
+// drive a waiting chat without you switching to CoWork to prompt.
+const TRIGGER_KEY = (type: string) => `cowork_trigger:${type}`;
+export function setDrainTrigger(type: string): void {
+  setConfig(TRIGGER_KEY(type), now());
+}
+// Consume the trigger (one-shot): true if one was pending, and it's cleared so it fires once.
+export function takeDrainTrigger(type: string): boolean {
+  if (getConfig(TRIGGER_KEY(type))) {
+    deleteConfig(TRIGGER_KEY(type));
+    return true;
+  }
+  return false;
+}
+// How many jobs of `type` are claimable right now (queued, incl. stale-lease wip via listJobs).
+export function queuedCountForType(type: string): number {
+  return listJobs().filter((j) => j.status === "queued" && j.type === type).length;
+}
+
 // Manually return a stuck/failed job to the queue (the user's recovery when an agent claimed a job
-// but never finished). Clears the claim so another agent can pick it up. Only `wip`/`failed` rows
-// requeue — an ingested row is history and a queued row is already pending. Returns whether it moved.
+// but never finished, or it was auto-dead-lettered). Clears the claim so another agent can pick it up,
+// and resets the attempt budget + dead-letter reason so it gets a fresh run (not instantly re-failed).
+// Only `wip`/`failed` rows requeue — an ingested row is history and a queued row is already pending.
 export function requeueJob(id: string): boolean {
   const res = db.update(jobs)
-    .set({ status: "queued", claimedAt: null, claimedBy: null, ingestedAt: null })
+    .set({ status: "queued", claimedAt: null, claimedBy: null, ingestedAt: null, attempts: 0, error: null })
     .where(and(eq(jobs.id, id), inArray(jobs.status, ["wip", "failed"])))
     .run();
   if (res.changes === 0) return false;
@@ -317,6 +431,38 @@ export function maybeQueuePrepResearch(companyId: number, beforeStatus: string |
   } catch {
     // queueing prep research must never break the status update that triggered it
   }
+}
+
+// The first-hand intel snapshot a posting carries into prep-research — comp structure, team/product
+// notes, and the recruiter-described loop. The job treats this as authoritative ground truth (see
+// instructions/prep-research.md), grounding the prep page in the real loop instead of guesses.
+function prepIntelFor(p: Posting): { comp?: string; teamNotes?: string; rounds?: { kind?: string; date?: string; notes?: string }[] } | undefined {
+  const rounds = (p.interviews ?? []).map((r) => ({ kind: r.kind, date: r.date, notes: r.notes })).filter((r) => r.kind || r.date || r.notes);
+  const intel = {
+    ...(p.comp?.trim() ? { comp: p.comp.trim() } : {}),
+    ...(p.teamNotes?.trim() ? { teamNotes: p.teamNotes.trim() } : {}),
+    ...(rounds.length ? { rounds } : {}),
+  };
+  return Object.keys(intel).length ? intel : undefined;
+}
+
+// Manually (re)queue a prep-research job for one posting's company, carrying its current intel
+// snapshot. Idempotent on the deterministic `prep-research-<companyId>` id — createJob supersedes a
+// prior run, so the drawer's "Generate prep" button re-runs cleanly. Returns the job id (or null if
+// the posting is gone).
+export function queuePrepResearch(appId: number): { jobId: string; slug: string | null } | null {
+  const row = db.select().from(postings).where(eq(postings.id, appId)).get();
+  const p = getPosting(appId);
+  if (!row || !p) return null;
+  const companyId = row.companyId;
+  const intel = prepIntelFor(p);
+  const jobId = createJob({
+    id: `prep-research-${companyId}`,
+    type: "prep-research",
+    createdBy: "You",
+    params: { company: p.company, role: p.role, ...(intel ? { intel } : {}) },
+  });
+  return { jobId, slug: canonical(p.company)?.key ?? null };
 }
 
 // --- fit queue (postings sent for fit assessment) ----------------------------------------
@@ -357,7 +503,7 @@ export function listFitQueue(): FitQueueItem[] {
 function ensureFitQueueCandidate(company: string, role?: string, url?: string): number {
   const key = canonical(company)?.key;
   let co = key ? db.select().from(companies).all().find((c) => canonical(c.name)?.key === key) : undefined;
-  if (!co) co = db.insert(companies).values({ name: company, tier: "practice" }).returning().get();
+  if (!co) { const ts = new Date().toISOString(); co = db.insert(companies).values({ name: company, tier: "tier3", createdAt: ts, updatedAt: ts }).returning().get(); }
   const list = db.select().from(postings).where(eq(postings.companyId, co.id)).all();
   const existing = (url ? list.find((c) => c.url === url) : undefined)
     ?? (role ? list.find((c) => norm(c.title) === norm(role)) : undefined);
@@ -483,7 +629,7 @@ function tailoringTask(p: Posting, version: number, targetSlug: string): string 
 // Queue (or re-assert) the tailoring job for a posting, targeting the NEXT version folder and
 // carrying the redo conversation. Used for the first tailor (v1, via syncTailoringJob) and every
 // redo (vN, via requeueRedo). Idempotent on the stable per-posting job id.
-export function enqueueTailoring(p: Posting): void {
+export function enqueueTailoring(p: Posting, opts?: { bumpQueuedAt?: boolean }): void {
   const version = nextVersion(p.redoLog ?? [], "tailor");
   const targetSlug = `${baseSlugForPosting(p)}/v${version}`;
   // Carry the JD from the fit job if we have it; else fall back to the JD stored on the posting row
@@ -500,6 +646,7 @@ export function enqueueTailoring(p: Posting): void {
     // redoNote rides on the job so the live UI (which reads the queue, not the posting) can show the
     // "Queued for redo" tag + pre-fill the editable note — present only when this is a redo.
     params: { postings: [{ id: Number(p.id), company: p.company, role: p.role, url: p.url, slug: targetSlug, version, ...(jd ? { jd } : {}) }], ...(redoNote ? { redoNote } : {}) },
+    bumpQueuedAt: opts?.bumpQueuedAt,
   });
 }
 
@@ -548,6 +695,7 @@ export function enqueueFitRedo(p: Posting): void {
     task: fitRedoTask(p),
     // redoNote rides on the job for the live "Queued for redo" tag + editable pre-fill (see enqueueTailoring).
     params: { postings: [{ id: Number(p.id), company: p.company, role: p.role, url: p.url, ...(jd ? { jd } : {}) }], ...(redoNote ? { redoNote } : {}) },
+    bumpQueuedAt: true, // a fit redo is always a fresh user re-submission → refresh its queued time
   });
 }
 
@@ -570,7 +718,8 @@ export function requeueRedo(appId: number, phase: RedoPhase, note: string): { ve
 
   const p = getPosting(appId);
   if (!p) return null;
-  if (phase === "tailor") enqueueTailoring(p);
+  // A redo is a fresh user re-submission → bump the job's queued time so it re-sorts to the top.
+  if (phase === "tailor") enqueueTailoring(p, { bumpQueuedAt: true });
   else enqueueFitRedo(p);
 
   const version = nextVersion(p.redoLog ?? [], phase);

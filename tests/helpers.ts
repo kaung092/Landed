@@ -23,21 +23,25 @@ export function seedApp(opts: {
   company: string;
   role?: string;
   status?: Status;
-  tier?: "top_target" | "target" | "practice";
+  tier?: "tier1" | "tier2" | "tier3";
   interviewed?: boolean;
   appliedDate?: string;
 }): number {
   const existing = db.select().from(companies).all().find((c) => c.name === opts.company);
   const companyId =
     existing?.id ??
-    db.insert(companies).values({ name: opts.company, tier: opts.tier ?? "practice" }).returning({ id: companies.id }).get().id;
+    db.insert(companies).values({ name: opts.company, tier: opts.tier ?? "tier3" }).returning({ id: companies.id }).get().id;
+  // opts.status is the view-level Status; the stored column is `state`. They share names except
+  // "discovered" (the view label for a fit-queue posting), whose stored state is "fit_queue".
+  const st = opts.status ?? "applied";
+  const state = (st === "discovered" ? "fit_queue" : st) as typeof postings.$inferInsert.state;
   return db
     .insert(postings)
     .values({
       companyId,
       title: opts.role ?? "Engineer",
       verdict: "kept",
-      state: (opts.status ?? "applied") as typeof postings.$inferInsert.state,
+      state,
       interviewed: opts.interviewed ?? false,
       appliedDate: opts.appliedDate ?? "2026-06-01",
       updatedAt: "2026-06-01",
@@ -58,7 +62,7 @@ export function seedCandidate(opts: {
   const existing = db.select().from(companies).all().find((c) => c.name === opts.company);
   const companyId =
     existing?.id ??
-    db.insert(companies).values({ name: opts.company, tier: "practice" }).returning({ id: companies.id }).get().id;
+    db.insert(companies).values({ name: opts.company, tier: "tier3" }).returning({ id: companies.id }).get().id;
   return db
     .insert(postings)
     .values({

@@ -28,6 +28,27 @@ test("reconcileTailoringQueue re-queues a tailoring candidate stranded without a
   assert.equal(reconcileTailoringQueue(), 0, "no duplicate when a live job already covers it");
 });
 
+test("submitting a redo bumps the job's queued time (createdAt) so it re-sorts as freshly queued", () => {
+  const id = seedCandidate({ company: "Figma", title: "Staff Engineer", state: "tailoring" });
+  enqueueTailoring(getPosting(id)!);
+  const jid = `tailoring-app-${id}`;
+
+  // Backdate the queued job so a bump is unambiguously detectable.
+  const old = "2020-01-01T00:00:00.000Z";
+  db.update(jobs).set({ createdAt: old }).where(eq(jobs.id, jid)).run();
+
+  // An idempotent re-assert (sync/reconcile path) must NOT bump the queued time.
+  enqueueTailoring(getPosting(id)!);
+  assert.equal(db.select().from(jobs).where(eq(jobs.id, jid)).get()!.createdAt, old, "plain enqueue leaves createdAt untouched");
+
+  // A redo IS a fresh user re-submission → createdAt advances to now.
+  requeueRedo(id, "tailor", "Lead with platform work.");
+  const after = db.select().from(jobs).where(eq(jobs.id, jid)).get()!;
+  assert.equal(after.status, "queued");
+  assert.ok(after.createdAt > old, "redo bumps createdAt forward");
+  assert.ok(Date.now() - Date.parse(after.createdAt) < 60_000, "createdAt is freshly stamped to ~now");
+});
+
 test("reconcileTailoringQueue leaves healthy candidates alone (tailored w/o redo, or already queued)", () => {
   // A tailored candidate with no pending redo needs no job.
   const done = seedCandidate({ company: "Ramp", title: "Senior Engineer", state: "tailored" });

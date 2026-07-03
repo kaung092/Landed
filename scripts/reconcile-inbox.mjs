@@ -6,6 +6,7 @@
 // and DB-only apps inbox missed; alias-map renames; flag low-confidence rows.
 import D from "better-sqlite3";
 import fs from "node:fs";
+import { isTarget } from "../lib/targets.mjs";
 
 const APPLY = process.argv.includes("--apply");
 // Path to the inbox-audit CSV. Override with INBOX_AUDIT_CSV; defaults to one in the asset root.
@@ -13,12 +14,6 @@ const CSV = process.env.INBOX_AUDIT_CSV || "data/inbox-audit.csv";
 const DB_PATH = "data/jobhunt.db";
 const now = new Date().toISOString();
 const today = now.slice(0, 10);
-
-const TARGETS = new Set(
-  ["google","meta","netflix","apple","microsoft","databricks","anthropic","openai",
-   "airbnb","figma","github","spotify","confluent","perplexity","notion","glean",
-   "huggingface","scaleai","cursor","datadog"]
-);
 
 const norm = (s) => (s || "").toLowerCase().replace(/[^a-z0-9]/g, "");
 
@@ -90,9 +85,9 @@ for (const [key, inbox] of inboxByKey) {
   const dbEntry = dbByKey.get(key);
   const dbRows = dbEntry?.rows ?? [];
   const dbAppCount = dbRows.reduce((n, r) => n + (appsByCompanyId.get(r.id)?.length ?? 0), 0);
-  const tier = dbRows.some((r) => r.tier === "target") ? "target"
-    : dbRows.length ? "practice"
-    : TARGETS.has(key) ? "target" : "practice";
+  const tier = dbRows.some((r) => r.tier === "tier2" || r.tier === "tier1") ? "tier2"
+    : dbRows.length ? "tier3"
+    : isTarget(key) ? "tier2" : "tier3";
   if (!dbRows.length) plan.newCompanies.push({ key, name: inbox.name, tier, n: inbox.apps.length });
   if (dbRows.length > 1) plan.merges.push({ name: inbox.name, dups: dbRows.map((r) => r.name) });
   plan.supersede.push({ key, name: inbox.name, tier, was: dbAppCount, now: inbox.apps.length });
@@ -149,18 +144,18 @@ const tx = db.transaction(() => {
   for (const [key, inbox] of inboxByKey) {
     const dbEntry = dbByKey.get(key);
     let rows = dbEntry?.rows ?? [];
-    let tier = rows.some((r) => r.tier === "target") ? "target"
-      : rows.length ? "practice" : TARGETS.has(key) ? "target" : "practice";
+    let tier = rows.some((r) => r.tier === "tier2" || r.tier === "tier1") ? "tier2"
+      : rows.length ? "tier3" : isTarget(key) ? "tier2" : "tier3";
 
     // ensure a single canonical company row
     let companyId;
     if (!rows.length) {
-      companyId = db.prepare("insert into companies(name,tier) values (?,?)").run(inbox.name, tier).lastInsertRowid;
+      companyId = db.prepare("insert into companies(name,tier,created_at,updated_at) values (?,?,?,?)").run(inbox.name, tier, now, now).lastInsertRowid;
       ev({ entity: "company", entityId: companyId, action: "insert", summary: `new company ${inbox.name} [${tier}] from inbox` });
     } else {
-      const primary = rows.find((r) => r.tier === "target") ?? rows[0];
+      const primary = rows.find((r) => r.tier === "tier2" || r.tier === "tier1") ?? rows[0];
       companyId = primary.id;
-      db.prepare("update companies set name=?, tier=? where id=?").run(inbox.name, tier, companyId);
+      db.prepare("update companies set name=?, tier=?, updated_at=? where id=?").run(inbox.name, tier, now, companyId);
       // merge duplicate company rows into primary
       for (const dup of rows.filter((r) => r.id !== companyId)) {
         db.prepare("update applications set company_id=? where company_id=?").run(companyId, dup.id);

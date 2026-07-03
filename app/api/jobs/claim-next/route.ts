@@ -17,5 +17,8 @@ export async function POST(request: Request) {
   } catch {
     // body is optional
   }
-  return Response.json({ job: claimNext(by, type) });
+  // The per-chat MCP process tags every call with its thread id — stamp it on the claim so the job
+  // groups under the CoWork chat that's running it (server-derived; the agent passes nothing).
+  const threadId = request.headers.get("x-jobhunt-thread");
+  return Response.json({ job: claimNext(by, type, threadId) });
 }

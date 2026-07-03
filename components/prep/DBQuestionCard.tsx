@@ -5,6 +5,7 @@ import { ChevronDown } from "lucide-react";
 import type { PrepQuestion } from "@/lib/db/prep";
 import { usePrep } from "@/hooks/usePrep";
 import AttemptControl from "./AttemptControl";
+import ConfidenceTag from "./ConfidenceTag";
 import { Badge, diffCls } from "./ui";
 
 // Databricks bespoke scenario question: prompt + why-it-matters, then approach,
@@ -25,6 +26,7 @@ export default function DBQuestionCard({
         <button onClick={() => setOpen((o) => !o)} className="flex w-full items-start gap-3 text-left">
           <div className="min-w-0 flex-1">
             <div className="flex flex-wrap items-center gap-2">
+              <ConfidenceTag q={q} />
               {q.priority && <Badge className="text-rose-300 bg-rose-500/10 ring-rose-500/25">{q.priority}</Badge>}
               <span className={`text-sm font-semibold ${q.done ? "text-zinc-400" : "text-zinc-100"}`}>{q.name}</span>
               {q.difficulty && <Badge className={diffCls(q.difficulty)}>{q.difficulty}</Badge>}

@@ -13,6 +13,7 @@ import type { IncomingApp } from "@/lib/agents/types";
 import { TRACKER_STAGES } from "@/lib/pipeline";
 
 const today = () => new Date().toISOString().slice(0, 10);
+const now = () => new Date().toISOString(); // full ISO — for company audit timestamps
 
 // A stored interview row → the view model. Rounds sort by `round`, then date.
 function toRound(r: InterviewRow): InterviewRound {
@@ -66,6 +67,8 @@ function toPosting(a: PostingRow, c: CompanyRow, rounds?: InterviewRound[]): Pos
     redoLog: parseRedoLog(a.redoLog),
     leveling: parseLeveling(c.leveling),
     note: a.note ?? undefined,
+    comp: a.comp ?? undefined,
+    teamNotes: a.teamNotes ?? undefined,
     comments: parseComments(a.comments),
     history: a.historical,
     discoveredAt: a.discoveredAt ?? undefined,
@@ -112,6 +115,60 @@ export function upsertInterviews(appId: number, rounds: InterviewRound[]): numbe
     }
   }
   return changed;
+}
+
+// Add one hand-authored interview round to a posting. Appended after the highest existing round
+// number so it sorts last; inbox-sync (upsertInterviews) keeps matching on `round`, so synced and
+// hand-authored rounds coexist. `notes` doubles as the format/focus the recruiter described (fed to
+// prep-research). Returns the updated Posting, or null if the posting is gone.
+export function addInterviewRound(
+  appId: number,
+  round: Pick<InterviewRound, "kind" | "date" | "outcome" | "notes">,
+): Posting | null {
+  const raw = db.select().from(postings).where(eq(postings.id, appId)).get();
+  if (!raw) return null;
+  const maxRound = db
+    .select()
+    .from(interviews)
+    .where(eq(interviews.applicationId, appId))
+    .all()
+    .reduce((m, r) => Math.max(m, r.round ?? 0), 0);
+  db.insert(interviews)
+    .values({
+      applicationId: appId,
+      round: maxRound + 1,
+      kind: round.kind ?? null,
+      date: round.date ?? null,
+      outcome: round.outcome ?? null,
+      notes: round.notes ?? null,
+    })
+    .run();
+  return getPosting(appId);
+}
+
+// Edit one interview round by its row id. Only the provided fields change. Returns the updated
+// Posting (resolved from the round's posting), or null if the round is gone.
+export function updateInterviewRound(
+  roundId: number,
+  patch: Partial<Pick<InterviewRound, "kind" | "date" | "outcome" | "notes">>,
+): Posting | null {
+  const row = db.select().from(interviews).where(eq(interviews.id, roundId)).get();
+  if (!row) return null;
+  const set: Record<string, unknown> = {};
+  if ("kind" in patch) set.kind = patch.kind ?? null;
+  if ("date" in patch) set.date = patch.date ?? null;
+  if ("outcome" in patch) set.outcome = patch.outcome ?? null;
+  if ("notes" in patch) set.notes = patch.notes ?? null;
+  if (Object.keys(set).length) db.update(interviews).set(set).where(eq(interviews.id, roundId)).run();
+  return getPosting(row.applicationId);
+}
+
+// Delete one interview round by its row id. Returns the updated Posting, or null if it was gone.
+export function deleteInterviewRound(roundId: number): Posting | null {
+  const row = db.select().from(interviews).where(eq(interviews.id, roundId)).get();
+  if (!row) return null;
+  db.delete(interviews).where(eq(interviews.id, roundId)).run();
+  return getPosting(row.applicationId);
 }
 
 // --- change log ---
@@ -215,6 +272,18 @@ export function getPostingJd(id: number): string | null {
   return r?.jd ?? null;
 }
 
+// Replace the text of the comment at `index`. Out-of-range or empty text → no-op.
+export function editComment(id: number, index: number, text: string): Posting | null {
+  const t = text.trim();
+  const raw = db.select().from(postings).where(eq(postings.id, id)).get();
+  if (!raw || !t) return null;
+  const list = parseComments(raw.comments);
+  if (index < 0 || index >= list.length) return getPosting(id);
+  list[index] = { ...list[index], text: t, editedAt: new Date().toISOString() };
+  db.update(postings).set({ comments: JSON.stringify(list) }).where(eq(postings.id, id)).run();
+  return getPosting(id);
+}
+
 // Delete the comment at `index` from a posting's thread. Out-of-range → no-op.
 export function deleteComment(id: number, index: number): Posting | null {
   const raw = db.select().from(postings).where(eq(postings.id, id)).get();
@@ -245,6 +314,8 @@ export type ApplicationPatch = Partial<{
   fitScore: number | null; fitDetail: string | null; resumeDir: string | null;
   appliedDate: string | null; channel: "direct" | "referral" | null; note: string | null; interviewed: boolean;
   pinned: boolean; chosenResume: string | null; editedResumes: string[];
+  comp: string | null; teamNotes: string | null;
+  updatedAt: string | null; // manually settable (e.g. the rejected/closed date) — overrides the auto-stamp
 }>;
 const PATCH_COL: Record<string, string> = { status: "state", role: "title" };
 const patchCol = (k: string) => PATCH_COL[k] ?? k;
@@ -266,7 +337,7 @@ export function updateApplication(id: number, patch: ApplicationPatch, actor?: s
   const fmt = (v: unknown) => (v == null || v === "" ? undefined : String(v));
   const raw = rawBefore as Record<string, unknown>;
   for (const key of Object.keys(patch) as (keyof ApplicationPatch)[]) {
-    if (key === "pinned" || key === "editedResumes") continue; // UI preferences, not auditable changes
+    if (key === "pinned" || key === "editedResumes" || key === "updatedAt") continue; // UI prefs / metadata timestamp — not auditable field changes
     const oldValue = fmt(raw[patchCol(key)]);
     const newValue = fmt(patch[key]);
     if (oldValue === newValue) continue;
@@ -285,7 +356,7 @@ export function setCompanyName(id: number, name: string, actor?: string): Postin
   if (!app) return null;
   const co = db.select().from(companies).where(eq(companies.id, app.companyId)).get();
   if (co && trimmed && co.name !== trimmed) {
-    db.update(companies).set({ name: trimmed }).where(eq(companies.id, app.companyId)).run();
+    db.update(companies).set({ name: trimmed, updatedAt: now() }).where(eq(companies.id, app.companyId)).run();
     logEvent({
       entity: "company", entityId: co.id, action: "update", field: "name", ...by(actor),
       oldValue: co.name, newValue: trimmed, summary: `${co.name} → ${trimmed} · renamed`,
@@ -313,9 +384,10 @@ export function moveApplicationToCompany(id: number, name: string, actor?: strin
 
   if (!target) {
     const tier = defaultTier(c.key);
-    const newId = db.insert(companies).values({ name: trimmed, tier }).returning({ id: companies.id }).get().id;
+    const ts = now();
+    const newId = db.insert(companies).values({ name: trimmed, tier, createdAt: ts, updatedAt: ts }).returning({ id: companies.id }).get().id;
     logEvent({ entity: "company", entityId: newId, action: "insert", ...by(actor), summary: `new company ${trimmed} [${tier}]` });
-    target = { id: newId, name: trimmed, tier, careersUrl: null, ats: null, notes: null } as CompanyRow;
+    target = { id: newId, name: trimmed, tier, careersUrl: null, ats: null, notes: null, createdAt: ts, updatedAt: ts } as CompanyRow;
   }
 
   db.update(postings).set({ companyId: target.id, updatedAt: today() }).where(eq(postings.id, id)).run();
@@ -332,7 +404,7 @@ export function setTierForApplication(id: number, tier: Tier, actor?: string): P
   if (!app) return null;
   const co = db.select().from(companies).where(eq(companies.id, app.companyId)).get();
   if (co && co.tier !== tier) {
-    db.update(companies).set({ tier }).where(eq(companies.id, app.companyId)).run();
+    db.update(companies).set({ tier, updatedAt: now() }).where(eq(companies.id, app.companyId)).run();
     logEvent({
       entity: "company", entityId: co.id, action: "update", field: "tier", ...by(actor),
       oldValue: co.tier, newValue: tier, summary: `${co.name} · tier ${co.tier} → ${tier}`,
@@ -425,7 +497,7 @@ export function upsertCompanies(
     const existing = all.find((x) => canonical(x.name)?.key === c.key);
     if (existing) {
       if (Object.keys(patch).length) {
-        db.update(companies).set(patch).where(eq(companies.id, existing.id)).run();
+        db.update(companies).set({ ...patch, updatedAt: now() }).where(eq(companies.id, existing.id)).run();
         logEvent({
           entity: "company", entityId: existing.id, action: "update", actor: meta.actor, source: meta.source,
           summary: `${existing.name} · company updated (${Object.keys(patch).join(", ")})`,
@@ -435,7 +507,8 @@ export function upsertCompanies(
       out.push(db.select().from(companies).where(eq(companies.id, existing.id)).get()!);
     } else {
       const tier = t.tier ?? defaultTier(c.key);
-      const id = db.insert(companies).values({ name: c.name, ...patch, tier }).returning({ id: companies.id }).get().id;
+      const ts = now();
+      const id = db.insert(companies).values({ name: c.name, ...patch, tier, createdAt: ts, updatedAt: ts }).returning({ id: companies.id }).get().id;
       logEvent({
         entity: "company", entityId: id, action: "insert", actor: meta.actor, source: meta.source,
         summary: `new company ${c.name} [${tier}]`,
@@ -463,7 +536,8 @@ export function setWatchlist(
   if (!existing) {
     if (!on) return null; // removing a company we don't track → nothing to do
     const tier = defaultTier(c.key);
-    const id = db.insert(companies).values({ name: c.name, tier, watchlist: true }).returning({ id: companies.id }).get().id;
+    const ts = now();
+    const id = db.insert(companies).values({ name: c.name, tier, watchlist: true, createdAt: ts, updatedAt: ts }).returning({ id: companies.id }).get().id;
     logEvent({
       entity: "company", entityId: id, action: "insert", actor: meta.actor, source: meta.source,
       summary: `new company ${c.name} [${tier}] · added to watchlist`,
@@ -472,7 +546,7 @@ export function setWatchlist(
   }
 
   if (!!existing.watchlist !== on) {
-    db.update(companies).set({ watchlist: on }).where(eq(companies.id, existing.id)).run();
+    db.update(companies).set({ watchlist: on, updatedAt: now() }).where(eq(companies.id, existing.id)).run();
     logEvent({
       entity: "company", entityId: existing.id, action: "update", field: "watchlist", actor: meta.actor, source: meta.source,
       summary: `${existing.name} · ${on ? "added to" : "removed from"} watchlist`,
