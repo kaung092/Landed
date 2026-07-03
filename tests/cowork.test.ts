@@ -109,6 +109,37 @@ test("inbox-sync 'applied' matches an existing tailoring candidate and advances 
   assert.equal(row.appliedDate, "2026-06-25");
 });
 
+test("a rejection never inserts a new posting when the company has one — it raises a confirm (pending match), then resolving it applies the rejection", () => {
+  // One Globex posting in the interview stage, stored title "Senior Platform Engineer".
+  const id = seedApp({ company: "Globex", role: "Senior Platform Engineer", status: "interview", interviewed: true });
+  const companyId = db.select().from(postings).where(eq(postings.id, id)).get()!.companyId;
+
+  // A rejection email with a generic, non-matching role ("Software Engineer"). The role doesn't match
+  // exactly, so it's NOT auto-applied — but it must NOT spawn a duplicate either. It parks a pending
+  // match against the existing posting for the user to confirm.
+  submitJobResult({
+    type: "inbox-sync",
+    jobId: "inbox-sync-percepta",
+    records: [{ company: "Globex", role: "Software Engineer", status: "rejected" }],
+  });
+
+  const rows = db.select().from(postings).where(eq(postings.companyId, companyId)).all();
+  assert.equal(rows.length, 1, "no duplicate posting inserted");
+  assert.equal(rows[0].state, "interview", "not auto-applied — awaits confirmation");
+
+  const pending = listPendingMatches().filter((m) => m.companyName === "Globex");
+  assert.equal(pending.length, 1, "a pending match was raised");
+  assert.equal(pending[0].incoming.status, "rejected");
+  assert.deepEqual(pending[0].candidates.map((c) => c.id), [id], "the existing posting is the candidate");
+
+  // Confirming the match applies the rejection onto the existing posting.
+  const res = resolvePendingMatch(pending[0].id, "apply", id);
+  assert.equal(res.ok, true);
+  const after = db.select().from(postings).where(eq(postings.id, id)).get()!;
+  assert.equal(after.state, "rejected");
+  assert.equal(after.interviewed, true, "interviewed flag preserved");
+});
+
 // --- change-log actor attribution (CoWork's MCP edits vs the app UI) ----------------------
 
 test("updateApplication attributes the change-log event to the passed actor (CoWork), not the You default", () => {
@@ -349,7 +380,7 @@ test("createJob queues a fit job that listFitQueue surfaces, and submitJobResult
 test("upsertCompanies inserts new records with config and patches existing ones by canonical name", () => {
   // insert with full scrape config + criteria
   const ins = upsertCompanies([
-    { name: "Databricks", tier: "target", ats: "greenhouse", slug: "databricks", titles: ["Senior"], location: "NYC|remote" },
+    { name: "Databricks", tier: "tier2", ats: "greenhouse", slug: "databricks", titles: ["Senior"], location: "NYC|remote" },
   ]);
   assert.equal(ins.inserted, 1);
   const db1 = ins.upserted[0];
@@ -365,12 +396,12 @@ test("upsertCompanies inserts new records with config and patches existing ones 
   const after = upd.upserted[0];
   assert.equal(after.endpoint, "https://boards-api.greenhouse.io/databricks");
   assert.equal(after.slug, "databricks", "slug preserved on partial update");
-  assert.equal(after.tier, "target", "tier preserved on partial update");
+  assert.equal(after.tier, "tier2", "tier preserved on partial update");
 });
 
 test("watchlist is separate from company records: setWatchlist toggles membership, upsert leaves it alone", () => {
   // a curated company is NOT on the watchlist by default
-  upsertCompanies([{ name: "Databricks", tier: "target", slug: "databricks" }]);
+  upsertCompanies([{ name: "Databricks", tier: "tier2", slug: "databricks" }]);
   assert.equal(listWatchlist().length, 0, "upsert doesn't add to the watchlist");
 
   // add it to the watchlist (scan list) — independent of its record
@@ -423,10 +454,10 @@ test("addComment/deleteComment append + remove a posting's personal comment thre
 test("queueStaleWatchlistScans queues only stale, watchlisted companies — idempotently", () => {
   const old = new Date(Date.now() - 5 * 86_400_000).toISOString();
   const fresh = new Date().toISOString();
-  db.insert(companies).values({ name: "FreshCo", tier: "practice", watchlist: true, lastScrapedAt: fresh }).run();
-  db.insert(companies).values({ name: "StaleCo", tier: "practice", watchlist: true, lastScrapedAt: old }).run();
-  db.insert(companies).values({ name: "NeverCo", tier: "practice", watchlist: true, lastScrapedAt: null }).run();
-  db.insert(companies).values({ name: "OffWL", tier: "practice", watchlist: false, lastScrapedAt: old }).run();
+  db.insert(companies).values({ name: "FreshCo", tier: "tier3", watchlist: true, lastScrapedAt: fresh }).run();
+  db.insert(companies).values({ name: "StaleCo", tier: "tier3", watchlist: true, lastScrapedAt: old }).run();
+  db.insert(companies).values({ name: "NeverCo", tier: "tier3", watchlist: true, lastScrapedAt: null }).run();
+  db.insert(companies).values({ name: "OffWL", tier: "tier3", watchlist: false, lastScrapedAt: old }).run();
 
   const r = queueStaleWatchlistScans(3);
   assert.equal(r.queued, 2); // StaleCo + NeverCo (FreshCo recent, OffWL not watchlisted)
@@ -439,7 +470,7 @@ test("queueStaleWatchlistScans queues only stale, watchlisted companies — idem
 });
 
 test("closing a watchlist-scan job stamps the company's lastScrapedAt (so it isn't re-queued)", () => {
-  db.insert(companies).values({ name: "ScanMe", tier: "practice", watchlist: true, lastScrapedAt: null }).run();
+  db.insert(companies).values({ name: "ScanMe", tier: "tier3", watchlist: true, lastScrapedAt: null }).run();
   queueStaleWatchlistScans(3);
   const job = listJobs().find((j) => j.type === "watchlist-scan" && j.params?.company === "ScanMe")!;
   claimJob(job.id, "agent-A"); // submit gate requires a live lease

@@ -29,8 +29,69 @@
 const BASE_URL = (process.env.JOBHUNT_URL || "http://localhost:3000").replace(/\/$/, "");
 const SERVER = { name: "jobhunt", version: "1.0.0" };
 
+// THREAD IDENTITY. Claude Desktop launches a fresh copy of this server per CoWork chat, so this
+// process *is* one chat ("thread"). Mint a stable id at boot and tag every call with it (header
+// below) — the app uses it to group the jobs this chat claims and to record a per-call trace, so
+// the CoWork page can visualize what each chat is doing. Correlation is server-side: the agent
+// never has to remember or pass the id.
+const THREAD_ID = process.env.JOBHUNT_THREAD || `th_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
+const THREAD_LABEL = process.env.JOBHUNT_THREAD_LABEL || "CoWork";
+
 const send = (msg) => process.stdout.write(JSON.stringify(msg) + "\n");
 const log = (s) => process.stderr.write(`[jobhunt] ${s}\n`);
+
+// Thread headers ride on every HTTP call so the app can attribute claims + reads to this chat.
+const threadHeaders = () => ({ "x-jobhunt-thread": THREAD_ID, "x-jobhunt-thread-label": THREAD_LABEL });
+
+// Fire-and-forget telemetry to the app's thread endpoints. NEVER throws and NEVER writes to stdout
+// (reserved for protocol frames) — observability must not perturb the tool flow or the JSON-RPC stream.
+function fireTelemetry(pathWithQuery, payload) {
+  try {
+    fetch(`${BASE_URL}${pathWithQuery}`, {
+      method: "POST",
+      headers: { "content-type": "application/json", ...threadHeaders() },
+      body: JSON.stringify(payload ?? {}),
+    }).catch(() => {});
+  } catch {
+    // ignore — telemetry is best-effort
+  }
+}
+
+// The job id a tool call touched, when knowable from args/result (claim + submit are job-scoped;
+// other tools act on postings/companies, not jobs, so they have no job id).
+function stepJobId(tool, args, data) {
+  if (tool === "submitJobResult") return args?.jobId ?? null;
+  if (tool === "claimJob") return data?.job?.id ?? args?.id ?? null;
+  if (tool === "claimNext") return data?.job?.id ?? null;
+  return null;
+}
+
+// Human label for the role(s) a claim grabbed — e.g. "Amazon — Senior Engineer (no location)".
+// Pulled from the claimed job's params so the chat bubble shows the actual posting, not just "fit".
+function postingLabel(job) {
+  const ps = job?.params?.postings;
+  if (!Array.isArray(ps) || ps.length === 0) return undefined;
+  const p = ps[0] ?? {};
+  const co = p.company ?? p.companyName ?? "?";
+  const role = p.role ?? p.title ?? "role";
+  const loc = p.location ? ` (${p.location})` : ""; // omit entirely when unknown — no "(no location)" noise
+  const more = ps.length > 1 ? ` +${ps.length - 1} more` : "";
+  return `${co} — ${role}${loc}${more}`;
+}
+
+// A short human blurb for the step trace (what the call was about).
+function stepSummary(tool, args) {
+  const a = args || {};
+  const bits = [];
+  if (a.type) bits.push(String(a.type));
+  if (a.company) bits.push(String(a.company));
+  if (a.path) bits.push(String(a.path));
+  if (a.id != null) bits.push(`#${a.id}`);
+  if (Array.isArray(a.records)) bits.push(`${a.records.length} records`);
+  if (Array.isArray(a.verdicts)) bits.push(`${a.verdicts.length} verdicts`);
+  if (Array.isArray(a.companies)) bits.push(`${a.companies.length} companies`);
+  return bits.join(" · ") || undefined;
+}
 
 // --- HTTP helper ---------------------------------------------------------------
 // Returns parsed JSON, or throws a message that explains the most likely cause
@@ -39,7 +100,7 @@ async function api(pathWithQuery) {
   const url = `${BASE_URL}${pathWithQuery}`;
   let res;
   try {
-    res = await fetch(url, { headers: { accept: "application/json" } });
+    res = await fetch(url, { headers: { accept: "application/json", ...threadHeaders() } });
   } catch (e) {
     throw new Error(
       `cannot reach the job-hunt app at ${BASE_URL} (${e?.message ?? e}). ` +
@@ -63,8 +124,9 @@ async function apiSend(method, pathWithQuery, payload) {
     res = await fetch(url, {
       method,
       // Every MCP write is CoWork's — tag it so the app attributes the change-log event to CoWork,
-      // not the human default (You). Routes that don't read this header simply ignore it.
-      headers: { "content-type": "application/json", accept: "application/json", "x-jobhunt-actor": "CoWork" },
+      // not the human default (You). Routes that don't read this header simply ignore it. The
+      // thread headers let the app group claims under this chat (see THREAD_ID).
+      headers: { "content-type": "application/json", accept: "application/json", "x-jobhunt-actor": "CoWork", ...threadHeaders() },
       body: JSON.stringify(payload ?? {}),
     });
   } catch (e) {
@@ -90,7 +152,7 @@ const TOOLS = [
       "List the WATCHLIST — the companies discovery should auto-scan (and ONLY these; scanning " +
       "is expensive). Each has its scrape config (ats, slug, endpoint, careersUrl), criteria " +
       "(titles, location), and lastScrapedAt. Read this before a discovery run. The watchlist " +
-      "is independent of tier — a company's tier (top_target/target/practice) is just a tag.",
+      "is independent of tier — a company's tier (tier1/tier2/tier3) is just a tag.",
     inputSchema: { type: "object", properties: {}, additionalProperties: false },
     run: async () => (await api("/api/watchlist")).watchlist,
   },
@@ -164,6 +226,49 @@ const TOOLS = [
     run: async () => api("/api/context"),
   },
   {
+    name: "searchGmail",
+    description:
+      "Search my Gmail (READ-ONLY) — the inbox-sync data source. `query` uses normal Gmail search " +
+      "syntax (e.g. \"after:2026-06-18 -category:promotions\", \"from:greenhouse.io\", " +
+      "\"filename:invite.ics\"), applied over IMAP via X-GM-RAW. Returns threads newest-first, each " +
+      "{ threadId, subject, from, date, snippet, labels, messages } — classify most threads straight " +
+      "from the snippet. `threadId` is Gmail's STABLE thread id: use it for emailRefs/emailId and to " +
+      "pull the full thread with getGmailThread. `limit` caps threads (default 50, max 100). Requires " +
+      "Gmail to be connected in the app's Settings (app password).",
+    inputSchema: {
+      type: "object",
+      properties: {
+        query: { type: "string", description: "Gmail search query (X-GM-RAW / normal Gmail syntax)." },
+        limit: { type: "number", description: "Max threads to return (default 50, max 100)." },
+      },
+      required: ["query"],
+      additionalProperties: false,
+    },
+    run: async (args) => {
+      const qs = new URLSearchParams({ q: args.query });
+      if (args.limit != null) qs.set("limit", String(args.limit));
+      const { threads } = await api(`/api/gmail/search?${qs.toString()}`);
+      return threads;
+    },
+  },
+  {
+    name: "getGmailThread",
+    description:
+      "Read ONE full Gmail thread (READ-ONLY) by its `id` (the threadId from searchGmail) — every " +
+      "message's from/to/date/subject/text, oldest first. Use when a thread's snippet isn't enough to " +
+      "classify it (e.g. a borderline rejection vs. next-round email). Requires Gmail connected in Settings.",
+    inputSchema: {
+      type: "object",
+      properties: { id: { type: "string", description: "Gmail thread id (X-GM-THRID), as returned by searchGmail." } },
+      required: ["id"],
+      additionalProperties: false,
+    },
+    run: async (args) => {
+      const { thread } = await api(`/api/gmail/thread/${encodeURIComponent(args.id)}`);
+      return thread;
+    },
+  },
+  {
     name: "listJobs",
     description:
       "SURVEY the queue (a read-only menu) — the available job `types` (with their playbooks) and the " +
@@ -217,6 +322,27 @@ const TOOLS = [
       additionalProperties: false,
     },
     run: async (args) => apiSend("POST", "/api/jobs/claim-next", { by: args?.by, type: args?.type }),
+  },
+  {
+    name: "waitForWork",
+    description:
+      "BLOCK until there's work to do — the heartbeat of a pinned, app-driven chat. Call this in a " +
+      "loop and the app wakes you: it returns `{ ready:true }` the instant there's claimable work of " +
+      "`type` (you handed off jobs) OR the user clicks Drain in the app; otherwise it returns " +
+      "`{ ready:false }` after ~25s and you simply call it again. THE LOOP: `waitForWork({ type })` → " +
+      "if `ready`, drain with `claimNext({ type })` until it returns no job → call `waitForWork` again. " +
+      "Never stop the loop on your own; keep waiting. This lets you stay parked as (say) the fit worker " +
+      "and act the moment the app sends work — no need for the user to prompt you each time. Stay quiet " +
+      "between polls (don't narrate); just call the tool.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        type: { type: "string", description: "The job type this chat handles (e.g. fit | tailoring | inbox-sync). Keep it the SAME for the whole chat." },
+      },
+      required: ["type"],
+      additionalProperties: false,
+    },
+    run: async (args) => api(`/api/jobs/wait?type=${encodeURIComponent(args.type)}`),
   },
   {
     name: "claimJob",
@@ -410,7 +536,7 @@ const TOOLS = [
     description:
       "Add or update company RECORDS — tier + scrape config. Use whenever we curate a company " +
       "(new company, re-tier, fix ats/slug/endpoint/careersUrl, adjust titles/locations, notes). " +
-      "`tier` (top_target/target/practice) is just a tag. This does NOT change the watchlist — " +
+      "`tier` (tier1/tier2/tier3) is just a tag. This does NOT change the watchlist — " +
       "manage the discovery scan list separately with addToWatchlist / removeFromWatchlist. " +
       "Matched by canonical name: existing is patched (only fields you pass), unknown is added. " +
       "Pass one or many. Use listCompanies to see current state first.",
@@ -425,7 +551,7 @@ const TOOLS = [
             type: "object",
             properties: {
               name: { type: "string", description: "Company brand name (required), e.g. \"Scale AI\"." },
-              tier: { type: "string", description: "top_target | target | practice (just a tag)." },
+              tier: { type: "string", description: "tier1 | tier2 | tier3 (just a tag; tier1 = top target)." },
               ats: { type: "string", description: "Backend system: greenhouse | ashby | custom | verify (drives the app's API scan)." },
               fetchMethod: { type: "string", description: "How YOU read the board: api | careers-get | browser (separate from ats)." },
               fetchRecipe: { type: "string", description: "Scan steps for browser/careers-get boards (no click coords): filters to set, what to exclude, whether level comes from title or JD. Only needed when fetchMethod isn't api." },
@@ -514,6 +640,8 @@ async function handle(msg) {
           serverInfo: SERVER,
         },
       });
+      // Register this chat so it appears in the app the moment it connects, before any tool call.
+      fireTelemetry("/api/threads/hello", { threadId: THREAD_ID, label: THREAD_LABEL, pid: process.pid });
       return;
 
     case "notifications/initialized":
@@ -534,12 +662,24 @@ async function handle(msg) {
         send({ jsonrpc: "2.0", id, error: { code: -32602, message: `unknown tool: ${params?.name}` } });
         return;
       }
+      const args = params?.arguments ?? {};
+      const started = Date.now();
       try {
-        const data = await tool.run(params?.arguments ?? {});
+        const data = await tool.run(args);
         send({
           jsonrpc: "2.0",
           id,
           result: { content: [{ type: "text", text: JSON.stringify(data, null, 2) }] },
+        });
+        // Trace the call so the app's CoWork page can show this chat's live step timeline. For a
+        // claim, enrich the summary with the actual role grabbed (from the claimed job's params).
+        let summary = stepSummary(tool.name, args);
+        if ((tool.name === "claimNext" || tool.name === "claimJob") && data?.job) {
+          summary = postingLabel(data.job) ?? summary;
+        }
+        fireTelemetry("/api/threads/step", {
+          threadId: THREAD_ID, tool: tool.name, jobId: stepJobId(tool.name, args, data),
+          ok: true, durationMs: Date.now() - started, summary,
         });
       } catch (e) {
         // Tool-level failure → return as tool content with isError so the model can react,
@@ -548,6 +688,10 @@ async function handle(msg) {
           jsonrpc: "2.0",
           id,
           result: { content: [{ type: "text", text: `error: ${e?.message ?? e}` }], isError: true },
+        });
+        fireTelemetry("/api/threads/step", {
+          threadId: THREAD_ID, tool: tool.name, jobId: stepJobId(tool.name, args, null),
+          ok: false, durationMs: Date.now() - started, summary: `error: ${e?.message ?? e}`,
         });
       }
       return;
@@ -563,44 +707,55 @@ async function handle(msg) {
 // --- stdio read loop (line-delimited JSON) -------------------------------------
 // Track in-flight async handlers so a stdin close (client disconnect, or a piped test)
 // drains pending tool calls before exiting instead of truncating their responses.
-let buf = "";
-let pending = 0;
-let inputEnded = false;
-const maybeExit = () => {
-  if (inputEnded && pending === 0) process.exit(0);
-};
+function startStdio() {
+  let buf = "";
+  let pending = 0;
+  let inputEnded = false;
+  const maybeExit = () => {
+    if (inputEnded && pending === 0) process.exit(0);
+  };
 
-process.stdin.setEncoding("utf8");
-process.stdin.on("data", (chunk) => {
-  buf += chunk;
-  let idx;
-  while ((idx = buf.indexOf("\n")) >= 0) {
-    const line = buf.slice(0, idx).trim();
-    buf = buf.slice(idx + 1);
-    if (!line) continue;
-    let msg;
-    try {
-      msg = JSON.parse(line);
-    } catch {
-      log(`skipped non-JSON line: ${line.slice(0, 80)}`);
-      continue;
+  process.stdin.setEncoding("utf8");
+  process.stdin.on("data", (chunk) => {
+    buf += chunk;
+    let idx;
+    while ((idx = buf.indexOf("\n")) >= 0) {
+      const line = buf.slice(0, idx).trim();
+      buf = buf.slice(idx + 1);
+      if (!line) continue;
+      let msg;
+      try {
+        msg = JSON.parse(line);
+      } catch {
+        log(`skipped non-JSON line: ${line.slice(0, 80)}`);
+        continue;
+      }
+      pending++;
+      handle(msg)
+        .catch((e) => {
+          if (msg && msg.id !== undefined) {
+            send({ jsonrpc: "2.0", id: msg.id, error: { code: -32603, message: String(e) } });
+          }
+        })
+        .finally(() => {
+          pending--;
+          maybeExit();
+        });
     }
-    pending++;
-    handle(msg)
-      .catch((e) => {
-        if (msg && msg.id !== undefined) {
-          send({ jsonrpc: "2.0", id: msg.id, error: { code: -32603, message: String(e) } });
-        }
-      })
-      .finally(() => {
-        pending--;
-        maybeExit();
-      });
-  }
-});
+  });
 
-process.stdin.on("end", () => {
-  inputEnded = true;
-  maybeExit();
-});
-log(`started; ${TOOLS.length} tools (6 read + 2 scan + 6 write); backing ${BASE_URL}`);
+  process.stdin.on("end", () => {
+    inputEnded = true;
+    maybeExit();
+  });
+  log(`started; thread ${THREAD_ID} (pid ${process.pid}); ${TOOLS.length} tools (7 read + 2 scan + 6 write); backing ${BASE_URL}`);
+}
+
+// Only start the stdio server when launched directly (`node jobhunt-server.mjs`). Importing this
+// module elsewhere — e.g. the app's /mcp doc page reading the tool catalog — must NOT attach stdin
+// listeners or exit the host process, so it just gets the exported TOOLS.
+if (process.argv[1]?.endsWith("jobhunt-server.mjs")) startStdio();
+
+// The tool catalog (name / description / inputSchema + run), exported so the app can render an
+// in-app MCP reference without running the server. The `run` closures are inert until called.
+export { TOOLS, SERVER };

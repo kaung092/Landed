@@ -5,6 +5,7 @@ import { ChevronDown } from "lucide-react";
 import type { PrepQuestion } from "@/lib/db/prep";
 import { usePrep } from "@/hooks/usePrep";
 import AttemptControl from "./AttemptControl";
+import ConfidenceTag from "./ConfidenceTag";
 import { Badge, diffCls } from "./ui";
 
 // System-design question card: collapsed shows prompt + meta + tracking; expanded adds
@@ -25,6 +26,7 @@ export default function QuestionCard({
         <div className="flex items-start gap-3">
           <button onClick={() => setOpen((o) => !o)} className="min-w-0 flex-1 text-left">
             <div className="flex flex-wrap items-center gap-2">
+              <ConfidenceTag q={q} />
               {q.content.category && (
                 <Badge className="text-zinc-400 bg-zinc-800/60 ring-zinc-700/50">{q.content.category}</Badge>
               )}

@@ -1,5 +1,5 @@
 import { Fragment, useCallback, useEffect, useRef, useState } from "react";
-import { ChevronRight, ExternalLink, HelpCircle, Loader2, Plus, Radar, RefreshCw, Sparkles, Undo2, X } from "lucide-react";
+import { ChevronRight, ExternalLink, HelpCircle, Loader2, Plus, Radar, RefreshCw, Sparkles, Telescope, Undo2, X } from "lucide-react";
 import { ago } from "@/lib/format";
 import { TIER_META, TIERS } from "@/lib/pipeline";
 import TrackerTag from "@/components/TrackerTag";
@@ -11,7 +11,7 @@ import type { Tier } from "@/lib/types";
 // Scan config (ATS, fetch method, recipe, endpoint) moved into a per-row expander — it's
 // CoWork-curated and rarely edited, so the default table stays compact.
 const WL_COLS = ["company", "tier", "titles", "location", "scraped", "pipeline", "actions"];
-const WL_DEFAULTS = { company: 170, tier: 100, titles: 200, location: 150, scraped: 110, pipeline: 130, actions: 44 };
+const WL_DEFAULTS = { company: 170, tier: 100, titles: 200, location: 150, scraped: 110, pipeline: 130, actions: 60 };
 
 // "Scrape watchlist" refreshes companies last scraped more than this many days ago (or never).
 const STALE_DAYS = 3;
@@ -44,7 +44,7 @@ export type TargetCounts = { discovered: number; applied: number; total: number;
 type SortDir = "asc" | "desc";
 const WL_UNSORTABLE = new Set(["actions"]);
 
-// Sort key for a watchlist row, per column. Tier orders by its rank in TIERS (top → practice);
+// Sort key for a watchlist row, per column. Tier orders by its rank in TIERS (tier1 → tier3);
 // pipeline by tracked count; the rest lexically. Nulls fall to the empty-string / 0 end.
 function wlSortVal(t: Target, key: string, counts: Map<string, TargetCounts>): string | number {
   switch (key) {
@@ -91,6 +91,8 @@ export default function TargetsTable({
   const [scraping, setScraping] = useState(false);
   const [scrapeMsg, setScrapeMsg] = useState<string | null>(null);
   const scrapeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Per-row "Scan now" — names with an in-flight single-company queue request (drives the spinner).
+  const [scanningRows, setScanningRows] = useState<Set<string>>(new Set());
   // Click a header: asc → desc → off (back to the API's default order). Mirrors the funnel table.
   const [sort, setSort] = useState<{ key: string; dir: SortDir } | null>(null);
   const toggleSort = (key: string) =>
@@ -131,6 +133,30 @@ export default function TargetsTable({
       setScrapeMsg("Couldn’t queue the scan — is the app running?");
     } finally {
       setScraping(false);
+      load();
+      if (scrapeTimer.current) clearTimeout(scrapeTimer.current);
+      scrapeTimer.current = setTimeout(() => setScrapeMsg(null), 12000);
+    }
+  }, [load, bump]);
+
+  // Per-row "Scan now" — QUEUE a watchlist-scan job for just this one company (POST /api/scan/queue
+  // { company }), ignoring the 3-day staleness gate. Same CoWork-queue path as "Scrape watchlist".
+  const scanOne = useCallback(async (name: string) => {
+    setScanningRows((s) => new Set(s).add(name));
+    try {
+      const r = await fetch("/api/scan/queue", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ company: name }) });
+      const d = await r.json();
+      if (d.error) throw new Error(d.error);
+      setScrapeMsg(
+        d.status === "in-flight"
+          ? `${name} is already queued — it’s waiting in the CoWork queue.`
+          : `Queued ${name} for CoWork to scan — run your CoWork queue.`
+      );
+      bump(); // refresh the floating queue so the new job shows
+    } catch {
+      setScrapeMsg(`Couldn’t queue ${name} — is the app running?`);
+    } finally {
+      setScanningRows((s) => { const n = new Set(s); n.delete(name); return n; });
       load();
       if (scrapeTimer.current) clearTimeout(scrapeTimer.current);
       scrapeTimer.current = setTimeout(() => setScrapeMsg(null), 12000);
@@ -411,13 +437,23 @@ export default function TargetsTable({
                       )}
                     </Td>
                     <Td>
-                      <button
-                        onClick={(e) => { e.stopPropagation(); remove(t.name); }}
-                        title="Remove from watchlist"
-                        className="rounded p-0.5 text-zinc-700 opacity-0 transition hover:bg-zinc-800 hover:text-rose-300 group-hover:opacity-100"
-                      >
-                        <X size={12} />
-                      </button>
+                      <div className="flex items-center gap-0.5">
+                        <button
+                          onClick={(e) => { e.stopPropagation(); scanOne(t.name); }}
+                          disabled={scanningRows.has(t.name)}
+                          title={`Scan ${t.name}'s board now (queues a CoWork scan)`}
+                          className="rounded p-0.5 text-zinc-700 opacity-0 transition hover:bg-zinc-800 hover:text-sky-300 group-hover:opacity-100 disabled:opacity-40"
+                        >
+                          {scanningRows.has(t.name) ? <Loader2 size={12} className="animate-spin" /> : <Telescope size={12} />}
+                        </button>
+                        <button
+                          onClick={(e) => { e.stopPropagation(); remove(t.name); }}
+                          title="Remove from watchlist"
+                          className="rounded p-0.5 text-zinc-700 opacity-0 transition hover:bg-zinc-800 hover:text-rose-300 group-hover:opacity-100"
+                        >
+                          <X size={12} />
+                        </button>
+                      </div>
                     </Td>
                   </tr>
                   {expanded.has(t.id) && (

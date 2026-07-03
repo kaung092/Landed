@@ -1,12 +1,17 @@
 import { sqliteTable, integer, text } from "drizzle-orm/sqlite-core";
+import {
+  POSTING_STATES, POSTING_VERDICTS, POSTING_CHANNELS, COMPANY_TIERS,
+  JOB_STATUSES, PENDING_KINDS, PENDING_STATUSES,
+} from "./enums";
 
 // Tier of a company. Drives the pipeline rules (see lib/pipeline.ts).
 export const companies = sqliteTable("companies", {
   id: integer("id").primaryKey({ autoIncrement: true }),
   name: text("name").notNull().unique(),
-  tier: text("tier", { enum: ["top_target", "target", "practice"] })
+  // Stable slugs (best → broadest); human labels live in TIER_META (lib/pipeline.ts).
+  tier: text("tier", { enum: COMPANY_TIERS })
     .notNull()
-    .default("practice"),
+    .default("tier3"),
   careersUrl: text("careers_url"),
   ats: text("ats"), // backend system: greenhouse | ashby | custom | verify — drives the app's API scan
   // HOW to actually read the board, separate from the backend system. The app's scanCompany
@@ -27,6 +32,11 @@ export const companies = sqliteTable("companies", {
   // Discovery auto-scans ONLY watchlisted companies (scanning is expensive). Orthogonal to
   // tier — tier is for tagging/categorization; watchlist is "scan this for new postings".
   watchlist: integer("watchlist", { mode: "boolean" }).notNull().default(false),
+  // Audit timestamps for the company record. createdAt = first seen; updatedAt = last *curation*
+  // edit (tier / name / scrape-config / watchlist) — NOT bumped by auto-scrape, which has its own
+  // lastScrapedAt. Both ISO; nullable so pre-existing rows backfill lazily.
+  createdAt: text("created_at"),
+  updatedAt: text("updated_at"),
 });
 
 // NOTE: the former `applications` table was folded into `postings` (the unified model — see
@@ -88,6 +98,49 @@ export const jobs = sqliteTable("jobs", {
   task: text("task"), // human/CoWork-readable instruction
   params: text("params"), // JSON job input (e.g. { postings: [{ company, role, jd, url }] })
   result: text("result"), // JSON of the submitted result records (history)
+  // Stuck-job detection (mechanical, not agent-cooperative): `attempts` is bumped every time a job is
+  // claimed (incl. lease-expiry reclaims), so the app KNOWS how many times it's been tried without a
+  // result. Past CLAIM_MAX_ATTEMPTS with no result, reapStuckJobs() dead-letters it → status `failed`
+  // with `error`. createJob (a deliberate re-queue / retry) resets both. An agent MAY also fail a job
+  // itself with a reason (faster, but best-effort — never relied on; the cap is the safety net).
+  attempts: integer("attempts").notNull().default(0),
+  error: text("error"), // why it failed (auto: "stuck after N attempts"; or an agent-reported reason)
+  // The CoWork chat (thread) that claimed this job. Each CoWork chat runs as its own MCP server
+  // process, which stamps this on claim via the x-jobhunt-thread header — so jobs group under the
+  // chat that's running them, without the agent having to pass anything. See `threads` below.
+  threadId: text("thread_id"),
+});
+
+// ── CoWork threads ──
+// One row per CoWork CHAT. Claude Desktop launches a separate `jobhunt` MCP server process for each
+// chat; that process mints a `threadId` at boot and tags every call with it. A chat can claim and
+// run many jobs (jobs.thread_id), so this is the parent the CoWork page groups jobs + steps under.
+// We can't observe the chat directly — only what it does over MCP — so `lastSeenAt` (bumped on every
+// call) is the liveness signal; there's no reliable process-exit event over HTTP.
+export const threads = sqliteTable("threads", {
+  id: text("id").primaryKey(), // th_<base36 time><rand>, minted by the MCP server process
+  label: text("label"), // human label (claimedBy / "CoWork")
+  pid: integer("pid"), // the MCP server process pid (debug aid)
+  startedAt: text("started_at").notNull(), // first contact (process boot)
+  lastSeenAt: text("last_seen_at").notNull(), // bumped on every MCP call — the heartbeat
+  steps: integer("steps").notNull().default(0), // running count of MCP calls (cheap badge)
+  // User dismissed this chat from the view. Soft-hide: the thread reappears if it acts again
+  // (lastSeenAt moves past this), so a live chat can't be permanently silenced by accident.
+  dismissedAt: text("dismissed_at"),
+});
+
+// Append-only per-call trace: one row per MCP tool call a thread makes. This is the "thread
+// timeline" the app renders — the only window into what a CoWork chat is doing, since the work
+// itself happens inside Claude Desktop between these calls.
+export const threadSteps = sqliteTable("thread_steps", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  threadId: text("thread_id").notNull(),
+  ts: text("ts").notNull(), // ISO timestamp
+  tool: text("tool").notNull(), // MCP tool name (claimNext, savePostingJd, submitJobResult, …)
+  jobId: text("job_id"), // the job this call touched, when knowable from the args
+  ok: integer("ok", { mode: "boolean" }).notNull().default(true),
+  durationMs: integer("duration_ms"),
+  summary: text("summary"), // short arg/result blurb
 });
 
 // One row per agent run — powers the Agents page "last run" + history.
@@ -120,8 +173,8 @@ export const pendingMatches = sqliteTable("pending_matches", {
   candidateIds: text("candidate_ids").notNull(), // JSON number[] of candidate posting ids (hints for unbound)
   // Action kind: `match` = pick which posting an incoming inbox record belongs to (fuzzy/ambiguous);
   // `unbound` = a fit/tailor result whose echoed id didn't resolve — an alert to look at (dismiss only).
-  kind: text("kind", { enum: ["match", "unbound"] }).notNull().default("match"),
-  status: text("status", { enum: ["pending", "resolved", "dismissed"] })
+  kind: text("kind", { enum: PENDING_KINDS }).notNull().default("match"),
+  status: text("status", { enum: PENDING_STATUSES })
     .notNull()
     .default("pending"),
   resolvedAppId: integer("resolved_app_id"),
@@ -173,11 +226,26 @@ export const prepQuestions = sqliteTable("prep_questions", {
 export const prepCompany = sqliteTable("prep_company", {
   slug: text("slug").primaryKey(),
   name: text("name").notNull(),
+  overview: text("overview"), // markdown — product/company overview (what they build, who for, why it matters)
   process: text("process"), // markdown — interview-process overview
-  rounds: text("rounds"), // JSON [{ name, format, focus }]
+  rounds: text("rounds"), // JSON [{ key, name, format, focus }] — key links questions to a round
   categories: text("categories"), // JSON [{ key, label, description, kind }] — ordered; drives the view's sections
   sources: text("sources"), // JSON [{ label, url }] — where the intel came from
   researchedAt: text("researched_at"), // ISO; last time CoWork refreshed this profile
+});
+
+// Per-(company, round) feedback you leave on the prep — appended to a thread and dispatched to
+// CoWork as a prep-research refinement job. `status` tracks the loop: queued → applied once CoWork
+// re-researches that round. Like the rest of prep, a personal scratchpad (no events log).
+export const prepFeedback = sqliteTable("prep_feedback", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  slug: text("slug").notNull(), // company slug (prepCompany.slug)
+  round: text("round"), // round key (prepCompany.rounds[].key); null = whole-company feedback
+  text: text("text").notNull(),
+  status: text("status", { enum: ["queued", "applied"] }).notNull().default("queued"),
+  jobId: text("job_id"), // the prep-research job this feedback dispatched
+  createdAt: text("created_at").notNull(), // ISO
+  appliedAt: text("applied_at"), // ISO; stamped when CoWork's refresh lands
 });
 
 // Append-only practice log. Powers "how many times" (count) and "time record" (min duration).
@@ -218,14 +286,14 @@ export const postings = sqliteTable("postings", {
   department: text("department"),
   // verdict + reason are DISPLAY ANNOTATIONS only (why the pre-filter kept/dropped a row) — `state`
   // alone decides which lifecycle step a posting sits in. See the `state` note below.
-  verdict: text("verdict", { enum: ["kept", "dropped"] }).notNull(),
+  verdict: text("verdict", { enum: POSTING_VERDICTS }).notNull(),
   reason: text("reason"), // null when kept; discipline | location | level | dedup when dropped
   // The pipeline stage — the SINGLE source of truth for where a posting sits, spanning the whole
   // lifecycle (the discovery funnel + the tracker, being unified into this one model — see
   // docs/unify-postings-plan.md). Pre-filter: filtered · matched. Glance: review · dismissed ·
   // fit_queue. Fit: assessed · apply_later. Tailor: tailoring · tailored. Tracker: applied ·
   // interview · offer · accepted · rejected · ghost · withdrawn · company_skipped · expired.
-  state: text("state", { enum: ["filtered", "matched", "review", "dismissed", "fit_queue", "assessed", "apply_later", "tailoring", "tailored", "applied", "interview", "offer", "accepted", "rejected", "ghost", "withdrawn", "company_skipped", "expired"] }).notNull().default("filtered"),
+  state: text("state", { enum: POSTING_STATES }).notNull().default("filtered"),
   fitScore: integer("fit_score"),
   fitDetail: text("fit_detail"), // JSON FitAssessment blob (mirrors applications.fit_detail)
   jd: text("jd"), // the posting's job description — fetched once (scan or fit) and reused by fit + tailoring
@@ -248,8 +316,14 @@ export const postings = sqliteTable("postings", {
   level: text("level"), // Staff, Senior, ...
   team: text("team"), // Infra, Ads, Platform, ...
   source: text("source"), // greenhouse | ashby | inbox | manual | ...
-  channel: text("channel", { enum: ["direct", "referral"] }),
+  channel: text("channel", { enum: POSTING_CHANNELS }),
   note: text("note"),
+  // First-hand interview intel you collect in the Interviewing stage (markdown). `comp` = comp
+  // structure (funding/runway, base, bonus, equity); `teamNotes` = team / product / work / role
+  // focus. Distinct from the short `team` department tag above. Feeds the prep-research job as
+  // recruiter-confirmed ground truth (see lib/jobs/store.ts queuePrepResearch).
+  comp: text("comp"),
+  teamNotes: text("team_notes"),
   interviewed: integer("interviewed", { mode: "boolean" }).notNull().default(false),
   needsReview: integer("needs_review", { mode: "boolean" }).notNull().default(false),
   pinned: integer("pinned", { mode: "boolean" }).notNull().default(false), // user-pinned → floats to the top of its stage table
@@ -259,8 +333,66 @@ export const postings = sqliteTable("postings", {
   updatedAt: text("updated_at"),
 });
 
+// ── Fit Lab ────────────────────────────────────────────────────────────────────────────────
+// A standalone learning lab that models fit assessment as a production classification pipeline:
+// Extract → Detect (LLM judge) → Decide → Review (HITL labels). Kept in its own tables so it can
+// evolve without disturbing the live discovery/fit flow (postings.fit_detail). See lib/fitlab/.
+//
+// The rubric: stable criterion *categories* (level-match, must-have-coverage, …). Per-posting
+// requirement *instances* roll up into these so verdicts aggregate across runs (the thing that
+// makes precision/recall computable). type drives scoring: gate = veto, must/nice/signal = weighted.
+export const fitCriteria = sqliteTable("fit_criteria", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  key: text("key").notNull().unique(), // stable slug, e.g. "level-match"
+  label: text("label").notNull(),
+  type: text("type").notNull().default("must"), // gate | must | nice | signal
+  weight: integer("weight").notNull().default(1), // relative weight in the score (gates excluded — they veto)
+  definition: text("definition"), // the judging instruction handed to the LLM for this criterion
+  active: integer("active", { mode: "boolean" }).notNull().default(true),
+  sortOrder: integer("sort_order").notNull().default(0),
+});
+
+// One assessment of one posting. `stages` holds the per-stage trace (extract artifact + timings)
+// so the trace view can replay the item's journey through the pipeline. score/decision are the
+// deterministic aggregate over the verdicts (recomputed when a human override lands).
+export const fitRuns = sqliteTable("fit_runs", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  postingId: integer("posting_id"), // nullable — the lab also accepts a pasted JD
+  company: text("company").notNull(),
+  role: text("role").notNull(),
+  jd: text("jd").notNull(),
+  model: text("model").notNull(),
+  promptVersion: text("prompt_version").notNull(),
+  score: integer("score"), // 0–100, derived from verdicts
+  decision: text("decision"), // advance | review | drop
+  stages: text("stages"), // JSON StageTrace[] — the trace
+  createdAt: text("created_at").notNull(),
+});
+
+// One per-criterion verdict from the Detect stage. The human override (humanVerdict/humanNote) is
+// the LABEL — verdicts where humanVerdict is set are the eval/training set the locked nodes consume.
+export const fitVerdicts = sqliteTable("fit_verdicts", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  runId: integer("run_id").notNull().references(() => fitRuns.id),
+  criterionKey: text("criterion_key").notNull(),
+  requirement: text("requirement"), // the JD requirement(s) extracted for this criterion
+  type: text("type").notNull(), // snapshot of the criterion type at run time
+  verdict: text("verdict").notNull(), // met | partial | unmet | unclear | na
+  confidence: integer("confidence"), // 0–100 (model's self-reported)
+  evidence: text("evidence"), // quote/pointer from the resume
+  reasoning: text("reasoning"),
+  humanVerdict: text("human_verdict"), // your override = the label
+  humanNote: text("human_note"),
+  labeledAt: text("labeled_at"),
+});
+
+export type FitCriterionRow = typeof fitCriteria.$inferSelect;
+export type FitRunRow = typeof fitRuns.$inferSelect;
+export type FitVerdictRow = typeof fitVerdicts.$inferSelect;
+
 export type PrepQuestionRow = typeof prepQuestions.$inferSelect;
 export type PrepCompanyRow = typeof prepCompany.$inferSelect;
+export type PrepFeedbackRow = typeof prepFeedback.$inferSelect;
 export type PrepAttemptRow = typeof prepAttempts.$inferSelect;
 export type PrepProgressRow = typeof prepProgress.$inferSelect;
 
@@ -272,3 +404,5 @@ export type EventRow = typeof events.$inferSelect;
 export type AgentRunRow = typeof agentRuns.$inferSelect;
 export type JobRow = typeof jobs.$inferSelect;
 export type PostingRow = typeof postings.$inferSelect;
+export type ThreadRow = typeof threads.$inferSelect;
+export type ThreadStepRow = typeof threadSteps.$inferSelect;

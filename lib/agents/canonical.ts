@@ -1,5 +1,6 @@
 // Company-name canonicalization shared by all ingest sources.
 // Merges known variants, drops junk. Returns null to drop a row entirely.
+import { isTarget } from "../targets.mjs";
 
 export const norm = (s: string) => (s || "").toLowerCase().replace(/[^a-z0-9]/g, "");
 
@@ -42,11 +43,8 @@ export function canonical(rawName: string): { key: string; name: string } | null
   return VARIANTS[k] ?? { key: k, name };
 }
 
-// Default tier for a brand-new company (the user re-tiers via drag-drop).
-const TARGETS = new Set(
-  ["google","meta","netflix","apple","microsoft","databricks","anthropic","openai",
-   "airbnb","figma","github","spotify","confluent","perplexity","notion","glean",
-   "huggingface","scaleai","cursor","datadog"]
-);
-export const defaultTier = (key: string): "target" | "practice" =>
-  TARGETS.has(key) ? "target" : "practice";
+// Default tier for a brand-new company (the user re-tiers via drag-drop): known targets land
+// in tier2, everything else in tier3. tier1 (top target) is only ever set by hand.
+// The target list lives in lib/targets.mjs — customize it there.
+export const defaultTier = (key: string): "tier2" | "tier3" =>
+  isTarget(key) ? "tier2" : "tier3";

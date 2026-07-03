@@ -1,7 +1,7 @@
 import { eq, asc, desc } from "drizzle-orm";
 import { db } from "./index";
-import { prepQuestions, prepAttempts, prepProgress, prepCompany } from "./schema";
-import type { PrepQuestionRow, PrepAttemptRow, PrepCompanyRow } from "./schema";
+import { prepQuestions, prepAttempts, prepProgress, prepCompany, prepFeedback } from "./schema";
+import type { PrepQuestionRow, PrepAttemptRow, PrepCompanyRow, PrepFeedbackRow } from "./schema";
 import { canonical, norm } from "@/lib/agents/canonical";
 import { str, num } from "@/lib/coerce";
 import type { ChangeDetail } from "@/lib/agents/types";
@@ -32,8 +32,19 @@ export type PrepPlan = {
 };
 
 // Per-company framing for a shared question: which category it sits in for that company,
-// its order within that category, and an optional company-specific note.
-export type CompanyMetaEntry = { category?: string; sortOrder?: number; note?: string };
+// its order within that category, an optional company-specific note, and — for the interview
+// view — which round it belongs to, how confident we are it'll be asked, and where that
+// confidence came from.
+export type PrepConfidence = "confirmed" | "likely";
+export type CompanyMetaEntry = {
+  category?: string;
+  sortOrder?: number;
+  note?: string;
+  round?: string; // round key (prepCompany.rounds[].key)
+  confidence?: PrepConfidence; // confirmed = sourced/asked-before; likely = predicted
+  source?: string; // where the intel came from (label or url), for confirmed questions
+  reason?: string; // why confirmed (it was asked, by whom/when) or why likely (the prediction rationale)
+};
 export type CompanyMeta = Record<string, CompanyMetaEntry>;
 
 export type PrepTrack = "coding" | "system_design" | "behavioral" | "other";
@@ -57,6 +68,10 @@ export type PrepQuestion = {
   // folded in from companyMeta[slug] so the view can group/order without re-parsing.
   companyCategory?: string;
   companyNote?: string;
+  companyRound?: string; // round key this question belongs to (interview view)
+  companyConfidence?: PrepConfidence;
+  companySource?: string;
+  companyConfidenceReason?: string; // why confirmed / likely (shown when the confidence tag is clicked)
   // derived progress
   timesDone: number;
   bestSec?: number;
@@ -146,6 +161,10 @@ function toQuestion(
     sortOrder: r.sortOrder ?? undefined,
     companyCategory: lens?.category,
     companyNote: lens?.note,
+    companyRound: lens?.round,
+    companyConfidence: lens?.confidence,
+    companySource: lens?.source,
+    companyConfidenceReason: lens?.reason,
     ...stats,
     noted: flags.noted,
     redo: flags.redo,
@@ -187,7 +206,9 @@ export function listQuestions(opts: { track?: string; company?: string } = {}): 
 
 // ── Company prep profiles (CoWork research output) ──
 
-export type PrepRound = { name: string; format?: string; focus?: string };
+// `key` links questions (companyMeta[slug].round) to a round. Optional so older profiles
+// without keys still parse; the interview view falls back to index-based keys.
+export type PrepRound = { key?: string; name: string; format?: string; focus?: string };
 export type PrepCategory = {
   key: string;
   label: string;
@@ -199,6 +220,7 @@ export type PrepSource = { label: string; url?: string };
 export type CompanyProfile = {
   slug: string;
   name: string;
+  overview?: string; // product/company summary
   process?: string;
   rounds: PrepRound[];
   categories: PrepCategory[];
@@ -210,6 +232,7 @@ function toProfile(r: PrepCompanyRow): CompanyProfile {
   return {
     slug: r.slug,
     name: r.name,
+    overview: r.overview ?? undefined,
     process: r.process ?? undefined,
     rounds: parseJSON<PrepRound[]>(r.rounds, []),
     categories: parseJSON<PrepCategory[]>(r.categories, []),
@@ -469,6 +492,7 @@ export function ingestPrepResearch(
     const row = {
       slug: cslug,
       name: companyName,
+      overview: str(profileRec.overview) ?? null,
       process: str(profileRec.process) ?? null,
       rounds: JSON.stringify(Array.isArray(profileRec.rounds) ? profileRec.rounds : []),
       categories: JSON.stringify(Array.isArray(profileRec.categories) ? profileRec.categories : []),
@@ -484,6 +508,11 @@ export function ingestPrepResearch(
     profile = 1;
     const nCat = Array.isArray(profileRec.categories) ? profileRec.categories.length : 0;
     details.push({ action: "update", summary: `profile — ${companyName} (${nCat} categor${nCat === 1 ? "y" : "ies"})` });
+    // Close the feedback loop: any queued feedback for this company is now addressed.
+    if (!dryRun) {
+      const applied = markFeedbackApplied(cslug);
+      if (applied) details.push({ action: "update", summary: `${applied} feedback item${applied === 1 ? "" : "s"} marked applied` });
+    }
   }
 
   // ── upsert the questions ──
@@ -492,10 +521,15 @@ export function ingestPrepResearch(
   let maxSort = catalog.reduce((m, q) => Math.max(m, q.sortOrder ?? 0), 0);
 
   questionRecs.forEach((rec, i) => {
+    const confidence = str(rec.confidence);
     const meta: CompanyMetaEntry = {
       category: str(rec.category) ?? undefined,
       sortOrder: num(rec.sortOrder) ?? i + 1,
       note: str(rec.note) ?? undefined,
+      round: str(rec.round) ?? undefined,
+      confidence: confidence === "confirmed" || confidence === "likely" ? confidence : undefined,
+      source: str(rec.source) ?? undefined,
+      reason: str(rec.reason) ?? undefined,
     };
 
     // Resolve to the shared bank first — a reuse record (e.g. just a leetcodeNum) needs no name.
@@ -552,4 +586,73 @@ export function ingestPrepResearch(
   });
 
   return { profile, reused, inserted, details };
+}
+
+// ── Prep feedback (per-company / per-round refinement requests) ──
+// You leave feedback on a company's prep (optionally scoped to one round); it's appended to a
+// thread and dispatched to CoWork as a prep-research refinement job. CoWork re-researches and,
+// on re-ingest, the queued feedback for that company is marked applied (see markFeedbackApplied).
+
+export type PrepFeedback = {
+  id: number;
+  slug: string;
+  round?: string;
+  text: string;
+  status: "queued" | "applied";
+  jobId?: string;
+  createdAt: string;
+  appliedAt?: string;
+};
+
+const toFeedback = (r: PrepFeedbackRow): PrepFeedback => ({
+  id: r.id,
+  slug: r.slug,
+  round: r.round ?? undefined,
+  text: r.text,
+  status: r.status as "queued" | "applied",
+  jobId: r.jobId ?? undefined,
+  createdAt: r.createdAt,
+  appliedAt: r.appliedAt ?? undefined,
+});
+
+// All feedback for a company, newest first.
+export function listFeedback(slug: string): PrepFeedback[] {
+  return db
+    .select()
+    .from(prepFeedback)
+    .where(eq(prepFeedback.slug, slug))
+    .orderBy(desc(prepFeedback.id))
+    .all()
+    .map(toFeedback);
+}
+
+// Append a feedback entry. `jobId` is the prep-research job it dispatched (set by the API route).
+export function addFeedback(input: { slug: string; round?: string; text: string; jobId?: string }): PrepFeedback {
+  const row = db
+    .insert(prepFeedback)
+    .values({
+      slug: input.slug,
+      round: input.round ?? null,
+      text: input.text.trim(),
+      status: "queued",
+      jobId: input.jobId ?? null,
+      createdAt: new Date().toISOString(),
+    })
+    .returning()
+    .get();
+  return toFeedback(row);
+}
+
+export function deleteFeedback(id: number): boolean {
+  return db.delete(prepFeedback).where(eq(prepFeedback.id, id)).run().changes > 0;
+}
+
+// Mark a company's queued feedback as applied — called from ingestPrepResearch after CoWork's
+// refresh lands so the UI can show the loop closing. Returns the count flipped.
+export function markFeedbackApplied(slug: string): number {
+  return db
+    .update(prepFeedback)
+    .set({ status: "applied", appliedAt: new Date().toISOString() })
+    .where(eq(prepFeedback.slug, slug))
+    .run().changes;
 }

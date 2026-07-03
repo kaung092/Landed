@@ -51,22 +51,22 @@ export const TIER_META: Record<
   Tier,
   { label: string; dot: string; ring: string; text: string; bar: string; soft: string }
 > = {
-  top_target: {
-    label: "Top Target", dot: "bg-amber-400", ring: "ring-amber-400/30",
+  tier1: {
+    label: "Tier 1 (top target)", dot: "bg-amber-400", ring: "ring-amber-400/30",
     text: "text-amber-300", bar: "bg-amber-400", soft: "bg-amber-500/10",
   },
-  target: {
-    label: "Target", dot: "bg-emerald-400", ring: "ring-emerald-400/30",
+  tier2: {
+    label: "Tier 2", dot: "bg-emerald-400", ring: "ring-emerald-400/30",
     text: "text-emerald-300", bar: "bg-emerald-400", soft: "bg-emerald-500/10",
   },
-  practice: {
-    label: "Practice", dot: "bg-zinc-500", ring: "ring-zinc-400/20",
+  tier3: {
+    label: "Tier 3", dot: "bg-zinc-500", ring: "ring-zinc-400/20",
     text: "text-zinc-400", bar: "bg-zinc-600", soft: "bg-zinc-500/10",
   },
 };
 
 // Tier order (best → broadest), for filters/columns/selectors.
-export const TIERS: Tier[] = ["top_target", "target", "practice"];
+export const TIERS: Tier[] = ["tier1", "tier2", "tier3"];
 
 // Color for a fit score badge.
 export function fitColor(score: number): string {

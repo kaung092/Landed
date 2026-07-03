@@ -35,6 +35,12 @@ const ACTOR_META: Record<string, { icon: typeof User; cls: string; ring: string 
   CoWork: { icon: Bot, cls: "text-violet-300", ring: "bg-violet-500/15" },
 };
 
+// Display labels: the audit log surfaces the automated actor/source as "Agent" / "agent". The data
+// still stores the legacy "CoWork" / "cowork" (so filters, batching, and ACTOR_META keep keying off
+// it) — only the rendered text changes.
+const actorLabel = (a: string) => (a === "CoWork" ? "Agent" : a);
+const sourceLabel = (s: string) => (s === "cowork" ? "agent" : s);
+
 // Color-coded verb chips. Keyed by the *humanized* verb so glance verdicts get their own
 // colors (dropped/queued/review) instead of a generic "updated".
 const VERB_CLS: Record<string, string> = {
@@ -218,7 +224,7 @@ function EventRow({ e, nested }: { e: EventView; nested?: boolean }) {
         {/* [time] Actor verb [Company — Role]: */}
         <div className="flex flex-wrap items-baseline gap-x-1.5 gap-y-1 text-sm leading-relaxed">
           <span className="shrink-0 text-[12px] text-zinc-500">{ago(e.ts, { absolute: true })}</span>
-          <span className={`font-medium ${m.cls}`}>{e.actor}</span>
+          <span className={`font-medium ${m.cls}`}>{actorLabel(e.actor)}</span>
           <span className="text-zinc-400">{d.verb.label}</span>
           {d.company ? (
             <span className="rounded bg-zinc-800 px-1.5 py-0.5 font-medium text-zinc-100">
@@ -274,7 +280,7 @@ function MultiRow({ node, nested }: { node: Extract<FeedNode, { kind: "multi" }>
         {/* [time] Actor updated [Company — Role]: */}
         <div className="flex flex-wrap items-baseline gap-x-1.5 gap-y-1 text-sm leading-relaxed">
           <span className="shrink-0 text-[12px] text-zinc-500">{ago(node.items[0].ts, { absolute: true })}</span>
-          <span className={`font-medium ${m.cls}`}>{node.actor}</span>
+          <span className={`font-medium ${m.cls}`}>{actorLabel(node.actor)}</span>
           <span className="text-zinc-400">{d.verb.label}</span>
           {d.company ? (
             <span className="rounded bg-zinc-800 px-1.5 py-0.5 font-medium text-zinc-100">
@@ -341,10 +347,10 @@ function BatchRow({ node, open, onToggle }: { node: Extract<FeedNode, { kind: "b
           <div className="flex flex-wrap items-center gap-x-1.5 gap-y-1 text-sm">
             <ChevronRight size={14} className={`shrink-0 text-zinc-500 transition-transform ${open ? "rotate-90" : ""}`} />
             <span className="text-[12px] text-zinc-500">{ago(newest, { absolute: true })}</span>
-            <span className={`font-medium ${m.cls}`}>{node.actor}</span>
+            <span className={`font-medium ${m.cls}`}>{actorLabel(node.actor)}</span>
             <span className="text-zinc-400">{verb}</span>
             <span className="font-medium text-zinc-100">{node.items.length}</span>
-            <span className="rounded bg-zinc-800 px-1.5 py-0.5 text-[12px] text-zinc-400">{node.source}</span>
+            <span className="rounded bg-zinc-800 px-1.5 py-0.5 text-[12px] text-zinc-400">{sourceLabel(node.source)}</span>
             <span className="text-zinc-400">actions</span>
           </div>
         </div>
@@ -587,7 +593,7 @@ export default function ChangesView() {
                       filter === a ? "bg-zinc-100 text-zinc-900" : "text-zinc-400 hover:text-zinc-200"
                     }`}
                   >
-                    {a}
+                    {actorLabel(a)}
                   </button>
                 ))}
               </div>

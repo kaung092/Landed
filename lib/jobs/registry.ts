@@ -9,6 +9,7 @@ import { canonical, norm } from "@/lib/agents/canonical";
 import { ingestPrepRecords, ingestPrepResearch } from "@/lib/db/prep";
 import { str, num } from "@/lib/coerce";
 import { parseRedoLog, nextVersion } from "./redolog";
+import { ingestFitLabResult } from "@/lib/fitlab/ingest";
 import { coerceDiff } from "@/lib/linediff";
 import type { FitAssessment, RedoTurn } from "@/lib/types";
 import type { ChangeDetail, ReconcileResult } from "@/lib/agents/types";
@@ -203,7 +204,8 @@ function ingestDiscovered(source: string) {
       let co = db.select().from(companies).all().find((c) => canonical(c.name)?.key === key);
       if (!co) {
         if (dryRun) { details.push({ action: "insert", summary: `${company} — ${role} · would add (new company) → fit queue` }); inserted++; continue; }
-        co = db.insert(companies).values({ name: company, tier: "practice" }).returning().get();
+        const ts = new Date().toISOString();
+        co = db.insert(companies).values({ name: company, tier: "tier3", createdAt: ts, updatedAt: ts }).returning().get();
       }
       const list = db.select().from(postings).where(eq(postings.companyId, co.id)).all();
       const existing = (url ? list.find((c) => c.url === url) : undefined) ?? list.find((c) => c.title.toLowerCase() === role.toLowerCase());
@@ -262,6 +264,16 @@ export const JOB_DEFS: Record<JobType, JobDef> = {
     buildTask: () => `Assess fit for the postings in this job using my base resume; write the result per fit.md.`,
     ingest: ingestFit,
   },
+  "fitlab-assess": {
+    type: "fitlab-assess",
+    title: "Fit Lab assessment",
+    description: "Score one posting against the Fit Lab rubric — per-criterion verdicts (Extract + Detect). App-queued from the Fit Lab.",
+    playbook: "fitlab-assess.md",
+    // The real instruction (rubric + profile + JD embedded) is passed explicitly by queueRun; this
+    // fallback only fires if a job is created without one.
+    buildTask: (p) => `Fit Lab assessment for run ${p?.runId ?? "?"} — follow the embedded task: extract each criterion's JD requirement, judge it against the profile, and submit one verdict record per criterion per fitlab-assess.md.`,
+    ingest: ingestFitLabResult,
+  },
   tailoring: {
     type: "tailoring",
     title: "Tailor Resume For a Job",
@@ -295,9 +307,10 @@ export const JOB_DEFS: Record<JobType, JobDef> = {
     title: "Prep research",
     description: "Research a company's interview process → build a company prep profile + question set.",
     playbook: "prep-research.md",
-    hidden: true,
     buildTask: (p) =>
-      `Research the interview process at ${p?.company ?? "the company"} (rounds, categories, past questions) and submit a prep profile + categorized questions via submitJobResult per prep-research.md.`,
+      `Research the interview process at ${p?.company ?? "the company"} (rounds, categories, past questions) and submit a prep profile + categorized questions via submitJobResult per prep-research.md.${
+        p?.intel ? " params.intel holds recruiter-confirmed comp/team/rounds — treat it as authoritative ground truth and only research to fill gaps." : ""
+      }`,
     ingest: ingestPrepResearchJob,
   },
 };

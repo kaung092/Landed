@@ -1,8 +1,8 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { ArrowRight, Bot, ChevronRight, ExternalLink, GitCompareArrows, Loader2, Mail, MessageSquare, MoreHorizontal, Pin, Settings, X } from "lucide-react";
+import { ArrowRight, Bold, Bot, Check, ChevronRight, ExternalLink, GitCompareArrows, List, Loader2, Mail, MessageSquare, MoreHorizontal, Pencil, Pin, Settings, Trash2, X } from "lucide-react";
 import PopoverPanel, { anchorFrom } from "@/components/Popover";
 import { columnOf, fitColor, statusesForColumn, STATUS_CHIP, STATUS_LABEL, type ColumnId } from "@/lib/pipeline";
 import TrackerTag from "@/components/TrackerTag";
@@ -29,16 +29,15 @@ function trackerDate(p: { appliedDate?: string; updatedAt?: string; discoveredAt
 }
 
 const FUNNEL_LABEL: Record<string, string> = { company: "Company", title: "Title", location: "Location", fit: "Fit", lvl: "Lvl", comment: "Note", gaps: "Gaps", resume: "Resume", status: "Status", applied: "Applied", updated: "Last updated", act: "Action" };
-// Per-column width bounds (px). The table is auto-layout, so columns flex with their content but
-// stay within [min, max] — short text shrinks the column, long text wraps instead of overflowing.
-const COL_BOUNDS: Record<string, { min: number; max: number }> = {
-  company: { min: 130, max: 190 }, title: { min: 110, max: 230 }, location: { min: 100, max: 170 },
-  lvl: { min: 44, max: 56 }, fit: { min: 260, max: 460 }, gaps: { min: 150, max: 300 },
-  resume: { min: 90, max: 150 }, comment: { min: 44, max: 58 }, status: { min: 90, max: 130 }, applied: { min: 90, max: 120 },
-  updated: { min: 90, max: 130 }, act: { min: 130, max: 170 },
+// The table is `table-layout: fixed` (frozen columns need their declared widths to be authoritative,
+// or the sticky-left offsets — fixed FROZEN_W sums — drift past the real column edges and the frozen
+// cells overlap). So every column needs ONE definite width. Frozen columns use FROZEN_W; the rest get
+// a fixed width here. Content that exceeds it wraps/truncates instead of expanding the column.
+const NONFROZEN_W: Record<string, number> = {
+  comment: 56, fit: 420, gaps: 260, resume: 140, status: 120, applied: 110, updated: 120,
 };
-const colBound = (k: string) => COL_BOUNDS[k] ?? { min: 90, max: 240 };
-const colStyle = (k: string): React.CSSProperties => ({ minWidth: colBound(k).min, maxWidth: colBound(k).max });
+const colW = (k: string): number => (isFrozen(k) ? FROZEN_W[k] : NONFROZEN_W[k] ?? 120);
+const colStyle = (k: string): React.CSSProperties => ({ width: colW(k), minWidth: colW(k), maxWidth: colW(k) });
 // Per-column td className (alignment / tone).
 const COL_CLASS: Record<string, string> = {
   company: "text-zinc-400", lvl: "text-center", location: "text-zinc-400",
@@ -64,7 +63,10 @@ const UNIFIED_COLS = ["company", "title", "location", "lvl", "act", "comment", "
 // per-row action, kept pinned right after Lvl so the quick actions are always reachable. Sticky
 // cells need a concrete `left`, so the frozen columns get fixed widths and we sum them for each offset.
 const FROZEN_COLS = ["company", "title", "location", "lvl", "act"] as const;
-const FROZEN_W: Record<string, number> = { company: 190, title: 210, location: 150, lvl: 60, act: 170 };
+// `act` is sized for the WIDEST case: the fit stage shows two inline buttons ("Assess fit" + "Discard")
+// plus the ⋯ menu (see ActionCell). 170 clipped them and — being right-aligned — they overflowed LEFT
+// into the Lvl column. 230 fits that row on one line; ActionCell also flex-wraps as a hard backstop.
+const FROZEN_W: Record<string, number> = { company: 190, title: 210, location: 150, lvl: 60, act: 230 };
 const LAST_FROZEN = FROZEN_COLS[FROZEN_COLS.length - 1];
 const isFrozen = (k: string) => k in FROZEN_W;
 const frozenLeft = (k: string): number => {
@@ -98,6 +100,18 @@ const ACTIONS_BY_STATE: Record<string, ActionKey[]> = {
   dismissed: ["queue-fit"],
   filtered: ["queue-fit", "discard"],
 };
+// Where each quick action lands a scan-stage row (mirrors scannedAction server-side). Lets the table
+// update in place: if the new state still belongs to the open step (queue-fit: review → fit_queue,
+// both Fit Assessment) the row just changes state; otherwise it drops out. Either way we skip the full
+// re-fetch, so the surrounding rows don't flash or re-sort under you.
+const ACTION_RESULT_STATE: Record<ActionKey, string> = {
+  "queue-fit": "fit_queue",
+  discard: "dismissed",
+  tailor: "tailoring",
+  apply: "applied",
+  "apply-later": "apply_later",
+};
+
 // Text color per tone — for the ⋯ menu items (the inline Btn uses its own fuller styling).
 const TONE_TEXT: Record<string, string> = {
   emerald: "text-emerald-300", sky: "text-sky-300", amber: "text-amber-300", rose: "text-rose-300",
@@ -287,6 +301,7 @@ function cmp(a: string | number, b: string | number, dir: SortDir): number {
 }
 
 const ALL_STEPS = [...SPINE, ...ARCHIVE];
+const FILTER_KEY = "pipeline:filter"; // localStorage key for the committed filter chips
 const stepStates = (key: string): string[] => ALL_STEPS.find((s) => s.key === key)?.states ?? [key];
 // Reverse index: a candidate/tracker state → the spine step it lives under. Lets the "Move to" menu
 // hide the stage a row already sits in, so the menu only offers real jumps.
@@ -313,6 +328,9 @@ export default function Pipeline() {
   // Active spine step + its table state. Persisted so a refresh keeps you on the same step (start
   // from the default for a clean SSR/first render, then restore the saved step after mount).
   const [tab, setTab] = useState("review");
+  // Restore the persisted active step on mount. Start from the default for a clean SSR/first render,
+  // then restore after mount (avoids a hydration mismatch). The filter chips restore similarly,
+  // just below — after their state is declared.
   useEffect(() => {
     try {
       const v = localStorage.getItem("pipeline:step");
@@ -325,11 +343,24 @@ export default function Pipeline() {
   };
   // Filter tags (committed chips) + the in-progress draft. The effective filter is tags + draft (OR),
   // applied across ALL stages: it filters the active table AND drives the spine's filtered counts.
+  // The committed chips persist (FILTER_KEY); the live draft is transient.
   const [tags, setTags] = useState<string[]>([]);
   const [draft, setDraft] = useState("");
-  const addTag = (t: string) => { const v = t.trim(); if (v && !tags.includes(v)) setTags((ts) => [...ts, v]); setDraft(""); };
-  const removeTag = (t: string) => setTags((ts) => ts.filter((x) => x !== t));
-  const clearFilter = () => { setTags([]); setDraft(""); };
+  const saveTags = (next: string[]) => {
+    setTags(next);
+    try { localStorage.setItem(FILTER_KEY, JSON.stringify(next)); } catch { /* ignore */ }
+  };
+  const addTag = (t: string) => { const v = t.trim(); if (v && !tags.includes(v)) saveTags([...tags, v]); setDraft(""); };
+  const removeTag = (t: string) => saveTags(tags.filter((x) => x !== t));
+  const clearFilter = () => { saveTags([]); setDraft(""); };
+  // Restore the committed filter chips on mount (same SSR-safe pattern as the step above).
+  useEffect(() => {
+    try {
+      const saved = JSON.parse(localStorage.getItem(FILTER_KEY) || "[]") as unknown;
+      const f = Array.isArray(saved) ? saved.filter((x): x is string => typeof x === "string") : [];
+      if (f.length) setTags(f);
+    } catch { /* ignore */ }
+  }, []);
   // Effective filter terms (committed tags + the live draft), lowercased — drives the table filter
   // AND the spine's filtered counts. `termKey` is a stable dep string for effects.
   const terms = useMemo(() => [...tags, draft.trim()].filter(Boolean).map((t) => t.toLowerCase()), [tags, draft]);
@@ -351,6 +382,10 @@ export default function Pipeline() {
   // A pre-apply candidate (scan-stage row, e.g. tailoring) opened in the editable drawer. Tracker
   // rows come from `postings`; scan rows aren't in that set, so we fetch the full posting by id.
   const [scanPosting, setScanPosting] = useState<Posting | null>(null);
+  // Inline row editing — click the row's edit pencil to edit company/title/location in place (instead
+  // of opening the drawer). One row at a time; `editDraft` holds the working values until Save.
+  const [editingId, setEditingId] = useState<number | null>(null);
+  const [editDraft, setEditDraft] = useState<{ company: string; title: string; location: string }>({ company: "", title: "", location: "" });
   // Resume diff modal — opened from the Tailor step's resume cell (and the drawer's resume row).
   // Track the row's posting id alongside the slug so the modal can offer "redo with a note".
   const [diffSlug, setDiffSlug] = useState<string | null>(null);
@@ -392,10 +427,18 @@ export default function Pipeline() {
     if (isTrackerStep(tab) || tab === "review") { setScanRows([]); return; }
     fetch(`/api/scanned?state=${stepStates(tab).join(",")}`).then((r) => r.json()).then((d) => setScanRows(d.postings ?? [])).catch(() => setScanRows([]));
   }, [tab]);
-  // Re-read on tab switch AND on `jobKey` change: deleting a queued fit/tailoring job un-queues its
-  // candidate server-side (fit_queue → review, tailoring → assessed), so the active step's rows must
-  // re-read to drop it — without a manual tab switch.
-  useEffect(() => { setScanRows(null); loadRows(); }, [loadRows, jobKey]);
+  // Tab switch (and first mount): a fresh data set, so clear to the loading placeholder, then load.
+  useEffect(() => { setScanRows(null); loadRows(); }, [loadRows]);
+  // `jobKey` change (a queued fit/tailoring job was claimed/deleted — e.g. delete un-queues its
+  // candidate server-side: fit_queue → review, tailoring → assessed) re-reads the active step's rows
+  // so it drops/updates without a manual tab switch. Do it SILENTLY — load in place WITHOUT clearing to
+  // null (which collapses the table to the "loading…" placeholder and snaps the scroll back to the top).
+  // Skip the initial mount; the tab effect above already did the first load.
+  const jobKeyFirst = useRef(true);
+  useEffect(() => {
+    if (jobKeyFirst.current) { jobKeyFirst.current = false; return; }
+    loadRows();
+  }, [jobKey]); // eslint-disable-line react-hooks/exhaustive-deps
   // Tabs have different columns — a sort key from one needn't exist in the next, so reset.
   useEffect(() => setSort(null), [tab]);
 
@@ -413,6 +456,8 @@ export default function Pipeline() {
     return m;
   }, [postings]);
 
+  // The "filter by company…" box matches on COMPANY ONLY (callers pass just p.company), so a term
+  // like "senior" or a location never surfaces unrelated companies.
   const matches = (...parts: (string | null | undefined)[]) => {
     if (terms.length === 0) return true;
     const hay = parts.filter(Boolean).join(" ").toLowerCase();
@@ -432,7 +477,7 @@ export default function Pipeline() {
     ? trackerPostings.map(fromPosting)
     : scanRows == null ? null : scanRows.map(fromScanned);
   const rows = raw == null ? null : raw
-    .filter((p) => matches(p.company, p.title, p.location, p.department, p.reason, p.fit?.summary))
+    .filter((p) => matches(p.company))
     // Click-to-sort wins; else the per-step default — but newly-arrived rows always float to the top
     // first (so what CoWork just added in this stage is the first thing you see), then the per-step
     // default (tracker = newest, Fit = un-queued review first, then queued, then assessed by score).
@@ -462,10 +507,19 @@ export default function Pipeline() {
   );
 
   const act = async (id: number, action: ActionKey) => {
-    setScanRows((rs) => (rs ? rs.filter((r) => r.id !== id) : rs)); // optimistic
-    await fetch(`/api/scanned/${id}`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action }) });
-    loadCounts(terms);
-    loadRows(); // reconcile — a row may stay in this stage (e.g. apply-later within Fit Assessment)
+    // Graceful in-place update — no full re-fetch. A row that stays in the open step (queue-fit:
+    // review → fit_queue) just changes state; one that leaves (discard, tailor, apply, apply-later)
+    // drops out. The other rows keep their position instead of flashing/re-sorting.
+    const next = ACTION_RESULT_STATE[action];
+    const stays = stepStates(tab).includes(next);
+    setScanRows((rs) =>
+      rs == null ? rs
+        : stays ? rs.map((r) => (r.id === id ? { ...r, state: next } : r))
+        : rs.filter((r) => r.id !== id)
+    );
+    const r = await fetch(`/api/scanned/${id}`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action }) }).catch(() => null);
+    if (!r || !r.ok) { loadRows(); return; } // failed — reconcile the table from the server
+    loadCounts(terms); // keep the spine badges accurate
     if (action === "queue-fit" || action === "tailor") bump(); // handed work to CoWork — pulse the queue
   };
 
@@ -481,12 +535,12 @@ export default function Pipeline() {
       state === "applied" && !p.appliedDate ? { appliedDate: new Date().toISOString().slice(0, 10) }
         : state === "interview" ? { interviewed: true }
         : {};
-    await fetch(`/api/applications/${p.id}`, {
+    const r = await fetch(`/api/applications/${p.id}`, {
       method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ status: state, ...extra }),
-    }).catch(() => {});
+    }).catch(() => null);
+    if (!r || !r.ok) { loadRows(); return; } // failed — reconcile the active scan table from the server
     loadCounts(terms);
-    loadRows(); // reconcile the active scan table
-    reload(); // refresh the tracker postings — the row may now live in a tracker step
+    reload(); // refresh the tracker postings — the row may now live in a tracker step (the open scan table is already updated optimistically)
   };
 
   // Pin/unpin a posting → it floats to the top of its stage table. Tracker rows go through the
@@ -514,9 +568,25 @@ export default function Pipeline() {
       : redoNoteFor(String(p.id), "tailor") !== null ? "queued_redo"
       : (p.state === "tailoring" && !p.resumeDir) ? "queued_tailor" : null;
 
+  // Inline-edit input for an editing row's company/title/location cells. Enter saves, Escape cancels;
+  // clicks are kept off the row (which would open the drawer).
+  const editInput = (field: "company" | "title" | "location", p: FRow, placeholder: string) => (
+    <input
+      value={editDraft[field]}
+      autoFocus={field === "company"}
+      onChange={(e) => setEditDraft((d) => ({ ...d, [field]: e.target.value }))}
+      onClick={(e) => e.stopPropagation()}
+      onKeyDown={(e) => { if (e.key === "Enter") saveEdit(p); else if (e.key === "Escape") cancelEdit(); }}
+      placeholder={placeholder}
+      className="w-full min-w-0 rounded bg-zinc-900 px-1.5 py-0.5 text-[13px] text-zinc-200 outline-none ring-1 ring-inset ring-sky-500/60 focus:ring-sky-500 placeholder:text-zinc-600"
+    />
+  );
+
   const cellContent = (k: string, p: FRow): React.ReactNode => {
+    const editing = editingId === p.id;
     switch (k) {
       case "company": {
+        if (editing) return editInput("company", p, "company");
         const scanned = relAge(p.scannedAt);
         return (
           <span className="flex items-start gap-1.5">
@@ -535,7 +605,7 @@ export default function Pipeline() {
           </span>
         );
       }
-      case "title": return <Title text={p.title} url={p.url} />;
+      case "title": return editing ? editInput("title", p, "title") : <Title text={p.title} url={p.url} />;
       case "lvl": return <LevelChip company={p.company} leveling={p.leveling} levelingRef={levelingRef ?? DEFAULT_LEVELING_REF} />;
       case "fit": {
         const ws = fitStatusOf(p);
@@ -548,7 +618,7 @@ export default function Pipeline() {
           </div>
         );
       }
-      case "location": return p.location ?? "—";
+      case "location": return editing ? editInput("location", p, "location") : (p.location ?? "—");
       case "gaps": return (
         <span className="flex flex-wrap gap-1">
           {(p.fit?.gaps ?? []).map((g, i) => (
@@ -603,7 +673,14 @@ export default function Pipeline() {
       case "applied": return p.appliedDate ?? "—";
       case "updated": return p.updatedAt ?? "—";
       case "comment": return <CommentCell id={p.id} comments={p.comments ?? []} onChanged={() => { reload(); loadRows(); }} />;
-      case "act": return <ActionCell actions={ACTIONS_BY_STATE[p.state] ?? []} state={p.state} onAct={(a) => act(p.id, a)} onMove={(s) => moveTo(p, s)} />;
+      case "act":
+        if (editing) return (
+          <span className="flex items-center justify-end gap-1" onClick={(e) => e.stopPropagation()}>
+            <button onClick={() => saveEdit(p)} title="Save (Enter)" className="rounded-md p-1 text-emerald-300 ring-1 ring-inset ring-emerald-500/30 transition hover:bg-emerald-500/15"><Check size={14} /></button>
+            <button onClick={cancelEdit} title="Cancel (Esc)" className="rounded-md p-1 text-zinc-400 ring-1 ring-inset ring-zinc-700 transition hover:bg-zinc-800"><X size={14} /></button>
+          </span>
+        );
+        return <ActionCell actions={ACTIONS_BY_STATE[p.state] ?? []} state={p.state} onAct={(a) => act(p.id, a)} onMove={(s) => moveTo(p, s)} onEdit={() => startEdit(p)} />;
       default: return null;
     }
   };
@@ -614,7 +691,7 @@ export default function Pipeline() {
   const count = (s: SpineStep): number | undefined =>
     s.key === "review" ? undefined // Scan Watchlist = config, no posting count badge
       : isTrackerStep(s.key)
-      ? postings.filter((p) => columnOf(p) === STEP_COLUMN[s.key] && matches(p.company, p.role, p.location)).length
+      ? postings.filter((p) => columnOf(p) === STEP_COLUMN[s.key] && matches(p.company)).length
       : bucketCounts ? stepCount(s, bucketCounts) : undefined;
   const tableLoading = isTracker ? loading : tab === "review" ? false : scanRows === null;
   const empty = (!rows || rows.length === 0) && !tableLoading;
@@ -639,6 +716,24 @@ export default function Pipeline() {
     if (r?.ok) setScanPosting((await r.json()).posting ?? null);
     refreshScan();
   };
+  // Inline row edit: open (seed the draft from the row), cancel, and save (PATCH only the changed
+  // fields — works for BOTH scan-stage and tracker rows since /api/applications/:id handles any stage).
+  const startEdit = (p: FRow) => { setScanPosting(null); setSelectedCompany(null); setSelectedJobId(null); setEditingId(p.id); setEditDraft({ company: p.company, title: p.title, location: p.location ?? "" }); };
+  const cancelEdit = () => setEditingId(null);
+  const saveEdit = async (p: FRow) => {
+    const body: Record<string, unknown> = {};
+    if (editDraft.title.trim() && editDraft.title.trim() !== p.title) body.role = editDraft.title.trim();
+    const loc = editDraft.location.trim() || null;
+    if (loc !== (p.location ?? null)) body.location = loc;
+    const co = editDraft.company.trim();
+    if (co && co !== p.company) body.moveToCompany = co; // reassign this posting to that company (created if new)
+    setEditingId(null);
+    if (Object.keys(body).length) {
+      await fetch(`/api/applications/${p.id}`, { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify(body) }).catch(() => {});
+      refreshScan(); // refresh both the scan rows and the tracker postings + counts
+    }
+  };
+
   // A one-item company aggregate for the drawer (it renders just the focused posting now).
   const scanAgg: CompanyAgg | null = scanPosting
     ? { company: scanPosting.company, tier: scanPosting.tier, items: [scanPosting], newCount: 0, statusCounts: {}, skipped: false, watchlist: !!scanPosting.watchlist }
@@ -752,14 +847,13 @@ export default function Pipeline() {
             ) : empty ? (
               <div className="rounded-xl border border-dashed border-zinc-800/80 py-10 text-center text-[13px] text-zinc-600">nothing in this step</div>
             ) : (
-              <table className="border-separate border-spacing-0 text-left" style={{ minWidth: fcols.reduce((s, k) => s + (isFrozen(k) ? FROZEN_W[k] : colBound(k).min), 0) }}>
+              <table className="border-separate border-spacing-0 text-left" style={{ tableLayout: "fixed", width: fcols.reduce((s, k) => s + colW(k), 0) }}>
                 <thead>
                   <tr>
                     {fcols.map((k) => (
                       <ResTh
                         key={k}
-                        min={colBound(k).min}
-                        max={colBound(k).max}
+                        width={colW(k)}
                         style={headerStyle(k)}
                         className={isFrozen(k) ? frozenCls(k, false) : "bg-[var(--background)]"}
                         onSort={UNSORTABLE.has(k) ? undefined : () => toggleSort(k)}
@@ -772,8 +866,8 @@ export default function Pipeline() {
                   {(rows ?? []).map((p) => (
                     <tr
                       key={p.id}
-                      onClick={p.posting ? () => selectJob(p.posting!) : () => openScanRow(p.id)}
-                      className="group cursor-pointer text-[13px] text-zinc-300 odd:bg-zinc-900/30 hover:bg-zinc-800/50"
+                      onClick={editingId === p.id ? undefined : p.posting ? () => selectJob(p.posting!) : () => openScanRow(p.id)}
+                      className={`group text-[13px] text-zinc-300 odd:bg-zinc-900/30 hover:bg-zinc-800/50 ${editingId === p.id ? "" : "cursor-pointer"}`}
                     >
                       {fcols.map((k) => (
                         <Td
@@ -802,6 +896,7 @@ export default function Pipeline() {
           onTier={(tier) => setCompanyTier(companyGroup.company, tier)}
           onToggleWatchlist={(on) => setWatchlist(companyGroup.company, on)}
           onEditField={setField}
+          onChanged={reload}
           onMove={moveJob}
           onDelete={(p) => {
             deleteJob(p);
@@ -833,6 +928,7 @@ export default function Pipeline() {
           onTier={(tier) => scanEdit(scanPosting.id, { tier })}
           onToggleWatchlist={(on) => { setWatchlist(scanPosting.company, on); setScanPosting((cur) => (cur ? { ...cur, watchlist: on } : cur)); }}
           onEditField={(p, changes) => scanEdit(p.id, changes)}
+          onChanged={refreshScan}
           onMove={(p, company) => scanEdit(p.id, { moveToCompany: company })}
           onDelete={async (p) => { await fetch(`/api/applications/${p.id}`, { method: "DELETE" }).catch(() => {}); setScanPosting(null); refreshScan(); }}
           onRename={(name) => { const t = name.trim(); if (t && t !== scanPosting.company) scanEdit(scanPosting.id, { companyName: t }); }}
@@ -1049,22 +1145,152 @@ function Btn({ tone, onClick, title, children }: { tone: "emerald" | "rose" | "s
 // The comment cell: a MessageSquare icon (+ count when there are comments) that opens a portaled
 // popover with the thread + an input to add. Comments persist via /api/applications/:id/comment;
 // `onChanged` refreshes the row so the count updates.
+// Renders **bold** spans inside otherwise-plain comment text.
+function renderBold(text: string) {
+  return text.split(/(\*\*[^*]+?\*\*)/g).map((part, i) => {
+    const m = part.match(/^\*\*([^*]+?)\*\*$/);
+    return m ? <strong key={i} className="font-semibold text-zinc-100">{m[1]}</strong> : <span key={i}>{part}</span>;
+  });
+}
+
 function CommentCell({ id, comments, onChanged }: { id: number; comments: Comment[]; onChanged: () => void }) {
   const [pos, setPos] = useState<{ x: number; y: number } | null>(null);
   const [list, setList] = useState<Comment[]>(comments);
   const [draft, setDraft] = useState("");
+  const [editing, setEditing] = useState<number | null>(null); // index being edited, or null = adding new
   const [busy, setBusy] = useState(false);
+  const taRef = useRef<HTMLTextAreaElement>(null);
   // Seeded once from props; thereafter local is the source of truth (the cell is keyed by posting id
   // at the row level, and add/delete update `list` from the API response — so no prop-resync needed).
 
-  const send = async (method: "POST" | "DELETE", body: object) => {
+  // Auto-grow the textarea to fit its content (capped), so the box expands as you type.
+  const autosize = () => {
+    const el = taRef.current;
+    if (!el) return;
+    el.style.height = "auto";
+    el.style.height = `${Math.min(el.scrollHeight, 160)}px`;
+  };
+  useEffect(autosize, [draft]);
+
+  const send = async (method: "POST" | "PATCH" | "DELETE", body: object) => {
     setBusy(true);
     const r = await fetch(`/api/applications/${id}/comment`, { method, headers: { "content-type": "application/json" }, body: JSON.stringify(body) }).catch(() => null);
     if (r?.ok) { const d = await r.json(); setList(d.posting?.comments ?? []); onChanged(); }
     setBusy(false);
   };
-  const add = () => { const t = draft.trim(); if (t) { setDraft(""); send("POST", { text: t }); } };
+  // Submit the draft: PATCH when editing an existing comment, otherwise POST a new one.
+  const submit = () => {
+    const t = draft.trim();
+    if (!t) return;
+    if (editing !== null) send("PATCH", { index: editing, text: t });
+    else send("POST", { text: t });
+    setDraft(""); setEditing(null);
+  };
+  const startEdit = (i: number) => {
+    setEditing(i); setDraft(list[i].text);
+    requestAnimationFrame(() => { const el = taRef.current; if (el) { el.focus(); el.selectionStart = el.selectionEnd = el.value.length; } });
+  };
+  const cancelEdit = () => { setEditing(null); setDraft(""); };
   const n = list.length;
+
+  // Replaces a leading "-"/"*" on the current line with a "• " bullet. Returns true if it converted.
+  const dashToBullet = (el: HTMLTextAreaElement) => {
+    const start = el.selectionStart;
+    if (start !== el.selectionEnd) return false;
+    const lineStart = draft.lastIndexOf("\n", start - 1) + 1;
+    const m = draft.slice(lineStart, start).match(/^(\s*)[-*]$/);
+    if (!m) return false;
+    const next = `${draft.slice(0, lineStart)}${m[1]}• ${draft.slice(start)}`;
+    const caret = lineStart + m[1].length + 2;
+    setDraft(next);
+    requestAnimationFrame(() => { el.selectionStart = el.selectionEnd = caret; });
+    return true;
+  };
+
+  // Indents (Tab) or outdents (Shift+Tab) the bullet line under the cursor by two spaces.
+  const indentBullet = (el: HTMLTextAreaElement, out: boolean) => {
+    const start = el.selectionStart;
+    const lineStart = draft.lastIndexOf("\n", start - 1) + 1;
+    const line = draft.slice(lineStart).split("\n", 1)[0];
+    if (!/^\s*[-*•]\s/.test(line)) return false;
+    let next: string, caret: number;
+    if (out) {
+      const drop = line.match(/^ {1,4}/)?.[0].length ?? 0;
+      if (!drop) return true; // already flush; swallow Tab anyway
+      next = draft.slice(0, lineStart) + draft.slice(lineStart + drop);
+      caret = Math.max(lineStart, start - drop);
+    } else {
+      next = `${draft.slice(0, lineStart)}    ${draft.slice(lineStart)}`;
+      caret = start + 4;
+    }
+    setDraft(next);
+    requestAnimationFrame(() => { el.selectionStart = el.selectionEnd = caret; });
+    return true;
+  };
+
+  // Key handling for the draft box: Enter submits; Shift+Enter inserts a newline, but on a bullet line
+  // it continues the list (and an empty bullet ends it). A leading "-"/"*" + space becomes a "• " bullet;
+  // Tab on a bullet line indents it (Shift+Tab outdents) — editor-style markdown bullets.
+  // Wraps the current selection in ** ** (or unwraps it if already bold). Toolbar button + ⌘/Ctrl+B.
+  const toggleBold = () => {
+    const el = taRef.current;
+    if (!el) return;
+    const s = el.selectionStart, en = el.selectionEnd;
+    const sel = draft.slice(s, en);
+    let next: string, a: number, b: number;
+    if (sel.startsWith("**") && sel.endsWith("**") && sel.length > 4) {
+      next = draft.slice(0, s) + sel.slice(2, -2) + draft.slice(en); a = s; b = en - 4;
+    } else {
+      next = `${draft.slice(0, s)}**${sel}**${draft.slice(en)}`; a = s + 2; b = en + 2;
+    }
+    setDraft(next);
+    requestAnimationFrame(() => { el.focus(); el.selectionStart = a; el.selectionEnd = b; });
+  };
+
+  const onKey = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if ((e.metaKey || e.ctrlKey) && (e.key === "b" || e.key === "B")) { e.preventDefault(); toggleBold(); return; }
+    if (e.key === " " && dashToBullet(e.currentTarget)) { e.preventDefault(); return; }
+    if (e.key === "Tab") {
+      const el = e.currentTarget;
+      if (dashToBullet(el) || indentBullet(el, e.shiftKey)) e.preventDefault();
+      return;
+    }
+    if (e.key !== "Enter") return;
+    if (!e.shiftKey) { e.preventDefault(); submit(); return; }
+    const el = e.currentTarget;
+    const start = el.selectionStart, end = el.selectionEnd;
+    const lineStart = draft.lastIndexOf("\n", start - 1) + 1;
+    const line = draft.slice(lineStart, start);
+    const m = line.match(/^(\s*)([-*•])\s+/);
+    if (!m) return; // default: plain newline
+    e.preventDefault();
+    let next: string, caret: number;
+    if (line.trim() === m[2]) {
+      // empty bullet → end the list by clearing this line
+      next = draft.slice(0, lineStart) + draft.slice(end);
+      caret = lineStart;
+    } else {
+      const insert = `\n${m[1]}${m[2]} `;
+      next = draft.slice(0, start) + insert + draft.slice(end);
+      caret = start + insert.length;
+    }
+    setDraft(next);
+    requestAnimationFrame(() => { el.selectionStart = el.selectionEnd = caret; });
+  };
+
+  // Starts a bullet line (or prefixes the current line) when the user clicks the bullet button.
+  const addBullet = () => {
+    const el = taRef.current;
+    const at = el ? el.selectionStart : draft.length;
+    const lineStart = draft.lastIndexOf("\n", at - 1) + 1;
+    const atLineStart = at === lineStart;
+    const needsBreak = lineStart > 0 && !atLineStart;
+    const insert = `${needsBreak ? "\n" : ""}• `;
+    const next = draft.slice(0, at) + insert + draft.slice(at);
+    setDraft(next);
+    const caret = at + insert.length;
+    requestAnimationFrame(() => { if (taRef.current) { taRef.current.focus(); taRef.current.selectionStart = taRef.current.selectionEnd = caret; } });
+  };
 
   return (
     <span className="flex items-center justify-center" onClick={(e) => e.stopPropagation()}>
@@ -1077,27 +1303,41 @@ function CommentCell({ id, comments, onChanged }: { id: number; comments: Commen
         {n > 0 && <span className="font-medium tabular-nums">{n}</span>}
       </button>
       {pos && (
-        <PopoverPanel at={pos} onClose={() => setPos(null)} className="w-72 p-2">
+        <PopoverPanel at={pos} onClose={() => setPos(null)} className="w-[32rem] p-2">
           <div className="max-h-64 space-y-1.5 overflow-y-auto">
             {list.length === 0 && <p className="px-1 py-2 text-center text-[12px] text-zinc-600">No comments yet.</p>}
             {list.map((c, i) => (
-              <div key={i} className="group rounded-md bg-zinc-800/50 px-2 py-1.5">
+              <div key={i} className={`group rounded-md px-2 py-1.5 transition ${editing === i ? "bg-violet-500/10 ring-1 ring-inset ring-violet-500/40" : "bg-zinc-800/50"}`}>
                 <div className="flex items-start gap-2">
-                  <p className="flex-1 whitespace-pre-wrap break-words text-[13px] text-zinc-200">{c.text}</p>
-                  <button onClick={() => send("DELETE", { index: i })} title="Delete" className="shrink-0 text-zinc-600 opacity-0 transition hover:text-rose-300 group-hover:opacity-100"><X size={12} /></button>
+                  <p className="flex-1 whitespace-pre-wrap break-words text-[13px] text-zinc-200">{renderBold(c.text)}</p>
+                  <div className="flex shrink-0 items-center gap-1.5">
+                    <button onClick={() => startEdit(i)} disabled={busy} title="Edit" className="text-zinc-500 transition hover:text-zinc-200 disabled:opacity-40"><Pencil size={12} /></button>
+                    <button onClick={() => send("DELETE", { index: i })} disabled={busy} title="Delete" className="text-zinc-500 transition hover:text-rose-300 disabled:opacity-40"><Trash2 size={12} /></button>
+                  </div>
                 </div>
-                <p className="mt-0.5 text-[11px] text-zinc-500">{ago(c.at)}</p>
+                <p className="mt-0.5 text-[11px] text-zinc-500">{ago(c.at)}{c.editedAt ? " · edited" : ""}</p>
               </div>
             ))}
           </div>
-          <div className="mt-1.5 flex items-center gap-1.5 border-t border-zinc-800 pt-1.5">
-            <input
-              autoFocus value={draft} onChange={(e) => setDraft(e.target.value)}
-              onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); add(); } }}
-              placeholder="Add a comment…"
-              className="min-w-0 flex-1 rounded bg-zinc-800 px-2 py-1 text-[13px] text-zinc-200 outline-none ring-1 ring-inset ring-zinc-700 placeholder:text-zinc-600 focus:ring-zinc-500"
-            />
-            <button onClick={add} disabled={busy || !draft.trim()} className="shrink-0 rounded bg-violet-500 px-2 py-1 text-[12px] font-medium text-violet-50 transition enabled:hover:bg-violet-400 disabled:opacity-40">Add</button>
+          <div className="mt-1.5 border-t border-zinc-800 pt-1.5">
+            <div className="overflow-hidden rounded-md bg-zinc-800 ring-1 ring-inset ring-zinc-700 transition focus-within:ring-zinc-500">
+              <textarea
+                ref={taRef} autoFocus rows={1} value={draft} onChange={(e) => setDraft(e.target.value)}
+                onKeyDown={onKey}
+                placeholder={editing !== null ? "Edit comment…" : "Add a comment…"}
+                className="block max-h-40 w-full resize-none bg-transparent px-2.5 py-2 text-[13px] leading-snug text-zinc-200 outline-none placeholder:text-zinc-600"
+              />
+              <div className="flex items-center justify-between gap-2 px-1.5 pb-1.5">
+                <div className="flex items-center gap-0.5">
+                  <button onClick={addBullet} title="Bullet list" className="rounded p-1 text-zinc-500 transition hover:bg-zinc-700 hover:text-zinc-200"><List size={14} /></button>
+                  <button onMouseDown={(e) => e.preventDefault()} onClick={toggleBold} title="Bold (⌘B)" className="rounded p-1 text-zinc-500 transition hover:bg-zinc-700 hover:text-zinc-200"><Bold size={14} /></button>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  {editing !== null && <button onClick={cancelEdit} disabled={busy} className="rounded px-2 py-1 text-[12px] font-medium text-zinc-400 transition hover:bg-zinc-700 hover:text-zinc-200 disabled:opacity-40">Cancel</button>}
+                  <button onClick={submit} disabled={busy || !draft.trim()} className="rounded bg-violet-500 px-2.5 py-1 text-[12px] font-medium text-violet-50 transition enabled:hover:bg-violet-400 disabled:opacity-40">{editing !== null ? "Save" : "Add"}</button>
+                </div>
+              </div>
+            </div>
           </div>
         </PopoverPanel>
       )}
@@ -1105,18 +1345,25 @@ function CommentCell({ id, comments, onChanged }: { id: number; comments: Commen
   );
 }
 
-function ActionCell({ actions, state, onAct, onMove }: { actions: ActionKey[]; state: string; onAct: (a: ActionKey) => void; onMove: (state: string) => void }) {
+function ActionCell({ actions, state, onAct, onMove, onEdit }: { actions: ActionKey[]; state: string; onAct: (a: ActionKey) => void; onMove: (state: string) => void; onEdit: () => void }) {
   const [pos, setPos] = useState<{ x: number; y: number } | null>(null);
   // Just the PRIMARY action as a quick button; every secondary action folds into the ⋯ menu, which
-  // also carries "Move to" (jump to any stage out of sequence). One button + the ⋯ fits the fixed
-  // action-column width with no overflow, and the ⋯ shows on every row — even tracker rows with no
-  // contextual quick action.
-  const inline = actions.slice(0, 1);
-  const more = actions.slice(1);
+  // also carries "Move to" (jump to any stage out of sequence). The ⋯ shows on every row — even
+  // tracker rows with no contextual quick action.
+  // Exception: in the FIT stage triage is the whole job (queue vs. drop), so Discard rides along as a
+  // second quick button — dropping a match is one click instead of a dig through the ⋯ menu. The
+  // action column (FROZEN_W.act) is sized for that two-button row; the wrapper also flex-wraps so a
+  // tight row stacks onto a second line rather than overflowing left into the Lvl column.
+  const isFit = STATE_STAGE[state] === "fit";
+  const inline = isFit && actions.includes("discard")
+    ? [...actions.slice(0, 1).filter((a) => a !== "discard"), "discard"] as ActionKey[]
+    : actions.slice(0, 1);
+  const more = actions.filter((a) => !inline.includes(a));
   const moves = MOVE_TARGETS.filter((t) => t.stage !== STATE_STAGE[state]);
-  const hasMenu = more.length > 0 || moves.length > 0;
+  // The ⋯ menu always shows now: it carries Edit at minimum (plus any secondary actions / Move to).
+  const hasMenu = true;
   return (
-    <span className="flex items-center justify-end gap-1.5" onClick={(e) => e.stopPropagation()}>
+    <span className="flex flex-wrap items-center justify-end gap-1.5" onClick={(e) => e.stopPropagation()}>
       {inline.map((a) => {
         const m = ACTION_META[a];
         const I = m.icon;
@@ -1136,6 +1383,14 @@ function ActionCell({ actions, state, onAct, onMove }: { actions: ActionKey[]; s
       {pos && (
         <PopoverPanel at={pos} onClose={() => setPos(null)} className="p-1">
           <div className="flex flex-col gap-0.5">
+            <button
+              onClick={() => { onEdit(); setPos(null); }}
+              title="Edit company / title / location"
+              className="flex items-center gap-1.5 whitespace-nowrap rounded-md px-2.5 py-1.5 text-left text-[13px] font-medium text-zinc-300 transition hover:bg-zinc-800"
+            >
+              <Pencil size={13} className="text-zinc-500" />Edit
+            </button>
+            {(more.length > 0 || moves.length > 0) && <div className="my-0.5 border-t border-zinc-800" />}
             {more.map((a) => {
               const m = ACTION_META[a];
               const I = m.icon;

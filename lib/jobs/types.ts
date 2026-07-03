@@ -6,6 +6,7 @@ export type JobType =
   | "watchlist-scan"
   | "inbox-sync"
   | "fit"
+  | "fitlab-assess"
   | "tailoring"
   | "prep"
   | "prep-research";

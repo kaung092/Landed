@@ -15,22 +15,16 @@ export type Profile = {
 
 const PROFILE_KEY = "profile";
 
+// Placeholder defaults — generic but functional, so a fresh install runs and assesses fit
+// out of the box. EDIT THESE to your own search identity on the Discovery page (they're the
+// single biggest driver of fit calls). The disciplines below are illustrative examples.
 export const DEFAULT_PROFILE: Profile = {
-  levelBaseline: "ex-Amazon L6 (Senior SDE), ~2 years at L6",
+  levelBaseline: "Senior Software Engineer, ~6 years of experience",
   levelRule:
     "Target Senior at big / rigorous-leveling companies (FAANG-scale, strict ladders); Staff at smaller companies / startups. Senior Staff+ / Principal = stretch.",
-  includeDisciplines: ["backend", "fullstack", "platform", "infrastructure", "distributed systems", "SRE / production"],
-  excludeDisciplines: [
-    "ML / AI research",
-    "security",
-    "mobile (iOS / Android)",
-    "compilers / PL / formal methods",
-    "low-latency / HFT",
-    "hardware / embedded",
-    "data engineering",
-    "IT / sysadmin",
-  ],
-  locations: "US (incl. remote-US)",
+  includeDisciplines: ["backend", "fullstack", "platform", "infrastructure", "distributed systems"],
+  excludeDisciplines: ["hardware / embedded", "IT / sysadmin"],
+  locations: "Remote (US)",
   notes: "",
 };
 

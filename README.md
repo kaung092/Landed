@@ -54,6 +54,20 @@ the folder the app and CoWork share for your base résumé, tailored-resume fold
 tailor queue, and the instruction `.md` files that brief the agent. It defaults to
 `./asset-root` inside the repo so a fresh clone works out of the box.
 
+### Make it yours
+
+Two things ship with generic placeholder defaults that you should personalize — both are
+the biggest drivers of how the app assesses fit:
+
+- **Your search profile** — level baseline, included/excluded disciplines, and locations.
+  Edit it on the **Discovery** page (stored per install in the DB). The shipped defaults in
+  [lib/db/profile.ts](lib/db/profile.ts) are illustrative only.
+- **Target companies** — the list that decides whether a newly-seen company starts in the
+  "target" vs "practice" tier. It's a single starter list in
+  [lib/targets.mjs](lib/targets.mjs) — edit it for your own search. (You can also re-tier any
+  company in the UI regardless.) The leveling anchor ladder defaults to Amazon's and is
+  swappable on the Discovery page.
+
 ## How CoWork fits in
 
 Agentic work happens through **Claude CoWork**, which connects to the app's MCP server

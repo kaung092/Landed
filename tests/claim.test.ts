@@ -273,3 +273,28 @@ test("submitJobResult still allows a self-initiated run (no queue row to claim)"
   assert.equal(out.type, "inbox-sync");
   assert.equal(jobRow("inbox-self-1").status, "ingested");
 });
+
+// --- claimNext dead-letters poison jobs so a drain loop can terminate ----------------------
+// A job a runner can never complete (e.g. a browser-only `leveling` job in a headless context)
+// used to re-lease forever — claimNext never reaped it, so the drain could never reach "no job".
+
+test("claimNext dead-letters a poison job (claimed to the attempt budget, no result) → drain reaches 'no job'", () => {
+  const id = createJob({ id: "leveling-poison", type: "leveling", params: { company: "Snowflake" } });
+  // Simulate: claimed up to the budget but never produced a result, and the lease has since lapsed.
+  db.update(jobs).set({ status: "wip", attempts: 3, claimedBy: "agent", claimedAt: new Date(Date.now() - 90 * 60_000).toISOString() }).where(eq(jobs.id, id)).run();
+
+  const got = claimNext("agent-B", "leveling");
+  assert.equal(got, null, "nothing claimable — the drain terminates honestly");
+  const row = jobRow(id);
+  assert.equal(row.status, "failed", "the poison job was dead-lettered");
+  assert.match(row.error ?? "", /auto-failed/);
+});
+
+test("claimNext reclaims an abandoned job that still has attempt budget (not dead-lettered)", () => {
+  const id = createJob({ id: "leveling-retry", type: "leveling", params: { company: "Acme" } });
+  db.update(jobs).set({ status: "wip", attempts: 1, claimedBy: "agent", claimedAt: new Date(Date.now() - 90 * 60_000).toISOString() }).where(eq(jobs.id, id)).run();
+
+  const got = claimNext("agent-C", "leveling");
+  assert.equal(got?.id, id, "still under budget → reclaimed, not failed");
+  assert.equal(jobRow(id).status, "wip");
+});

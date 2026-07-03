@@ -158,6 +158,45 @@ function matchesLocation(loc: string | null, tokens: string[], usOnly: boolean):
   return tokens.some((tok) => l.includes(tok));
 }
 
+// The location gate for a company: its target-location tokens + whether the US-only guard applies.
+// US-only is the global default (you're US-based), applied even with no target_location; only a
+// target that EXPLICITLY names a non-US place opts out. Shared by the scan classifier and the
+// non-local purge so both decide "is this role in range?" identically.
+function locFilter(co: { targetLocation: string | null }): { lTok: string[]; usOnly: boolean } {
+  const lTok = co.targetLocation ? locTokens(co.targetLocation) : [];
+  const tl = co.targetLocation ?? "";
+  const usOnly = !(tl && NON_US.test(tl) && !US_SIGNAL.test(tl));
+  return { lTok, usOnly };
+}
+
+// Drop rows from the Filtered / Discarded archive piles whose location is outside the target. We
+// ignore non-local roles entirely (the scan never files them — see classifyJob's "location" gate),
+// so they shouldn't linger in the archive either; this also sweeps stale rows no longer in the feed.
+// Only these two archive states are touched — an active/manual decision (queued/applied/…) is never
+// deleted. Returns how many rows were removed.
+export function purgeNonLocal(companyId: number, lTok: string[], usOnly: boolean): number {
+  const rows = db
+    .select()
+    .from(postings)
+    .where(and(eq(postings.companyId, companyId), inArray(postings.state, ["filtered", "dismissed"])))
+    .all();
+  const stale = rows.filter((r) => !matchesLocation(r.location, lTok, usOnly)).map((r) => r.id);
+  if (stale.length) db.delete(postings).where(inArray(postings.id, stale)).run();
+  return stale.length;
+}
+
+// Sweep every company's archive piles for non-local roles in one pass (the one-shot backfill behind
+// `npm run purge:nonlocal`; ongoing scans purge their own company incrementally). Returns the total.
+export function purgeAllNonLocal(): number {
+  const cos = db.select().from(companies).all();
+  let total = 0;
+  for (const co of cos) {
+    const { lTok, usOnly } = locFilter(co);
+    total += purgeNonLocal(co.id, lTok, usOnly);
+  }
+  return total;
+}
+
 // --- per-ATS list fetchers -----------------------------------------------------------------
 async function listGreenhouse(slug: string, company: string): Promise<ScannedJob[]> {
   // /jobs is the canonical lightweight list; /departments gives each job's department (the
@@ -240,6 +279,10 @@ function persistScan(companyId: number, verdicts: { j: ScannedJob; reason: ScanR
   db.transaction((tx) => {
     for (const { j, reason } of verdicts) {
       if (!j.atsId) continue; // need the dedup key
+      // Non-local role → ignore entirely: never file it in the triage store (not even as Filtered).
+      // Existing rows for it are swept by purgeNonLocal after this. (A prior manual decision in an
+      // active pile is left alone — purgeNonLocal only touches Filtered / Discarded.)
+      if (reason === "location") continue;
       // Preserve a manual/glance/fit decision across rescans; legacy tracked/queued → fit_queue.
       // A fresh row writes its step directly: dedup → applied · kept → matched (awaiting glance) ·
       // dropped → filtered (rigid pre-filter drop).
@@ -296,11 +339,7 @@ export async function scanCompany(name: string, withJd = true): Promise<ScanResu
 
     // filter by the company's own criteria
     const tTok = titleTokens(safeArr(co.targetTitles));
-    const lTok = co.targetLocation ? locTokens(co.targetLocation) : [];
-    // US-only is the global default (you're US-based) — applied even when a company has no
-    // target_location. Only a target that EXPLICITLY names a non-US place opts out.
-    const tl = co.targetLocation ?? "";
-    const usOnly = !(tl && NON_US.test(tl) && !US_SIGNAL.test(tl));
+    const { lTok, usOnly } = locFilter(co);
     const quant = isQuant(co.notes);
 
     // dedup keys from this company's already-tracked postings (by role/title or url)
@@ -314,6 +353,9 @@ export async function scanCompany(name: string, withJd = true): Promise<ScanResu
     );
     const verdicts = jobs.map((j) => ({ j, reason: classifyJob(j, { tTok, lTok, usOnly, quant, roleSet, urlSet }) }));
     persistScan(co.id, verdicts, prior);
+    // Non-local roles are never filed (persistScan skips the "location" reason); also clear any that
+    // lingered in this company's Filtered / Discarded piles from before this rule (or now off the feed).
+    purgeNonLocal(co.id, lTok, usOnly);
 
     // the live shortlist = kept jobs not already dismissed in the triage store
     const matched = verdicts.filter((v) => v.reason === "kept" && prior.get(v.j.atsId ?? "") !== "dismissed").map((v) => v.j);
