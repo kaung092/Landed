@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Home, Briefcase, History, Bot, GraduationCap, FlaskConical, Plug, LayoutDashboard } from "lucide-react";
+import { Home, Briefcase, History, Bot, GraduationCap, FlaskConical, Plug, LayoutDashboard, Settings } from "lucide-react";
 
 // Each item's optional `badge` carries its color; the live count is looked up by href
 // from the `counts` map below, so adding a new badge is a one-line data change.
@@ -15,6 +15,7 @@ const ITEMS = [
   { href: "/mcp", label: "MCP", icon: Plug },
   { href: "/fit-lab", label: "Fit Lab", icon: FlaskConical },
   { href: "/changes", label: "Changes", icon: History, badge: "bg-amber-500 text-amber-950" },
+  { href: "/settings", label: "Settings", icon: Settings },
 ];
 
 export default function NavRail() {

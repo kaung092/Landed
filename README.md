@@ -2,8 +2,8 @@
 
 A local-first job-search command center. It unifies the whole pipeline — discovery,
 fit assessment, résumé tailoring, applications, interviews, and prep — into one
-stage-aware view, and pairs with **Claude CoWork** (an agent working over MCP) to do
-the heavy lifting: assessing job fit, tailoring résumés, and reconciling your inbox.
+stage-aware view, and pairs with **a Claude Code agent** (working over MCP) to do the
+heavy lifting: assessing job fit, tailoring résumés, and reconciling your inbox.
 
 Everything runs on your machine. A single SQLite database is the source of truth; the
 app and the agent both read and write it — the app through its UI, the agent through an
@@ -11,15 +11,15 @@ MCP server.
 
 > Built with Next.js 16 (App Router), React 19, Tailwind 4, Drizzle ORM, and
 > `better-sqlite3`. Two actors edit the data: **You** (the human, via the UI) and
-> **CoWork** (the agent, via MCP) — every change is attributed to one of them.
+> **the agent** (a Claude Code session, via MCP) — every change is attributed to one of them.
 
 ## Features
 
 - **Unified pipeline** — one stage-aware board from discovery → fit → tailor →
   apply → interview → closed, with per-stage actions.
-- **Fit assessment & résumé tailoring** — queue a posting and hand it to CoWork; it
+- **Fit assessment & résumé tailoring** — queue a posting and hand it to the agent; it
   assesses fit and tailors a résumé, versioned with a "redo with a note" flow.
-- **Change log** — every edit is attributed to You or CoWork and shown in a feed.
+- **Change log** — every edit is attributed to You or the agent and shown in a feed.
 - **Interview prep** — DB-backed coding / system-design question tracking with
   per-company playbooks and attempt history.
 - **Inbox reconciliation** — fold an inbox audit into the tracker (script).
@@ -48,38 +48,43 @@ npm run seed:prep-companies
 
 ### Configuration
 
-All configuration is via environment variables in `.env` — see
+Most day-to-day configuration lives on the in-app **Settings** page (connections, your
+candidate profile + leveling reference, the base résumé, and a browser for the asset
+folder). Machine-level settings are environment variables in `.env` — see
 [.env.example](.env.example) for the full list. The most important one is `ASSET_ROOT`:
-the folder the app and CoWork share for your base résumé, tailored-resume folders, the
-tailor queue, and the instruction `.md` files that brief the agent. It defaults to
-`./asset-root` inside the repo so a fresh clone works out of the box.
+the folder the app and the agent share for your base résumé, tailored-resume folders,
+and the tailor queue. It defaults to `./asset-root` inside the repo so a fresh clone
+works out of the box. (The agent playbooks are not in the asset folder — they ship in the
+repo under [`instructions/`](instructions); `INSTRUCTIONS_ROOT` defaults there.)
 
 ### Make it yours
 
 Two things ship with generic placeholder defaults that you should personalize — both are
 the biggest drivers of how the app assesses fit:
 
-- **Your search profile** — level baseline, included/excluded disciplines, and locations.
-  Edit it on the **Discovery** page (stored per install in the DB). The shipped defaults in
-  [lib/db/profile.ts](lib/db/profile.ts) are illustrative only.
+- **Your search profile** — level baseline, included/excluded disciplines, locations, and the
+  candidate résumé the fit/leveling playbooks judge against. Edit it on the **Settings** page
+  (stored per install in the DB). The shipped defaults in [lib/db/profile.ts](lib/db/profile.ts)
+  and [lib/fitlab/seed.ts](lib/fitlab/seed.ts) are illustrative only.
 - **Target companies** — the list that decides whether a newly-seen company starts in the
   "target" vs "practice" tier. It's a single starter list in
   [lib/targets.mjs](lib/targets.mjs) — edit it for your own search. (You can also re-tier any
   company in the UI regardless.) The leveling anchor ladder defaults to Amazon's and is
-  swappable on the Discovery page.
+  swappable on the **Settings** page.
 
-## How CoWork fits in
+## How the agent fits in
 
-Agentic work happens through **Claude CoWork**, which connects to the app's MCP server
-([mcp/jobhunt-server.mjs](mcp/jobhunt-server.mjs)) and reads/writes the same SQLite DB
-over a set of tools. The brief that tells CoWork how the system works lives in
-`ASSET_ROOT/instructions/README.md` — that file is the single source of truth for the
-agent and is editable both on disk and from the app. (This open-source copy ships
-without a populated asset root; create your own `instructions/` to drive CoWork.)
+Agentic work runs as a **headless Claude Code agent**, which connects to the app's MCP
+server ([mcp/jobhunt-server.mjs](mcp/jobhunt-server.mjs)) and reads/writes the same SQLite
+DB over a set of tools. The brief that tells the agent how the system works, plus one
+playbook per job type, ship in the repo under [`instructions/`](instructions) — so a fresh
+clone can drive the agent out of the box. [`instructions/README.md`](instructions/README.md)
+is the single source of truth for the agent; it's editable both on disk and from the app's
+Guides & reference view (which writes back to the tracked file).
 
-To wire the MCP server into Claude, point your MCP client at
-`mcp/jobhunt-server.mjs` (it talks to the running app at `JOBHUNT_URL`, default
-`http://localhost:3000`).
+To wire in the MCP server, add `mcp/jobhunt-server.mjs` to the Claude Code runner's MCP
+config (a project `.mcp.json` or `--mcp-config`); it talks to the running app at
+`JOBHUNT_URL` (default `http://localhost:3000`).
 
 ## Database & backups
 
@@ -98,7 +103,7 @@ with `BACKUP_DIR` / `BACKUP_KEEP`. To restore: stop the server, swap the file in
 
 [scripts/serve.sh](scripts/serve.sh) runs `next dev` (hot-reload preserved) and is meant
 to be supervised by a launchd agent so `localhost:3000` is always up — for the browser
-and for CoWork. Create a LaunchAgent plist (label e.g. `com.jobhunt`) whose
+and the agent. Create a LaunchAgent plist (label e.g. `com.jobhunt`) whose
 `ProgramArguments` points at this repo's `scripts/serve.sh`, then:
 
 ```bash
@@ -132,7 +137,7 @@ app/         Next.js App Router — routes (UI) + /api (server routes)
 components/  React components (pipeline, change feed, prep, …)
 lib/         Domain logic — db (Drizzle schema + queries), jobs, agents, prep
 hooks/       Client data hooks
-mcp/         MCP server exposing the DB to Claude CoWork
+mcp/         MCP server exposing the DB to the Claude Code agent
 scripts/     Seeds, imports, backups, diagram generators, the serve wrapper
 docs/        Architecture & pipeline docs (some auto-generated)
 tests/       Node test-runner tests

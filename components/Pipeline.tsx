@@ -10,8 +10,6 @@ import { LevelChip } from "@/components/LevelLadder";
 import { DEFAULT_LEVELING_REF, hasLadder, type Leveling, type LevelingRef } from "@/lib/leveling";
 import { useApplications } from "@/hooks/useApplications";
 import { useCoWorkQueue } from "@/components/CoWorkQueueProvider";
-import ProfilePanel from "@/components/ProfilePanel";
-import LevelingRefPanel from "@/components/LevelingRefPanel";
 import TargetsTable, { type TargetCounts } from "@/components/board/TargetsTable";
 import CompanyDrawer from "@/components/board/CompanyDrawer";
 import ResumeDiffModal from "@/components/ResumeDiff";
@@ -402,14 +400,9 @@ export default function Pipeline() {
   const [diffAnnotated, setDiffAnnotated] = useState<RedoTurn["diff"]>(undefined);
 
   useEffect(() => {
+    // The leveling reference (edited on /settings) drives the level popover here.
     fetch("/api/leveling-ref").then((r) => r.json()).then((d) => setLevelingRef(d.ref ?? DEFAULT_LEVELING_REF)).catch(() => setLevelingRef(DEFAULT_LEVELING_REF));
   }, []);
-
-  // Optimistic merge + persist the changed slice of the leveling reference.
-  const saveRef = (patch: Partial<LevelingRef>) => {
-    setLevelingRef((cur) => ({ ...(cur ?? DEFAULT_LEVELING_REF), ...patch }));
-    fetch("/api/leveling-ref", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(patch) }).catch(() => {});
-  };
 
   // Click a header: asc → desc → off. Switching tabs (below) clears it back to the default order.
   const toggleSort = (key: string) =>
@@ -840,8 +833,6 @@ export default function Pipeline() {
             <div className="flex items-center gap-1.5 px-6 pb-1 pt-4 text-[12px] font-semibold uppercase tracking-wider text-zinc-500">
               <Settings size={13} /> Scan settings
             </div>
-            <ProfilePanel />
-            <LevelingRefPanel value={levelingRef} onSave={saveRef} />
             <TargetsTable counts={counts} onSelect={addTag} />
           </div>
         )}
