@@ -14,18 +14,29 @@ export function mcpConfigPath(): string {
   const dataDir = path.join(root, "data");
   fs.mkdirSync(dataDir, { recursive: true });
   const p = path.join(dataDir, "claude-code.mcp.json");
-  fs.writeFileSync(
-    p,
-    JSON.stringify({
-      mcpServers: {
-        jobhunt: {
-          command: process.execPath,
-          args: [path.join(root, "mcp", "jobhunt-server.mjs")],
-          env: { JOBHUNT_THREAD_LABEL: "Claude Code", JOBHUNT_URL: process.env.JOBHUNT_URL || "http://localhost:3000" },
-        },
-      },
-    }, null, 2),
-  );
+
+  const mcpServers: Record<string, unknown> = {
+    jobhunt: {
+      command: process.execPath,
+      args: [path.join(root, "mcp", "jobhunt-server.mjs")],
+      env: { JOBHUNT_THREAD_LABEL: "Claude Code", JOBHUNT_URL: process.env.JOBHUNT_URL || "http://localhost:3000" },
+    },
+  };
+
+  // Opt-in browser control (for linkedin-import): a Playwright MCP driving a PERSISTENT Chrome profile
+  // that stays logged into LinkedIn. Wired in ONLY when LINKEDIN_PROFILE_DIR is set, so the other
+  // agents (fit/tailoring/…) aren't burdened with a browser server they never use. Seed the profile's
+  // login once with `npm run linkedin:login`.
+  const profile = process.env.LINKEDIN_PROFILE_DIR;
+  if (profile) {
+    mcpServers.playwright = {
+      command: process.execPath,
+      args: [path.join(root, "node_modules", "@playwright", "mcp", "cli.js"), "--browser", "chrome", "--user-data-dir", profile],
+      env: {},
+    };
+  }
+
+  fs.writeFileSync(p, JSON.stringify({ mcpServers }, null, 2));
   return p;
 }
 

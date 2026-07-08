@@ -8,6 +8,7 @@ export const PERSONA: Record<string, string> = {
   "inbox-sync": "Inbox Scout",
   "watchlist-scan": "Board Scanner",
   "watchlist-add": "Watchlist Curator",
+  "linkedin-import": "LinkedIn Scout",
   leveling: "Leveler",
   "prep-research": "Prep Researcher",
   prep: "Prep Coach",

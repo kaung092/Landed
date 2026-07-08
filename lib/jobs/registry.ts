@@ -222,6 +222,44 @@ function ingestDiscovered(source: string) {
   };
 }
 
+// Ingest for the linkedin-import source: an agent fetched full JDs from a LinkedIn recommended/
+// collection feed (see linkedin-import.md) and submits one record per job — same landing as a scan
+// (fit_queue posting, company created on the fly), but we ALSO persist the JD + comp so fit/tailoring
+// reuse it without re-fetching. Deduped by url, else company+title.
+function ingestLinkedinImport(records: ResultRecord[], dryRun?: boolean): ReconcileResult {
+  const details: ChangeDetail[] = [];
+  let inserted = 0, updated = 0, newCompanies = 0;
+  for (const r of records) {
+    const company = str(r.company) ?? "";
+    const key = canonical(company)?.key;
+    const role = str(r.role) ?? str(r.title) ?? "(untitled)";
+    if (!key) { details.push({ action: "skip", summary: `LinkedIn import — no company for "${role}", skipped` }); continue; }
+    const url = str(r.url);
+    const jd = str(r.jd) ?? str(r.description);
+    const comp = str(r.salary) ?? str(r.comp);
+    const location = str(r.location);
+    let co = db.select().from(companies).all().find((c) => canonical(c.name)?.key === key);
+    if (!co) {
+      if (dryRun) { details.push({ action: "insert", summary: `${company} — ${role} · would import (new company) → fit queue` }); inserted++; newCompanies++; continue; }
+      const ts = new Date().toISOString();
+      co = db.insert(companies).values({ name: company, tier: "tier3", createdAt: ts, updatedAt: ts }).returning().get();
+      newCompanies++;
+    }
+    const list = db.select().from(postings).where(eq(postings.companyId, co.id)).all();
+    const existing = (url ? list.find((c) => c.url === url) : undefined) ?? list.find((c) => c.title.toLowerCase() === role.toLowerCase());
+    if (existing) {
+      if (!dryRun) db.update(postings).set({ state: "fit_queue", jd: jd ?? existing.jd, comp: comp ?? existing.comp, location: location ?? existing.location, url: url ?? existing.url }).where(eq(postings.id, existing.id)).run();
+      details.push({ action: "update", summary: `${co.name} — ${role} · JD imported → fit queue` }); updated++;
+    } else {
+      const ts = new Date().toISOString();
+      if (!dryRun) db.insert(postings).values({ companyId: co.id, title: role, location: location ?? null, url: url ?? null, department: null, verdict: "kept", reason: null, state: "fit_queue", jd: jd ?? null, comp: comp ?? null, source: "linkedin", channel: "direct", scannedAt: ts, discoveredAt: ts }).run();
+      details.push({ action: "insert", summary: `${co.name} — ${role} · imported from LinkedIn → fit queue` }); inserted++;
+    }
+    if (!dryRun) logEvent({ actor: "CoWork", source: "linkedin-import", entity: "company", entityId: co.id, action: existing ? "update" : "insert", summary: `${co.name} — ${role} · LinkedIn import → fit queue` });
+  }
+  return { inserted, updated, fieldChanges: inserted + updated, flagged: 0, pending: 0, newCompanies, summary: `${inserted} imported, ${updated} updated`, details };
+}
+
 // watchlist-add has no submitJobResult ingest — CoWork writes directly via upsertCompanies +
 // addToWatchlist. The def exists so it shows as a job (with its playbook); ingest is a no-op.
 const noopIngest = (): ReconcileResult => ({ inserted: 0, updated: 0, fieldChanges: 0, flagged: 0, pending: 0, newCompanies: 0, summary: "", details: [] });
@@ -255,6 +293,15 @@ export const JOB_DEFS: Record<JobType, JobDef> = {
     buildTask: () =>
       `Watchlist scan: call scanWatchlist, glance every candidate by title + location only (no JD) against my profile, and submit a high/low/drop verdict per posting via submitGlance — high auto-queues a fit job. Follow watchlist-scan.md.`,
     ingest: ingestDiscovered("watchlist-scan"),
+  },
+  "linkedin-import": {
+    type: "linkedin-import",
+    title: "Import LinkedIn Jobs",
+    description: "Fetch full JDs from a LinkedIn recommended/collection feed and land them in the fit queue.",
+    playbook: "linkedin-import.md",
+    buildTask: (p) =>
+      `Open ${p?.url ? `\`${p.url}\`` : "the LinkedIn feed URL in params.url"} in the browser, fetch the full verbatim JD for the first ${p?.count ?? 5} recommended jobs, and submit one record per job via submitJobResult(type:"linkedin-import") per linkedin-import.md. Requires the Chrome browser tools + a logged-in LinkedIn session.`,
+    ingest: ingestLinkedinImport,
   },
   fit: {
     type: "fit",
