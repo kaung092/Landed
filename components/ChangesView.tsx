@@ -387,6 +387,9 @@ export default function ChangesView() {
     setLoading(false);
   }
   useEffect(() => {
+    // Fetch-on-mount loader; its setState runs post-await (async), not synchronously, so it doesn't
+    // cause the cascading render the rule guards against.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     load();
   }, []);
 

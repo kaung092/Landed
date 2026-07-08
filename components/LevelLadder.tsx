@@ -10,12 +10,10 @@ import { DEFAULT_LEVELING_REF, LEVEL_AXIS, hasLadder, straddleRungs, type Leveli
 // rungs line up vertically). The company's rungs that straddle the reference's target band are
 // highlighted — the band the fit step reasons over. The reference (which company, which target
 // rung) comes from the configurable LevelingRef.
-export default function LevelLadder({ company, leveling, levelingRef }: { company: string; leveling: Leveling; levelingRef: LevelingRef }) {
-  const [MIN, MAX] = LEVEL_AXIS;
-  const pct = (v: number) => ((v - MIN) / (MAX - MIN)) * 100; // 0% = top (low) — ascending top→bottom
-  const overlap = new Set(straddleRungs(leveling.ladder ?? {}, levelingRef));
-
-  const Col = ({ ladder, titles, highlight }: { ladder: Record<string, [number, number]>; titles?: Record<string, string>; highlight?: Set<string> }) => (
+// One ladder column on the shared 1–10 axis. `pct` maps a rung value to a top-anchored percentage
+// (0% = top/low). Hoisted out of LevelLadder so it isn't recreated (and remounted) every render.
+function Col({ ladder, titles, highlight, pct }: { ladder: Record<string, [number, number]>; titles?: Record<string, string>; highlight?: Set<string>; pct: (v: number) => number }) {
+  return (
     <div className="relative h-56 w-40 rounded-md bg-zinc-950/40 ring-1 ring-inset ring-zinc-800">
       {Object.entries(ladder)
         .sort((a, b) => b[1][1] - a[1][1])
@@ -32,6 +30,12 @@ export default function LevelLadder({ company, leveling, levelingRef }: { compan
         })}
     </div>
   );
+}
+
+export default function LevelLadder({ company, leveling, levelingRef }: { company: string; leveling: Leveling; levelingRef: LevelingRef }) {
+  const [MIN, MAX] = LEVEL_AXIS;
+  const pct = (v: number) => ((v - MIN) / (MAX - MIN)) * 100; // 0% = top (low) — ascending top→bottom
+  const overlap = new Set(straddleRungs(leveling.ladder ?? {}, levelingRef));
 
   return (
     <div>
@@ -40,8 +44,8 @@ export default function LevelLadder({ company, leveling, levelingRef }: { compan
         <span className="w-40 truncate text-zinc-300">{company}</span>
       </div>
       <div className="flex gap-3">
-        <Col ladder={levelingRef.ladder} titles={levelingRef.titles} highlight={new Set([levelingRef.targetBand])} />
-        <Col ladder={leveling.ladder ?? {}} titles={leveling.titles} highlight={overlap} />
+        <Col ladder={levelingRef.ladder} titles={levelingRef.titles} highlight={new Set([levelingRef.targetBand])} pct={pct} />
+        <Col ladder={leveling.ladder ?? {}} titles={leveling.titles} highlight={overlap} pct={pct} />
       </div>
     </div>
   );

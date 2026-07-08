@@ -3,14 +3,13 @@ import { db } from "@/lib/db";
 import { jobs, postings, companies, prepCompany, threads } from "@/lib/db/schema";
 import { getConfig, setConfig, deleteConfig } from "@/lib/db/config-store";
 import { logEvent, getPosting } from "@/lib/db/queries";
-import { reconcile } from "@/lib/agents/reconcile";
 import { norm, canonical } from "@/lib/agents/canonical";
 import { slugFor } from "@/lib/config";
 import { TRACKER_STAGES } from "@/lib/pipeline";
 import { jobDef } from "./registry";
 import { parseRedoLog, nextVersion, renderThread, hasPendingRedo, pendingRedoNote, pendingUserIndex } from "./redolog";
 import type { FitInput, FitQueueItem } from "./types";
-import type { Posting, RedoPhase, RedoTurn, Status } from "@/lib/types";
+import type { Posting, RedoPhase, RedoTurn } from "@/lib/types";
 import type { ChangeDetail } from "@/lib/agents/types";
 
 export const INBOX_SYNCED_KEY = "inbox_last_synced";

@@ -7,12 +7,17 @@ import { ChevronDown, ChevronUp, ChevronsUpDown } from "lucide-react";
 // `table-layout: fixed` table whose total width = sum of the column widths.
 export function useResizableColumns(defaults: Record<string, number>, storageKey: string) {
   const [widths, setWidths] = useState<Record<string, number>>(defaults);
+  // Latest widths, readable from the drag listeners without re-subscribing them each resize. Synced
+  // after commit (a ref must not be mutated during render).
   const ref = useRef(widths);
-  ref.current = widths;
+  useEffect(() => { ref.current = widths; }, [widths]);
 
   useEffect(() => {
     try {
       const saved = localStorage.getItem(storageKey);
+      // Hydration-safe rehydrate: SSR/first render uses `defaults`, then we restore persisted widths
+      // after mount (avoids a mismatch).
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       if (saved) setWidths((w) => ({ ...w, ...JSON.parse(saved) }));
     } catch {}
   }, [storageKey]);

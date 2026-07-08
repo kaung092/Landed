@@ -1,9 +1,8 @@
 name: CI
 
-# The automated feedback signal, enforced on every change. `check` (typecheck + tests) is the
-# gate — it must be green to merge. Lint runs alongside as an advisory job while the repo burns
-# down the pre-existing react-hooks findings; it does not block merges yet. Flip
-# `continue-on-error` to false once that backlog is clear to make lint a hard gate too.
+# The automated feedback signal, enforced on every change. Both jobs are hard gates — they must be
+# green to merge. `check` = typecheck + tests; `lint` = eslint (the react-hooks backlog is cleared,
+# so lint now blocks too). A pre-push hook (.githooks/pre-push) runs both locally before every push.
 
 on:
   pull_request:
@@ -24,9 +23,8 @@ jobs:
       - run: npm run check
 
   lint:
-    name: lint (advisory)
+    name: lint
     runs-on: ubuntu-latest
-    continue-on-error: true
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4

@@ -1,7 +1,7 @@
 import { sqliteTable, integer, text } from "drizzle-orm/sqlite-core";
 import {
   POSTING_STATES, POSTING_VERDICTS, POSTING_CHANNELS, COMPANY_TIERS,
-  JOB_STATUSES, PENDING_KINDS, PENDING_STATUSES,
+  PENDING_KINDS, PENDING_STATUSES,
 } from "./enums";
 
 // Tier of a company. Drives the pipeline rules (see lib/pipeline.ts).

@@ -3,7 +3,7 @@ import { test, beforeEach } from "node:test";
 import assert from "node:assert/strict";
 import { eq } from "drizzle-orm";
 import { reset, seedApp, seedCandidate, db, jobs, postings, events, companies } from "./helpers";
-import { submitJobResult, createJob, claimJob, claimNext, deleteQueuedJob, listJobs, listFitQueue, enqueueFit, inboxLastSynced, queueStaleWatchlistScans } from "@/lib/jobs/store";
+import { submitJobResult, createJob, claimJob, deleteQueuedJob, listJobs, listFitQueue, enqueueFit, inboxLastSynced, queueStaleWatchlistScans } from "@/lib/jobs/store";
 import { listPostings, listScannedPostings, upsertCompanies, setWatchlist, listCompanies, listWatchlist, updateApplication, listPendingMatches, addComment, deleteComment, getPosting } from "@/lib/db/queries";
 import { resolvePendingMatch } from "@/lib/agents/reconcile";
 

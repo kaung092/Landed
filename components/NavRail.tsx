@@ -47,6 +47,9 @@ export default function NavRail() {
       try { localStorage.setItem(`landed.nav.${section}`, pathname); } catch { /* quota */ }
       next[section] = pathname;
     }
+    // Hydration-safe rehydrate: SSR/first render starts empty (base hrefs), then we restore remembered
+    // paths after mount (avoids a mismatch).
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setRemembered(next);
   }, [pathname]);
 
