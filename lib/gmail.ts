@@ -4,8 +4,9 @@ import { getConfig, setConfig, deleteConfig } from "@/lib/db/config-store";
 
 // App-owned Gmail access over IMAP, authed with a Gmail **app password** (no Google Cloud OAuth).
 // This is what makes inbox-sync client-agnostic: the jobhunt MCP server exposes searchGmail /
-// getGmailThread backed by this, so the headless Claude Code flow (strict MCP config) can read mail
-// without Claude Desktop's Gmail connector. Read-only — we never write/label/delete.
+// getGmailThread backed by this, so the headless Claude Code runner (strict MCP config) can read
+// mail over the app's own IMAP connection — no external Gmail connector needed. Read-only — we never
+// write/label/delete.
 //
 // Gmail's IMAP exposes its full search syntax via X-GM-RAW (imapflow `{ gmraw }`) and stable thread
 // ids via X-GM-THRID (`{ threadId }` / message.threadId) — so the playbook's `after:` /
@@ -207,5 +208,30 @@ export async function getThread(threadId: string): Promise<GmailThread | null> {
       });
     }
     return { threadId, subject: messages[0]?.subject || "(no subject)", messages };
+  });
+}
+
+// Every file attachment across a thread's messages. simpleParser already parses the full MIME tree
+// (getThread just discards `p.attachments`); here we keep them. Inline/embedded parts (a cid, i.e.
+// signature images) are skipped — only real attachments (a filename, not related-inline). The
+// caller writes these to disk (see lib/prep/attachments.ts). Returns [] when the thread has none.
+export type GmailAttachment = { filename: string; contentType: string; content: Buffer };
+export async function getThreadAttachments(threadId: string): Promise<GmailAttachment[]> {
+  return withClient(async (client) => {
+    const uids = (await client.search({ threadId }, { uid: true })) || [];
+    if (!uids.length) return [];
+    const out: GmailAttachment[] = [];
+    for (const uid of uids.sort((a, b) => a - b)) {
+      const dl = await client.download(uid, undefined, { uid: true });
+      if (!dl?.content) continue;
+      const p = await simpleParser(dl.content);
+      for (const a of p.attachments ?? []) {
+        // Skip inline/related parts (embedded images referenced by cid) — keep real attachments.
+        if (a.related || a.contentDisposition === "inline") continue;
+        if (!a.content) continue;
+        out.push({ filename: a.filename || "attachment", contentType: a.contentType || "application/octet-stream", content: a.content });
+      }
+    }
+    return out;
   });
 }

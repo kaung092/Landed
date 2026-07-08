@@ -6,12 +6,14 @@ import { logEvent, enqueueUnboundResult } from "@/lib/db/queries";
 import { reconcile } from "@/lib/agents/reconcile";
 import { incomingFromInboxRecords } from "@/lib/agents/sources/inbox";
 import { canonical, norm } from "@/lib/agents/canonical";
-import { ingestPrepRecords, ingestPrepResearch } from "@/lib/db/prep";
+import { ingestPrepRecords, ingestPrepResearch, companySlug } from "@/lib/db/prep";
+import { exportPrepContextFor, exportQuestionsFor } from "@/lib/prep/export-context";
 import { str, num } from "@/lib/coerce";
 import { parseRedoLog, nextVersion } from "./redolog";
+import { parseBriefs, nextBriefVersion, coerceGaps, coerceSourced } from "./briefs";
 import { ingestFitLabResult } from "@/lib/fitlab/ingest";
 import { coerceDiff } from "@/lib/linediff";
-import type { FitAssessment, RedoTurn } from "@/lib/types";
+import type { FitAssessment, InterviewBrief, RedoTurn } from "@/lib/types";
 import type { ChangeDetail, ReconcileResult } from "@/lib/agents/types";
 import type { JobDef, JobType, ResultRecord } from "./types";
 
@@ -145,6 +147,35 @@ function ingestFit(records: ResultRecord[], dryRun?: boolean): ReconcileResult {
   });
 }
 
+// interview-brief record: { id, role?, tc?, team?, expectations?, nextStep? (each a string or
+// {text, source}), gaps:[{area,why,severity,source}], summary?, materials?|sources? }. CoWork read
+// the interview-prep asset folder (context.md + transcripts + emails.md + attachments) and
+// synthesized a source-tagged overview. Append it as a new version to interview_briefs; the drawer
+// projects the latest. ID-only match (the posting id the app stamped on the job).
+function ingestInterviewBrief(records: ResultRecord[], dryRun?: boolean): ReconcileResult {
+  return ingestCandidateUpdates(records, dryRun, "interview-brief", "briefed", (r, cand, co) => {
+    const list = parseBriefs(cand.interviewBriefs);
+    const version = nextBriefVersion(list);
+    const mats = r.materials ?? r.sources;
+    const brief: InterviewBrief = {
+      version,
+      generatedAt: new Date().toISOString(),
+      role: coerceSourced(r.role),
+      tc: coerceSourced(r.tc ?? r.totalComp ?? r.comp),
+      team: coerceSourced(r.team),
+      expectations: coerceSourced(r.expectations ?? r.lookingFor),
+      nextStep: coerceSourced(r.nextStep ?? r.next),
+      gaps: coerceGaps(r.gaps),
+      summary: str(r.summary) ?? str(r.overview) ?? undefined,
+      materials: Array.isArray(mats) ? mats.map(String).filter(Boolean) : undefined,
+    };
+    return {
+      next: { interviewBriefs: JSON.stringify([...list, brief]) },
+      summary: `${co.name} — ${cand.title} · interview brief v${version}`,
+    };
+  });
+}
+
 // prep record: { leetcodeNum?|name, status, durationSec?, notes?, noted?, redo?, ... }.
 // CoWork logged a coding practice attempt; ingestPrepRecords resolves it to a catalog
 // question (or inserts a new one) and appends the attempt. Doesn't touch applications.
@@ -172,6 +203,14 @@ function ingestPrep(records: ResultRecord[], dryRun?: boolean): ReconcileResult 
 // tags/creates questions (reusing the shared bank by leetcodeNum so progress carries over).
 function ingestPrepResearchJob(records: ResultRecord[], dryRun?: boolean): ReconcileResult {
   const r = ingestPrepResearch(records, dryRun);
+  // "Research questions" is one of the three asset inputs — refresh the company's context.md dump and
+  // write the standalone questions.md (online-research question bank) so the interview-brief job + a
+  // per-company CoWork prep chat can read the fresh research. Best-effort; never breaks the ingest.
+  if (!dryRun) {
+    const company = records.map((rec) => str(rec.company)).find(Boolean);
+    const slug = company ? companySlug(company) : null;
+    if (slug) { try { exportPrepContextFor(slug); exportQuestionsFor(slug); } catch { /* dump is best-effort */ } }
+  }
   const parts: string[] = [];
   if (r.profile) parts.push("profile");
   if (r.reused) parts.push(`${r.reused} reused`);
@@ -359,6 +398,49 @@ export const JOB_DEFS: Record<JobType, JobDef> = {
         p?.intel ? " params.intel holds recruiter-confirmed comp/team/rounds — treat it as authoritative ground truth and only research to fill gaps." : ""
       }`,
     ingest: ingestPrepResearchJob,
+  },
+  "interview-brief": {
+    type: "interview-brief",
+    title: "Interview brief",
+    description: "Synthesize a versioned interview brief (role, TC, next step, gaps-to-prep) from a company's interview-prep asset folder.",
+    playbook: "interview-brief.md",
+    buildTask: (p) => {
+      const slug = p?.slug ?? "<slug>";
+      const who = [p?.company, p?.role].filter(Boolean).join(" — ") || "this posting";
+      return (
+        `Generate an interview brief for ${who}. Read everything already dumped under \`interview-prep/${slug}/\`: ` +
+        `\`context.md\`, every file in \`transcripts/\`, \`emails.md\`, and \`attachments/\`. Synthesize a SOURCE-TAGGED ` +
+        `brief — for role, tc (total comp), team, and expectations prefer the first recruiter call transcript, else fall ` +
+        `back to the JD, tagging each \`source\` ("recruiter" | "jd"); tag every gap and the next step "recruiter" (said ` +
+        `directly) vs "online" (inferred from research). Submit ONE record via submitJobResult(type:"interview-brief") shaped ` +
+        `{ id: ${p?.id ?? "<postingId>"}, role:{text,source}, tc:{text,source}, team:{text,source}, expectations:{text,source}, ` +
+        `nextStep:{text,source}, gaps:[{area,why,severity,source}], summary, materials:[...] } per interview-brief.md.`
+      );
+    },
+    ingest: ingestInterviewBrief,
+  },
+  "interview-emails": {
+    type: "interview-emails",
+    title: "Pull interview emails",
+    description: "Capture a company's interview emails (recruiter outreach, scheduling, what-to-expect, comp) + attachments into its interview-prep folder. Asset-only — does NOT touch tracker status (global inbox-sync owns that).",
+    playbook: "interview-emails.md",
+    hidden: true,
+    buildTask: (p) => {
+      const slug = p?.slug ?? "<slug>";
+      const co = p?.company ?? "the company";
+      const since = p?.since ? ` after:${p.since}` : " newer_than:3m";
+      return (
+        `Capture the interviewing emails for ${co} into \`interview-prep/${slug}/\`. searchGmail with a query like ` +
+        `\`"${co}"${since}\` (also try the recruiter's domain), read the interviewing-relevant threads via getGmailThread, ` +
+        `and WRITE \`interview-prep/${slug}/emails.md\` structured for prep — per round/interviewer: who (name·title·` +
+        `LinkedIn from the signature), the format / what-to-expect they described, prep or take-home links, logistics/dates, ` +
+        `and any comp figures. For every thread that carries a file (role PDF, prep guide, take-home), call ` +
+        `downloadGmailAttachments(id, "${slug}") to save it into attachments/. This is asset capture only — do NOT change ` +
+        `tracker status or rounds (global inbox-sync owns those). Finish by submitting an empty result via ` +
+        `submitJobResult(type:"interview-emails") with a one-line summary. Follow interview-emails.md.`
+      );
+    },
+    ingest: noopIngest,
   },
 };
 

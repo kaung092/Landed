@@ -11,7 +11,7 @@ import { jobVerb, jobPlaybook } from "@/components/jobMeta";
 // floating queue and the CoWork page so they never drift.
 export function promptFor(type: string): string {
   return (
-    `Work ONLY my Job-Hunt "${type}" queue this run. Call claimNext({ type: "${type}" }) to lease the next ${type} job — it returns the job with its task + params and a live claim. ` +
+    `Work ONLY my Landed "${type}" queue this run. Call claimNext({ type: "${type}" }) to lease the next ${type} job — it returns the job with its task + params and a live claim. ` +
     `Follow its playbook in instructions/${jobPlaybook(type)} and submit the outcome with the submitJobResult tool (jobId = the job's id), echoing back each posting's id; you must still hold the lease when you submit. ` +
     `Then call claimNext({ type: "${type}" }) again, repeating until it returns { job: null } — that means this queue is fully cleared, so stop and give me a one-line summary. Do NOT start any other job type. ` +
     `For a redo job (a re-queued fit/tailoring carrying my redo note), read the prior conversation in the job's task and address my latest redo note specifically — tailoring redos must be saved to the exact versioned resume/<slug>/v<N>/ folder the job names.`

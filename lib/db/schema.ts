@@ -105,18 +105,18 @@ export const jobs = sqliteTable("jobs", {
   // itself with a reason (faster, but best-effort — never relied on; the cap is the safety net).
   attempts: integer("attempts").notNull().default(0),
   error: text("error"), // why it failed (auto: "stuck after N attempts"; or an agent-reported reason)
-  // The CoWork chat (thread) that claimed this job. Each CoWork chat runs as its own MCP server
+  // The CoWork session (thread) that claimed this job. Each session runs its own `jobhunt` MCP server
   // process, which stamps this on claim via the x-jobhunt-thread header — so jobs group under the
-  // chat that's running them, without the agent having to pass anything. See `threads` below.
+  // session that's running them, without the agent having to pass anything. See `threads` below.
   threadId: text("thread_id"),
 });
 
 // ── CoWork threads ──
-// One row per CoWork CHAT. Claude Desktop launches a separate `jobhunt` MCP server process for each
-// chat; that process mints a `threadId` at boot and tags every call with it. A chat can claim and
-// run many jobs (jobs.thread_id), so this is the parent the CoWork page groups jobs + steps under.
-// We can't observe the chat directly — only what it does over MCP — so `lastSeenAt` (bumped on every
-// call) is the liveness signal; there's no reliable process-exit event over HTTP.
+// One row per CoWork SESSION. The Claude Code runner spawns a separate `jobhunt` MCP server process
+// per session; that process mints a `threadId` at boot and tags every call with it. A session can
+// claim and run many jobs (jobs.thread_id), so this is the parent the CoWork page groups jobs + steps
+// under. We can't observe the session directly — only what it does over MCP — so `lastSeenAt` (bumped
+// on every call) is the liveness signal; there's no reliable process-exit event over HTTP.
 export const threads = sqliteTable("threads", {
   id: text("id").primaryKey(), // th_<base36 time><rand>, minted by the MCP server process
   label: text("label"), // human label (claimedBy / "CoWork")
@@ -130,8 +130,8 @@ export const threads = sqliteTable("threads", {
 });
 
 // Append-only per-call trace: one row per MCP tool call a thread makes. This is the "thread
-// timeline" the app renders — the only window into what a CoWork chat is doing, since the work
-// itself happens inside Claude Desktop between these calls.
+// timeline" the app renders — the only window into what a CoWork session is doing, since the work
+// itself happens inside the Claude Code runner between these calls.
 export const threadSteps = sqliteTable("thread_steps", {
   id: integer("id").primaryKey({ autoIncrement: true }),
   threadId: text("thread_id").notNull(),
@@ -310,6 +310,9 @@ export const postings = sqliteTable("postings", {
   // next versioned result… Each agent turn IS a version; the live fit_detail/resume_dir project the
   // latest. Powers "redo with a note" — the agent replays the whole thread on its next run.
   redoLog: text("redo_log"), // JSON RedoTurn[]
+  // Versioned interview briefs (CoWork-generated from the interview-prep asset folder). JSON
+  // InterviewBrief[] oldest→newest; each generation appends a version. See lib/jobs/briefs.ts.
+  interviewBriefs: text("interview_briefs"), // JSON InterviewBrief[]
   comments: text("comments"), // JSON Comment[] — your personal comment thread on this posting
   scannedAt: text("scanned_at").notNull(),
   // Tracker fields (folded in from `applications` for the unified model; populated at Stage 2).

@@ -5,6 +5,7 @@ import type { PostingRow, CompanyRow, EventRow } from "./schema";
 import { canonical, defaultTier, norm } from "@/lib/agents/canonical";
 import { maybeQueuePrepResearch } from "@/lib/jobs/store";
 import { parseRedoLog } from "@/lib/jobs/redolog";
+import { parseBriefs } from "@/lib/jobs/briefs";
 import { isExcludedTitle } from "@/lib/jobs/exclude";
 import type { Leveling } from "@/lib/leveling";
 import type { Comment, EmailRefs, FitAssessment, InterviewKind, InterviewRound, Posting, RedoTurn, Status, Tier } from "@/lib/types";
@@ -65,6 +66,7 @@ function toPosting(a: PostingRow, c: CompanyRow, rounds?: InterviewRound[]): Pos
     editedResumes: parseStrArray(a.editedResumes),
     emailRefs: parseEmailRefs(a.emailRefs),
     redoLog: parseRedoLog(a.redoLog),
+    interviewBriefs: parseBriefs(a.interviewBriefs).length ? parseBriefs(a.interviewBriefs) : undefined,
     leveling: parseLeveling(c.leveling),
     note: a.note ?? undefined,
     comp: a.comp ?? undefined,

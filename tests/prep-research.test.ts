@@ -1,12 +1,15 @@
 import "./setup";
 import { test, beforeEach } from "node:test";
 import assert from "node:assert/strict";
+import fs from "node:fs";
+import path from "node:path";
 import { eq, like } from "drizzle-orm";
 import { reset, seedApp, db, postings, companies, jobs } from "./helpers";
 import { prepQuestions, prepAttempts, prepCompany } from "@/lib/db/schema";
 import { submitJobResult } from "@/lib/jobs/store";
 import { updateApplication } from "@/lib/db/queries";
 import { getCompanyProfile, listQuestions } from "@/lib/db/prep";
+import { PREP_ROOT, questionsDumpedAt } from "@/lib/prep/export-context";
 
 function resetPrep() {
   reset();
@@ -82,6 +85,31 @@ test("prep-research upserts a profile, reuses a shared question (preserving hist
 
   // and the shared question still appears in the generic coding bank (single source of truth)
   assert.ok(listQuestions({ track: "coding" }).some((q) => q.id === "lc-23"));
+});
+
+test("Research questions writes a standalone questions.md (online-research bank) to the asset folder", () => {
+  seedApp({ company: "Acme", role: "Backend Engineer", status: "interview" });
+
+  submitJobResult({
+    type: "prep-research",
+    jobId: "prep-research-acme-questions",
+    records: [
+      {
+        type: "profile", company: "Acme", process: "OA → onsite.",
+        rounds: [{ name: "Onsite", focus: "system design" }],
+        categories: [{ key: "lc", label: "LeetCode", kind: "coding" }],
+        sources: [{ label: "Glassdoor", url: "https://x" }],
+      },
+      { type: "question", category: "lc", track: "coding", name: "Two Sum", difficulty: "Easy" },
+    ],
+  });
+
+  const file = path.join(PREP_ROOT, "acme", "questions.md");
+  assert.ok(fs.existsSync(file), "questions.md written");
+  const body = fs.readFileSync(file, "utf8");
+  assert.match(body, /online research/i);   // it's framed as the public-source bank
+  assert.match(body, /Two Sum/);             // the researched question is in it
+  assert.ok(questionsDumpedAt("acme"));      // and the mtime helper sees it
 });
 
 test("prep-research dryRun previews without persisting", () => {
