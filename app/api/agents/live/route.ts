@@ -125,7 +125,7 @@ function translate(line: string, send: (obj: unknown) => void) {
   const t = msg.type;
 
   if (t === "system" && msg.subtype === "init") {
-    if (msg.session_id) send({ kind: "session", sessionId: msg.session_id });
+    if (msg.session_id) send({ kind: "session", sessionId: msg.session_id, model: typeof msg.model === "string" ? msg.model : undefined });
     return;
   }
 
@@ -149,12 +149,20 @@ function translate(line: string, send: (obj: unknown) => void) {
   }
 
   if (t === "result") {
+    // `usage.input_tokens + cache_read_input_tokens` on the final turn ≈ the whole context the model
+    // was fed for a resumed session — i.e. how big this agent's context has grown. Surface it so a
+    // long-lived session's context pressure is visible instead of silent (the CLI auto-compacts, but
+    // gives no warning).
+    const usage = (msg.usage ?? {}) as Record<string, unknown>;
+    const inTok = typeof usage.input_tokens === "number" ? usage.input_tokens : 0;
+    const cacheTok = typeof usage.cache_read_input_tokens === "number" ? usage.cache_read_input_tokens : 0;
     send({
       kind: "result",
       text: typeof msg.result === "string" ? msg.result : "",
       isError: !!msg.is_error,
       costUsd: typeof msg.total_cost_usd === "number" ? msg.total_cost_usd : undefined,
       turns: typeof msg.num_turns === "number" ? msg.num_turns : undefined,
+      contextTokens: inTok + cacheTok || undefined,
     });
   }
 }

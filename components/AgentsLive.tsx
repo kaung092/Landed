@@ -85,11 +85,43 @@ export default function AgentsLive() {
   );
 }
 
+// Rough context-window per model (most Claude models are 200k; a few 1M-context variants exist).
+function contextWindow(model?: string): number {
+  return model && /1m|\[1m\]/i.test(model) ? 1_000_000 : 200_000;
+}
+const fmtTok = (n: number) => (n >= 1000 ? `${Math.round(n / 1000)}k` : String(n));
+
+// How full this agent's resumed session context is — a bar + Xk label that goes amber at 70% and
+// rose at 85%, so a long-lived session's context pressure is visible (nudge: hit the eraser to reset).
+function ContextMeter({ tokens, model }: { tokens?: number; model?: string }) {
+  const win = contextWindow(model);
+  const known = typeof tokens === "number" && tokens > 0;
+  const pct = known ? Math.min(100, (tokens! / win) * 100) : 0;
+  const tone = !known ? { bar: "bg-zinc-700", text: "text-zinc-600" }
+    : pct >= 85 ? { bar: "bg-rose-500", text: "text-rose-300" }
+    : pct >= 70 ? { bar: "bg-amber-500", text: "text-amber-300" }
+    : { bar: "bg-emerald-500", text: "text-zinc-400" };
+  return (
+    <span
+      title={known
+        ? `context ~${fmtTok(tokens!)} of ${fmtTok(win)} tokens (${Math.round(pct)}%)${pct >= 70 ? " — getting full; hit the eraser for a fresh session" : ""}`
+        : "context meter — run this agent to measure its session size"}
+      className="flex shrink-0 items-center gap-1.5"
+    >
+      <span className="h-1.5 w-14 overflow-hidden rounded-full bg-zinc-800">
+        <span className={`block h-full rounded-full ${tone.bar}`} style={{ width: known ? `${Math.max(4, pct)}%` : "0%" }} />
+      </span>
+      <span className={`text-[10px] tabular-nums ${tone.text}`}>{known ? fmtTok(tokens!) : "—"}</span>
+    </span>
+  );
+}
+
 function AgentCard({ meta, backlog, open, onToggle, onInstructions }: {
   meta: JobTypeMeta; backlog: number; open: boolean; onToggle: () => void; onInstructions: () => void;
 }) {
-  const { get } = useAgentChats();
-  const { running } = get(meta.type);
+  const { get, clear } = useAgentChats();
+  const { running, contextTokens, model, entries, sessionId } = get(meta.type);
+  const hasSession = !!sessionId || entries.length > 0 || !!contextTokens;
   return (
     <div className="overflow-hidden rounded-2xl border border-zinc-800 bg-zinc-900/30">
       <div className="flex items-center">
@@ -107,6 +139,18 @@ function AgentCard({ meta, backlog, open, onToggle, onInstructions }: {
           )}
           <ChevronRight size={16} className={`shrink-0 text-zinc-600 transition ${open ? "rotate-90" : ""}`} />
         </button>
+        {/* Context meter + one-click reset, side by side — see the session fill up, clear it right there. */}
+        <div className="flex shrink-0 items-center gap-2 pl-1 pr-2">
+          <ContextMeter tokens={contextTokens} model={model} />
+          <button
+            onClick={() => clear(meta.type)}
+            disabled={running || !hasSession}
+            title="Clear this agent's chat + reset its session (frees the context)"
+            className="rounded p-1 text-zinc-500 transition hover:bg-zinc-800 hover:text-rose-300 disabled:opacity-30"
+          >
+            <Eraser size={13} />
+          </button>
+        </div>
         {/* Each agent's operating manual, one click from where you talk to it. */}
         <button
           onClick={onInstructions}
@@ -153,7 +197,7 @@ function WorkQueueButton({ type }: { type: string }) {
 }
 
 function LiveAgentChat({ type, backlog }: { type: string; backlog: number }) {
-  const { get, start, stop, clear, lastEventAt } = useAgentChats();
+  const { get, start, stop, lastEventAt } = useAgentChats();
   const { entries, running } = get(type);
   const [input, setInput] = useState("");
   // Stall counter: seconds since the run last emitted anything (it auto-stops at 5 min — see the
@@ -243,11 +287,7 @@ function LiveAgentChat({ type, backlog }: { type: string; backlog: number }) {
             <Play size={13} /> Work queue
           </button>
         )}
-        {entries.length > 0 && !running && (
-          <button onClick={() => clear(type)} title="New conversation" className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl text-zinc-500 transition hover:bg-zinc-800 hover:text-zinc-200">
-            <Eraser size={15} />
-          </button>
-        )}
+        {/* Reset lives on the card row next to the context meter (always visible) — no duplicate here. */}
       </div>
     </div>
   );
@@ -276,8 +316,19 @@ const EntryRow = memo(function EntryRow({ en, color }: { en: Entry; color: strin
       </div>
     );
 
-  if (en.role === "note")
+  if (en.role === "note") {
+    // A session-boundary marker (↻ …) renders as an unmistakable divider so the reset is obvious;
+    // other notes (errors/exits) stay as plain centered text.
+    if (en.text.startsWith("↻"))
+      return (
+        <div className="flex items-center gap-2 py-1 text-[10px] font-medium tracking-wide text-zinc-500">
+          <span className="h-px flex-1 bg-zinc-800" />
+          {en.text}
+          <span className="h-px flex-1 bg-zinc-800" />
+        </div>
+      );
     return <p className={`text-center text-[11px] ${en.error ? "text-rose-300" : "text-zinc-500"}`}>{en.text}</p>;
+  }
 
   // tool rows align under the avatar
   return <div className="pl-8"><ToolRow en={en} /></div>;

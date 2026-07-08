@@ -47,15 +47,17 @@ async function run() {
     const page = await ctx.newPage();
     await page.goto(URL, { waitUntil: "domcontentloaded", timeout: 60000 });
 
-    // Every level bar = a <button> with a colored bg whose text carries a code (L#/IC#) — the code may
-    // lead (Snowflake "IC3 Senior…") or trail (Amazon "SDE II L5").
+    // Every level bar = a <button> with a colored bg whose text carries a code — the code may lead
+    // (Snowflake "IC3 Senior…") or trail (Amazon "SDE II L5"). Codes vary by company: L# (Amazon),
+    // IC# (Snowflake), E# (Meta E3–E9), and L#-with-suffix (Confluent L5a/L5b) — match all of them so
+    // an unusual ladder isn't dropped as a false "no column".
     const readBars = () => page.evaluate(() => {
       const out = [];
       for (const el of Array.from(document.querySelectorAll("button"))) {
         const bg = getComputedStyle(el).backgroundColor;
         if (!bg || bg === "rgba(0, 0, 0, 0)" || bg === "transparent") continue;
         const t = (el.innerText || "").replace(/\s+/g, " ").trim();
-        const m = t.match(/\b(IC\d+|L\d+)\b/);
+        const m = t.match(/\b(IC\d+|E\d+|L\d+[a-z]?)\b/);
         if (!m) continue;
         const r = el.getBoundingClientRect();
         if (r.width < 200 || r.height < 10) continue;
