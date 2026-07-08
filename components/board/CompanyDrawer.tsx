@@ -1,8 +1,8 @@
 "use client";
 
-import { useState } from "react";
-import { Building2, X, ExternalLink, Link2, Trash2, Radar, GitCompareArrows, CheckCircle2, XCircle, Circle, MapPin, CalendarClock, RefreshCw, Pencil, FileText, Sparkles, Plus } from "lucide-react";
-import type { InterviewKind, InterviewRound, Posting, RedoTurn, Status, Tier } from "@/lib/types";
+import { useCallback, useEffect, useState } from "react";
+import { Building2, X, ExternalLink, Link2, Trash2, Radar, GitCompareArrows, CheckCircle2, XCircle, Circle, MapPin, CalendarClock, RefreshCw, Pencil, FileText, Sparkles, Plus, Coins, Target, ArrowRightCircle, Loader2, MessageSquareText, Mail, FolderOpen, Users, Eye, HelpCircle } from "lucide-react";
+import type { BriefGap, InterviewBrief, InterviewRound, Posting, RedoTurn, SourcedText, Status, Tier } from "@/lib/types";
 import { reapplyInfo, STATUS_LABEL, STATUS_CHIP, TIER_META, TIERS } from "@/lib/pipeline";
 import { type CompanyAgg } from "@/lib/board";
 import { useCoWorkQueue } from "@/components/CoWorkQueueProvider";
@@ -75,29 +75,6 @@ function EditField({
   );
 }
 
-// Inline-editable multiline text (markdown). Uncontrolled; commits on blur, reverts on Escape.
-// Re-keyed by value so it resets to the server value after a commit + refresh.
-function EditArea({
-  value, onCommit, placeholder, rows = 4,
-}: {
-  value: string;
-  onCommit: (v: string) => void;
-  placeholder?: string;
-  rows?: number;
-}) {
-  return (
-    <textarea
-      key={value}
-      defaultValue={value}
-      placeholder={placeholder}
-      rows={rows}
-      onClick={(e) => e.stopPropagation()}
-      onBlur={(e) => { if (e.target.value !== value) onCommit(e.target.value); }}
-      onKeyDown={(e) => { if (e.key === "Escape") { (e.target as HTMLTextAreaElement).value = value; (e.target as HTMLTextAreaElement).blur(); } }}
-      className={`${EDIT_BASE} block w-full resize-y rounded-lg border border-zinc-800 bg-zinc-900/40 px-2.5 py-2 text-[13px] leading-relaxed text-zinc-300 focus:border-zinc-600`}
-    />
-  );
-}
 
 // A small section label.
 function SectionLabel({ children }: { children: React.ReactNode }) {
@@ -153,137 +130,341 @@ function RoundsTimeline({ rounds }: { rounds: InterviewRound[] }) {
   );
 }
 
-const KIND_OPTIONS: InterviewKind[] = [
-  "recruiter_screen", "phone_screen", "technical", "system_design", "behavioral", "onsite", "hiring_manager", "final", "other",
-];
-const OUTCOME_META: Record<string, { label: string; cls: string }> = {
-  pending: { label: "pending", cls: "text-amber-300" },
-  passed: { label: "passed", cls: "text-emerald-400" },
-  rejected: { label: "rejected", cls: "text-rose-300" },
-};
-
-// The interview-stage rounds, EDITABLE — one row per round (kind · date · outcome · notes for the
-// format/focus the recruiter described), plus delete and "+ add round". Writes to the same
-// `interviews` table inbox-sync populates, so synced + hand-authored rounds coexist; the notes feed
-// prep-research. `onChanged` refreshes the parent so the drawer re-reads after each write.
-function EditableRounds({ postingId, rounds, onChanged }: { postingId: string; rounds: InterviewRound[]; onChanged?: () => void }) {
-  const [busy, setBusy] = useState(false);
-  const call = async (method: string, body: Record<string, unknown>) => {
-    setBusy(true);
-    try {
-      await fetch(`/api/applications/${postingId}/rounds`, {
-        method, headers: { "content-type": "application/json" }, body: JSON.stringify(body),
-      });
-      onChanged?.();
-    } finally {
-      setBusy(false);
-    }
-  };
-  const inputCls = "rounded bg-zinc-900 px-1.5 py-0.5 text-[12px] text-zinc-300 outline-none ring-1 ring-inset ring-zinc-800 focus:ring-zinc-600";
+// One prep-material input row: a dumped-vs-missing dot + label + status line + an action.
+function MaterialRow({ icon, label, done, status, children }: { icon: React.ReactNode; label: string; done: boolean; status: string; children?: React.ReactNode }) {
   return (
-    <div className="space-y-2">
-      {rounds.length === 0 && (
-        <p className="rounded-lg border border-dashed border-zinc-800 px-3 py-3 text-center text-[12px] text-zinc-600">
-          No rounds yet — add the loop the recruiter described, or Sync Inbox to pull them from email.
-        </p>
-      )}
-      <ol className="space-y-2">
-        {rounds.map((r) => {
-          const outcome = r.outcome ?? "pending";
-          return (
-            <li key={r.id} className="space-y-2 rounded-lg border border-zinc-800 bg-zinc-900/40 p-2.5">
-              <div className="flex items-center gap-2">
-                <select
-                  value={r.kind ?? "other"}
-                  onChange={(e) => call("PATCH", { roundId: r.id, kind: e.target.value })}
-                  className={`${inputCls} cursor-pointer`}
-                >
-                  {KIND_OPTIONS.map((k) => <option key={k} value={k}>{KIND_LABEL[k]}</option>)}
-                </select>
-                <input
-                  key={`date-${r.date ?? ""}`}
-                  type="text"
-                  defaultValue={r.date ?? ""}
-                  placeholder="date / when"
-                  onBlur={(e) => { if (e.target.value !== (r.date ?? "")) call("PATCH", { roundId: r.id, date: e.target.value }); }}
-                  className={`${inputCls} w-28`}
-                />
-                <select
-                  value={outcome}
-                  onChange={(e) => call("PATCH", { roundId: r.id, outcome: e.target.value })}
-                  className={`${inputCls} ml-auto cursor-pointer ${OUTCOME_META[outcome].cls}`}
-                >
-                  {Object.entries(OUTCOME_META).map(([k, m]) => <option key={k} value={k}>{m.label}</option>)}
-                </select>
-                <button
-                  onClick={() => call("DELETE", { roundId: r.id })}
-                  title="Remove this round"
-                  className="rounded p-1 text-zinc-600 transition hover:bg-rose-500/10 hover:text-rose-300"
-                >
-                  <Trash2 size={12} />
-                </button>
-              </div>
-              <input
-                key={`notes-${r.notes ?? ""}`}
-                type="text"
-                defaultValue={r.notes ?? ""}
-                placeholder="format / focus — e.g. 75 min live coding · DS&A"
-                onBlur={(e) => { if (e.target.value !== (r.notes ?? "")) call("PATCH", { roundId: r.id, notes: e.target.value }); }}
-                className={`${inputCls} w-full`}
-              />
-            </li>
-          );
-        })}
-      </ol>
-      <button
-        disabled={busy}
-        onClick={() => call("POST", { kind: "other" })}
-        className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-[12px] font-medium text-zinc-400 ring-1 ring-inset ring-zinc-800 transition hover:bg-zinc-800 hover:text-zinc-200 disabled:opacity-50"
-      >
-        <Plus size={12} /> add round
-      </button>
+    <div className="flex items-center gap-2.5 py-2">
+      <span className={`shrink-0 ${done ? "text-emerald-400" : "text-zinc-600"}`}>{done ? <CheckCircle2 size={15} /> : <Circle size={15} />}</span>
+      <span className="shrink-0 text-zinc-500">{icon}</span>
+      <div className="min-w-0 flex-1">
+        <p className="text-[13px] font-medium text-zinc-200">{label}</p>
+        <p className="text-[12px] text-zinc-500">{status}</p>
+      </div>
+      {children}
     </div>
   );
 }
 
-// "Generate prep" — (re)queue the prep-research job for this company, carrying the comp/team/rounds
-// intel as authoritative input. The job builds the /prep/company/<slug> prep page; link to it once
-// queued (it appears after CoWork ingests).
-function GeneratePrep({ postingId }: { postingId: string }) {
-  const { bump } = useCoWorkQueue();
-  const [state, setState] = useState<"idle" | "queuing" | "queued">("idle");
-  const [slug, setSlug] = useState<string | null>(null);
-  const run = async () => {
-    setState("queuing");
-    try {
-      const res = await fetch(`/api/applications/${postingId}/prep`, { method: "POST" });
-      const data = (await res.json().catch(() => ({}))) as { slug?: string | null };
-      setSlug(data.slug ?? null);
-      setState("queued");
-      bump();
-    } catch {
-      setState("idle");
-    }
-  };
+// A queue-a-job action button with idle/queuing/queued states (mirrors GeneratePrep's old machine).
+function RowButton({ state, label, onClick }: { state: "idle" | "queuing" | "queued"; label: string; onClick: () => void }) {
   return (
-    <div className="rounded-lg border border-rose-500/20 bg-rose-500/[0.05] p-3">
-      <div className="flex items-center gap-2.5">
-        <Sparkles size={16} className="shrink-0 text-rose-300" />
-        <div className="min-w-0 flex-1">
-          <p className="text-[13px] font-medium text-zinc-200">Interview prep</p>
-          <p className="text-[12px] text-zinc-500">Build a prep guide from your comp · team · rounds intel.</p>
-        </div>
-        <button
-          onClick={run}
-          disabled={state === "queuing"}
-          className="shrink-0 rounded-md bg-rose-500/90 px-2.5 py-1 text-[13px] font-medium text-rose-950 transition hover:bg-rose-400 disabled:opacity-50"
-        >
-          {state === "queuing" ? "Queuing…" : state === "queued" ? "Re-generate" : "Generate prep"}
+    <button
+      onClick={onClick}
+      disabled={state !== "idle"}
+      className="inline-flex shrink-0 items-center gap-1 rounded-md bg-zinc-800 px-2 py-1 text-[12px] font-medium text-zinc-200 ring-1 ring-inset ring-zinc-700 transition hover:bg-zinc-700 disabled:opacity-50"
+    >
+      {state === "queuing" && <Loader2 size={11} className="animate-spin" />}
+      {state === "queuing" ? "Queuing\u2026" : state === "queued" ? "Queued" : label}
+    </button>
+  );
+}
+
+type PrepAssets = {
+  slug: string;
+  emails: { at: string | null; files: number };
+  questions: { researchedAt: string | null };
+  transcripts: { name: string; bytes: number; at: string }[];
+  context: { at: string | null };
+};
+
+// The three asset INPUTS that feed the interview brief — pull interview emails, research questions,
+// add transcript — each with a dumped-vs-missing status, plus a link into the asset folder. Reads
+// one status endpoint; each action (re)queues its job or writes a transcript, then refreshes.
+function PrepMaterials({ p, onChanged }: { p: Posting; onChanged?: () => void }) {
+  const { bump } = useCoWorkQueue();
+  const [assets, setAssets] = useState<PrepAssets | null>(null);
+  const [emailState, setEmailState] = useState<"idle" | "queuing" | "queued">("idle");
+  const [prepState, setPrepState] = useState<"idle" | "queuing" | "queued">("idle");
+  const [prepSlug, setPrepSlug] = useState<string | null>(null);
+  const [showPaste, setShowPaste] = useState(false);
+
+  const refresh = useCallback(() => {
+    fetch(`/api/applications/${p.id}/prep-assets`)
+      .then((r) => r.json())
+      .then((d) => { if (!d.error) setAssets(d as PrepAssets); })
+      .catch(() => {});
+  }, [p.id]);
+  useEffect(() => { refresh(); }, [refresh]);
+
+  const pullEmails = async () => {
+    setEmailState("queuing");
+    try { await fetch(`/api/applications/${p.id}/interview-emails`, { method: "POST" }); setEmailState("queued"); bump(); }
+    catch { setEmailState("idle"); }
+  };
+  const research = async () => {
+    setPrepState("queuing");
+    try {
+      const res = await fetch(`/api/applications/${p.id}/prep`, { method: "POST" });
+      const d = (await res.json().catch(() => ({}))) as { slug?: string | null };
+      setPrepSlug(d.slug ?? null); setPrepState("queued"); bump();
+    } catch { setPrepState("idle"); }
+  };
+  const openFolder = () => {
+    fetch(`/api/applications/${p.id}/prep-assets`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "open" }) }).catch(() => {});
+  };
+
+  const emails = assets?.emails;
+  const researchedAt = assets?.questions?.researchedAt ?? null;
+  const transcripts = assets?.transcripts ?? [];
+  const slug = assets?.slug ?? prepSlug;
+
+  return (
+    <div className="rounded-lg border border-zinc-800 bg-zinc-900/40 p-3">
+      <div className="mb-1 flex items-center justify-between">
+        <SectionLabel>Interview prep materials</SectionLabel>
+        <button onClick={openFolder} title="Reveal the interview-prep folder" className="inline-flex items-center gap-1 text-[12px] text-zinc-400 transition hover:text-zinc-200">
+          <FolderOpen size={12} /> open folder
         </button>
       </div>
-      {state === "queued" && (
-        <p className="mt-2 text-[12px] text-emerald-300/90">
-          Queued in CoWork — building prep.{slug ? <> · <a href={`/prep/company/${slug}`} className="font-medium text-sky-300 hover:text-sky-200">view prep page →</a></> : null}
+      <div className="divide-y divide-zinc-800/70">
+        <MaterialRow
+          icon={<Mail size={15} />}
+          label="Interview emails"
+          done={!!emails?.at}
+          status={emails?.at ? `pulled ${emails.at.slice(0, 10)}${emails.files ? ` · ${emails.files} file${emails.files === 1 ? "" : "s"}` : ""}` : "not pulled yet"}
+        >
+          <RowButton state={emailState} label={emails?.at ? "Re-pull" : "Pull"} onClick={pullEmails} />
+        </MaterialRow>
+
+        <MaterialRow
+          icon={<HelpCircle size={15} />}
+          label="Question research"
+          done={!!researchedAt}
+          status={researchedAt ? `researched ${researchedAt.slice(0, 10)}` : "not researched yet"}
+        >
+          <div className="flex items-center gap-2">
+            {slug && researchedAt && <a href={`/prep/company/${slug}`} className="text-[12px] font-medium text-sky-300 hover:text-sky-200">view →</a>}
+            <RowButton state={prepState} label={researchedAt ? "Re-research" : "Research questions"} onClick={research} />
+          </div>
+        </MaterialRow>
+
+        <MaterialRow
+          icon={<MessageSquareText size={15} />}
+          label="Call transcripts"
+          done={transcripts.length > 0}
+          status={transcripts.length ? `${transcripts.length} added` : "none added yet"}
+        >
+          <button onClick={() => setShowPaste((v) => !v)} className="inline-flex shrink-0 items-center gap-1 rounded-md px-2 py-1 text-[12px] font-medium text-zinc-300 ring-1 ring-inset ring-zinc-700 transition hover:bg-zinc-800">
+            <Plus size={12} /> add
+          </button>
+        </MaterialRow>
+      </div>
+      {showPaste && <div className="mt-2 border-t border-zinc-800 pt-2"><TranscriptDrop postingId={p.id} onSaved={() => { refresh(); onChanged?.(); }} /></div>}
+    </div>
+  );
+}
+
+// Provenance tag on a brief fact/gap — recruiter (said directly) vs JD (fallback) vs online research.
+const SOURCE_META: Record<string, { label: string; cls: string }> = {
+  recruiter: { label: "recruiter", cls: "bg-emerald-500/15 text-emerald-300" },
+  jd: { label: "JD", cls: "bg-zinc-700/70 text-zinc-300" },
+  online: { label: "online", cls: "bg-sky-500/15 text-sky-300" },
+};
+function SourceChip({ source }: { source?: string }) {
+  const m = source ? SOURCE_META[source] : undefined;
+  if (!m) return null;
+  return <span className={`ml-1.5 inline-block rounded px-1 py-0.5 align-middle text-[10px] font-medium ${m.cls}`}>{m.label}</span>;
+}
+
+const GAP_TONE: Record<string, string> = { high: "bg-rose-400", medium: "bg-amber-400", low: "bg-sky-400" };
+function GapRow({ g }: { g: BriefGap }) {
+  return (
+    <li className="flex gap-2 text-[13px] leading-relaxed">
+      <span className={`mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full ${GAP_TONE[g.severity ?? ""] ?? "bg-zinc-500"}`} />
+      <span className="text-zinc-300">
+        <span className="font-medium text-zinc-100">{g.area}</span>
+        {g.why ? <span className="text-zinc-500"> — {g.why}</span> : null}
+        <SourceChip source={g.source} />
+      </span>
+    </li>
+  );
+}
+
+// One overview row (icon · label · sourced value) in the brief. Omitted when the value is empty.
+function BriefFact({ icon, label, fact }: { icon: React.ReactNode; label: string; fact?: SourcedText }) {
+  if (!fact?.text?.trim()) return null;
+  return (
+    <div className="flex items-start gap-2">
+      <span className="mt-0.5 shrink-0 text-zinc-500">{icon}</span>
+      <div className="min-w-0">
+        <span className="text-[11px] font-semibold uppercase tracking-wider text-zinc-500">{label}</span>
+        <p className="text-[13px] leading-relaxed text-zinc-200">{fact.text}<SourceChip source={fact.source} /></p>
+      </div>
+    </div>
+  );
+}
+
+// Paste-a-transcript box + the list of transcripts already dropped for this company. The app can't
+// record calls, so you paste one here and it's written to interview-prep/<slug>/transcripts/ — the
+// interview-brief job reads that folder to ground the gaps. Fetches the current list on mount.
+function TranscriptDrop({ postingId, onSaved }: { postingId: string; onSaved?: () => void }) {
+  const [items, setItems] = useState<{ name: string; bytes: number; at: string }[]>([]);
+  const [title, setTitle] = useState("");
+  const [body, setBody] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    let live = true;
+    fetch(`/api/applications/${postingId}/transcript`)
+      .then((r) => r.json())
+      .then((d) => { if (live) setItems(d.transcripts ?? []); })
+      .catch(() => {});
+    return () => { live = false; };
+  }, [postingId]);
+
+  const save = async () => {
+    if (!body.trim()) return;
+    setSaving(true);
+    try {
+      const res = await fetch(`/api/applications/${postingId}/transcript`, {
+        method: "POST", headers: { "content-type": "application/json" },
+        body: JSON.stringify({ body, title: title.trim() || undefined }),
+      });
+      const d = (await res.json().catch(() => ({}))) as { transcripts?: typeof items };
+      if (d.transcripts) setItems(d.transcripts);
+      setTitle(""); setBody("");
+      onSaved?.();
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div>
+      <SectionLabel>Call transcripts</SectionLabel>
+      {items.length > 0 && (
+        <ul className="mb-2 space-y-1">
+          {items.map((t) => (
+            <li key={t.name} className="flex items-center gap-2 text-[12px] text-zinc-400">
+              <MessageSquareText size={12} className="shrink-0 text-zinc-600" />
+              <span className="text-zinc-300">{t.name}</span>
+              <span className="text-zinc-600">· {Math.max(1, Math.round(t.bytes / 1024))} KB · {t.at.slice(0, 10)}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+      <input
+        value={title}
+        onChange={(e) => setTitle(e.target.value)}
+        onClick={(e) => e.stopPropagation()}
+        placeholder="round label (optional) — e.g. System design w/ platform lead"
+        className={`${EDIT_BASE} mb-1.5 block w-full rounded-lg border border-zinc-800 bg-zinc-900/40 px-2.5 py-1.5 text-[12px] text-zinc-300 focus:border-zinc-600`}
+      />
+      <textarea
+        value={body}
+        onChange={(e) => setBody(e.target.value)}
+        onClick={(e) => e.stopPropagation()}
+        rows={3}
+        placeholder="Paste the interview call transcript…"
+        className={`${EDIT_BASE} block w-full resize-y rounded-lg border border-zinc-800 bg-zinc-900/40 px-2.5 py-2 text-[13px] leading-relaxed text-zinc-300 focus:border-zinc-600`}
+      />
+      <div className="mt-1.5 flex justify-end">
+        <button
+          onClick={save}
+          disabled={saving || !body.trim()}
+          className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-[12px] font-medium text-zinc-300 ring-1 ring-inset ring-zinc-700 transition hover:bg-zinc-800 disabled:opacity-40"
+        >
+          <Plus size={12} /> {saving ? "Saving…" : "Add transcript"}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// The interview brief — a versioned overview CoWork generates from this company's interview-prep
+// asset folder (context.md + dropped transcripts + fetched emails). Shows the latest version's
+// role · TC · next step · gaps-to-prep, a version switcher, and a Generate button that (re)queues
+// the interview-brief job. Live off the shared queue for the queued/working state.
+function InterviewBriefCard({ p, onChanged }: { p: Posting; onChanged?: () => void }) {
+  const { jobs, bump } = useCoWorkQueue();
+  const briefs = p.interviewBriefs ?? [];
+  const [selVersion, setSelVersion] = useState<number | null>(null);
+  const [queuing, setQueuing] = useState(false);
+
+  const job = jobs.find((j) => j.id === `interview-brief-${p.id}`);
+  const working = job?.status === "wip";
+  const queued = job?.status === "queued" || (!!job && !working) || queuing;
+
+  const latest = briefs.length ? briefs[briefs.length - 1] : null;
+  const current: InterviewBrief | null =
+    (selVersion != null ? briefs.find((b) => b.version === selVersion) : null) ?? latest;
+
+  const generate = async () => {
+    setQueuing(true);
+    try {
+      await fetch(`/api/applications/${p.id}/interview-brief`, { method: "POST" });
+      bump();
+      onChanged?.();
+    } finally {
+      setQueuing(false);
+    }
+  };
+
+  const btnLabel = working ? "Generating…" : queued ? "Queued…" : briefs.length ? "Re-generate" : "Generate brief";
+
+  return (
+    <div className="rounded-lg border border-violet-500/20 bg-violet-500/[0.05] p-3">
+      <div className="flex items-center gap-2.5">
+        <Sparkles size={16} className="shrink-0 text-violet-300" />
+        <div className="min-w-0 flex-1">
+          <p className="text-[13px] font-medium text-zinc-200">Interview brief</p>
+          <p className="text-[12px] text-zinc-500">Role · TC · next step · gaps, from your dumped materials.</p>
+        </div>
+        <button
+          onClick={generate}
+          disabled={working || queued}
+          className="inline-flex shrink-0 items-center gap-1 rounded-md bg-violet-500/90 px-2.5 py-1 text-[13px] font-medium text-violet-950 transition hover:bg-violet-400 disabled:opacity-50"
+        >
+          {(working || queued) && <Loader2 size={12} className="animate-spin" />}
+          {btnLabel}
+        </button>
+      </div>
+
+      {briefs.length > 1 && (
+        <div className="mt-2.5 flex flex-wrap items-center gap-1">
+          {briefs.map((b) => {
+            const on = current?.version === b.version;
+            return (
+              <button
+                key={b.version}
+                onClick={() => setSelVersion(b.version)}
+                className={`rounded px-1.5 py-0.5 text-[11px] font-semibold transition ${on ? "bg-violet-500/25 text-violet-100" : "text-zinc-400 hover:bg-zinc-800"}`}
+              >
+                v{b.version}
+              </button>
+            );
+          })}
+        </div>
+      )}
+
+      {current ? (
+        <div className="mt-3 space-y-3 border-t border-violet-500/15 pt-3">
+          <div className="space-y-2.5">
+            <BriefFact icon={<Building2 size={13} />} label="Role" fact={current.role} />
+            <BriefFact icon={<Coins size={13} />} label="Total comp" fact={current.tc} />
+            <BriefFact icon={<Users size={13} />} label="Team" fact={current.team} />
+            <BriefFact icon={<Eye size={13} />} label="What they're looking for" fact={current.expectations} />
+            <BriefFact icon={<ArrowRightCircle size={13} />} label="Next step" fact={current.nextStep} />
+          </div>
+          {current.summary && <p className="text-[13px] leading-relaxed text-zinc-300">{current.summary}</p>}
+          {!!current.gaps?.length && (
+            <div>
+              <div className="mb-1 flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-zinc-500">
+                <Target size={12} /> Gaps to prep
+              </div>
+              <ul className="space-y-1">{current.gaps.map((g, i) => <GapRow key={i} g={g} />)}</ul>
+            </div>
+          )}
+          <p className="text-[11px] text-zinc-600">
+            v{current.version} · generated {current.generatedAt.slice(0, 10)}
+            {current.materials?.length ? ` · ${current.materials.join(", ")}` : ""}
+          </p>
+        </div>
+      ) : (
+        <p className="mt-3 border-t border-violet-500/15 pt-3 text-[12px] text-zinc-500">
+          {working || queued
+            ? "Queued in CoWork — reading your dumped materials to build the brief."
+            : "No brief yet. Feed the inputs below (emails · questions · transcripts), then generate one."}
         </p>
       )}
     </div>
@@ -710,20 +891,9 @@ export default function CompanyDrawer({
           {selKey === "interview" && (
             <>
               <StageHighlight p={p} col="interviewing" rounds={rounds} reapply={reapply} />
+              <InterviewBriefCard p={p} onChanged={onChanged} />
+              <PrepMaterials p={p} onChanged={onChanged} />
               <InterviewedToggle p={p} onSetInterviewed={onSetInterviewed} />
-              <div>
-                <SectionLabel>Comp structure</SectionLabel>
-                <EditArea value={p.comp ?? ""} onCommit={(v) => onEditField(p, { comp: v })} placeholder="funding / runway · base · bonus · equity (value + strike)…" />
-              </div>
-              <div>
-                <SectionLabel>Team · product · work</SectionLabel>
-                <EditArea value={p.teamNotes ?? ""} onCommit={(v) => onEditField(p, { teamNotes: v })} placeholder="what they build, who for, team size/stage, the role's scope & focus…" />
-              </div>
-              <div>
-                <SectionLabel>Interview rounds</SectionLabel>
-                <EditableRounds postingId={p.id} rounds={rounds} onChanged={onChanged} />
-              </div>
-              <GeneratePrep postingId={p.id} />
             </>
           )}
 

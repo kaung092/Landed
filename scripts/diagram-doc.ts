@@ -9,7 +9,7 @@ import { fileURLToPath } from "node:url";
 
 const scriptsDir = dirname(fileURLToPath(import.meta.url));
 
-/** Resolve a path relative to the Job-Hunt-App root (one level above scripts/). */
+/** Resolve a path relative to the Landed repo root (one level above scripts/). */
 export const fromRoot = (...parts: string[]) => resolve(scriptsDir, "..", ...parts);
 
 type DiagramDoc = {

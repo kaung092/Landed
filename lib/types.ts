@@ -68,6 +68,32 @@ export type RedoTurn = {
   fit?: FitAssessment; // fit agent turns — the full snapshot for this version
 };
 
+// The interview brief — a versioned overview CoWork generates from the interview-prep asset
+// folder (context.md + call transcripts + pulled emails + attachments). Each generation appends a
+// new version to postings.interview_briefs; the drawer renders the latest and lets you switch
+// versions.
+//
+// Source provenance: facts and gaps carry where they came from so you can tell what a human
+// confirmed vs what's inferred. `recruiter` = the first recruiter call transcript or recruiter
+// emails; `jd` = the job description (the fallback when the recruiter didn't say); `online` =
+// prep-research / public sources.
+export type BriefSource = "recruiter" | "jd" | "online";
+// A single fact plus where it came from. `tc` is a free-text total-comp line (not a numeric field).
+export type SourcedText = { text: string; source?: BriefSource };
+export type BriefGap = { area: string; why?: string; severity?: "high" | "medium" | "low"; source?: BriefSource };
+export type InterviewBrief = {
+  version: number; // 1-based; increments per generation (like a RedoTurn version)
+  generatedAt: string; // ISO
+  role?: SourcedText; // the role as understood (recruiter call → JD fallback)
+  tc?: SourcedText; // total-comp line (recruiter call → JD fallback)
+  team?: SourcedText; // team / product / who they build for
+  expectations?: SourcedText; // what they're looking for in the candidate
+  nextStep?: SourcedText; // the immediate next step in the loop
+  gaps?: BriefGap[]; // key gaps to prep, each tagged recruiter (said directly) vs online (inferred)
+  summary?: string; // short overview paragraph
+  materials?: string[]; // which materials fed this version (e.g. "recruiter transcript", "JD", "2 emails")
+};
+
 // One interview round in the "interviewing" stage — extracted from inbox-sync (scheduling /
 // outcome emails) into the `interviews` table, one row per round. `kind` is a coarse type so the
 // drawer can label and order rounds; `outcome` drives the current/upcoming highlight.
@@ -131,4 +157,5 @@ export type Posting = {
   history?: boolean; // true = imported from the old tracker.csv
   interviews?: InterviewRound[]; // interview-stage rounds (from inbox-sync), ordered by round
   emailRefs?: EmailRefs; // Gmail thread ids per stage (inbox-sync) — for direct email links
+  interviewBriefs?: InterviewBrief[]; // versioned interview briefs (CoWork-generated), oldest → newest
 };

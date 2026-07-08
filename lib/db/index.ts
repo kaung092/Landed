@@ -330,6 +330,7 @@ function connection() {
     ["applied_date", "applied_date TEXT"],
     ["updated_at", "updated_at TEXT"],
     ["redo_log", "redo_log TEXT"],
+    ["interview_briefs", "interview_briefs TEXT"], // versioned CoWork-generated interview briefs
     ["comments", "comments TEXT"],
     ["comp", "comp TEXT"], // interview comp-structure intel (markdown)
     ["team_notes", "team_notes TEXT"], // team / product / work intel (markdown)

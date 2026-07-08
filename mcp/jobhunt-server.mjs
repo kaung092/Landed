@@ -2,7 +2,8 @@
 // Zero-dependency stdio MCP server bridging CoWork ⇄ the job-hunt app.
 //
 // Transport: stdio JSON-RPC (newline-delimited). stdout is RESERVED for protocol frames;
-// all logging goes to stderr. Registered in claude_desktop_config.json under "jobhunt".
+// all logging goes to stderr. Registered as an MCP server for the Claude Code runner (project
+// `.mcp.json` / `--mcp-config`) under "jobhunt".
 //
 // Backing: option A — this server is a thin client over the always-on local API
 // (launchd keeps `next dev` on :3000). It holds no state and opens no DB; the Next
@@ -29,11 +30,11 @@
 const BASE_URL = (process.env.JOBHUNT_URL || "http://localhost:3000").replace(/\/$/, "");
 const SERVER = { name: "jobhunt", version: "1.0.0" };
 
-// THREAD IDENTITY. Claude Desktop launches a fresh copy of this server per CoWork chat, so this
-// process *is* one chat ("thread"). Mint a stable id at boot and tag every call with it (header
-// below) — the app uses it to group the jobs this chat claims and to record a per-call trace, so
-// the CoWork page can visualize what each chat is doing. Correlation is server-side: the agent
-// never has to remember or pass the id.
+// THREAD IDENTITY. The Claude Code runner spawns a fresh copy of this server per CoWork session, so
+// this process *is* one session ("thread"). Mint a stable id at boot and tag every call with it
+// (header below) — the app uses it to group the jobs this session claims and to record a per-call
+// trace, so the CoWork page can visualize what each session is doing. Correlation is server-side:
+// the agent never has to remember or pass the id.
 const THREAD_ID = process.env.JOBHUNT_THREAD || `th_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
 const THREAD_LABEL = process.env.JOBHUNT_THREAD_LABEL || "CoWork";
 
@@ -269,6 +270,27 @@ const TOOLS = [
     },
   },
   {
+    name: "downloadGmailAttachments",
+    description:
+      "Download every file attached to a Gmail thread into a company's interview-prep folder " +
+      "(interview-prep/<slug>/attachments/). Use during the interview-emails job when a recruiter/" +
+      "interviewer email carries a role PDF, prep guide, or take-home spec. The app fetches + writes " +
+      "the files (it holds the IMAP connection); you pass the thread id + the company `slug`. Returns " +
+      "the saved filenames. Requires Gmail connected in Settings.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        id: { type: "string", description: "Gmail thread id (X-GM-THRID), as returned by searchGmail." },
+        slug: { type: "string", description: "Company folder slug (from the job params) — interview-prep/<slug>/." },
+      },
+      required: ["id", "slug"],
+      additionalProperties: false,
+    },
+    run: async (args) => {
+      return await apiSend("POST", `/api/gmail/thread/${encodeURIComponent(args.id)}/attachments`, { slug: args.slug });
+    },
+  },
+  {
     name: "listJobs",
     description:
       "SURVEY the queue (a read-only menu) — the available job `types` (with their playbooks) and the " +
@@ -392,7 +414,7 @@ const TOOLS = [
     description:
       "Hand a job's result back to the app — the write path that REPLACES dropping a " +
       "results/<id>.json file. `type` is the job type (discovery | inbox-sync | fit | " +
-      "tailoring | prep | prep-research); `records` is the array of result records (fields per that job's " +
+      "tailoring | prep | prep-research | interview-brief | interview-emails); `records` is the array of result records (fields per that job's " +
       "playbook Output section). Omit `jobId` for a self-initiated run (the app synthesizes " +
       "a ledger entry); pass it when fulfilling an app-queued job. **You must hold a live claim on " +
       "that job (via claimNext/claimJob) — the app REJECTS a submit for a job you haven't claimed or " +
@@ -403,7 +425,7 @@ const TOOLS = [
       properties: {
         type: {
           type: "string",
-          description: "Job type: discovery | inbox-sync | fit | tailoring | prep | prep-research.",
+          description: "Job type: discovery | inbox-sync | fit | tailoring | prep | prep-research | interview-brief | interview-emails.",
         },
         records: {
           type: "array",
@@ -518,7 +540,7 @@ const TOOLS = [
     inputSchema: {
       type: "object",
       properties: {
-        type: { type: "string", description: "Job type: discovery | inbox-sync | fit | tailoring | prep | prep-research." },
+        type: { type: "string", description: "Job type: discovery | inbox-sync | fit | tailoring | prep | prep-research | interview-brief | interview-emails." },
         params: {
           type: "object",
           description: "Job input, e.g. { postings: [{ company, role, url, jd }] } for a fit job.",

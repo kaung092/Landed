@@ -1,4 +1,4 @@
-# Job Hunt App
+# Landed
 
 A local-first job-search command center. It unifies the whole pipeline — discovery,
 fit assessment, résumé tailoring, applications, interviews, and prep — into one
@@ -31,8 +31,8 @@ MCP server.
 Prerequisites: Node.js 20+ and npm.
 
 ```bash
-git clone <your-fork-url> job-hunt-app
-cd job-hunt-app
+git clone <your-fork-url> landed
+cd landed
 npm install
 cp .env.example .env      # then edit as needed
 npm run dev               # http://localhost:3000

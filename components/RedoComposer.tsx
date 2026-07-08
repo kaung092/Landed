@@ -47,7 +47,7 @@ export default function RedoComposer({ postingId, phase, initialNote }: { postin
     return (
       <div className="flex items-center gap-2 border-t border-zinc-800 bg-violet-500/[0.08] px-4 py-3 text-[13px] text-violet-200">
         <RefreshCw size={14} className="shrink-0" />
-        Redo {editing ? "updated" : "queued"} — open Claude CoWork and run your queue to produce the next version.
+        Redo {editing ? "updated" : "queued"} — run the Claude Code runner to drain your queue and produce the next version.
       </div>
     );
   }

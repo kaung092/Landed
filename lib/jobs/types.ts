@@ -10,7 +10,9 @@ export type JobType =
   | "fitlab-assess"
   | "tailoring"
   | "prep"
-  | "prep-research";
+  | "prep-research"
+  | "interview-brief"
+  | "interview-emails";
 
 // What the app (or CoWork) drops into agent-jobs/queue/<id>.json.
 export type JobFile = {

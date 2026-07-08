@@ -15,15 +15,17 @@ import { ASSET_ROOT } from "@/lib/config";
 import { db } from "@/lib/db";
 import { postings, companies, interviews } from "@/lib/db/schema";
 import { getCompanyProfile, listQuestions, companySlug, type CompanyProfile, type PrepQuestion } from "@/lib/db/prep";
-import type { InterviewRound, FitAssessment, Comment } from "@/lib/types";
+import type { InterviewRound, FitAssessment, Comment, EmailRefs } from "@/lib/types";
 
 export const PREP_ROOT = path.join(ASSET_ROOT, "interview-prep");
 const contextPath = (slug: string) => path.join(PREP_ROOT, slug, "context.md");
+const questionsPath = (slug: string) => path.join(PREP_ROOT, slug, "questions.md");
 
 type Co = {
   company: string; role: string; status: string; url?: string | null;
   comp?: string | null; teamNotes?: string | null; note?: string | null; jd?: string | null;
   comments: Comment[]; fit?: FitAssessment; fitScore?: number | null; rounds: InterviewRound[];
+  emailRefs?: EmailRefs;
 };
 
 const KIND_LABEL: Record<string, string> = {
@@ -98,12 +100,32 @@ function commentsBlock(c: Co): string {
   return `## Your intel (first-hand notes)\n` + c.comments.map((cm) => `- ${cm.text.replace(/\n/g, "\n  ")}`).join("\n");
 }
 
+// The Gmail thread ids captured by inbox-sync (per stage + per round). A SEED for the
+// interview-emails job — those known threads are a starting point; the job also searches Gmail by
+// company. The app only stores ids, never bodies. Empty when no email has been linked yet.
+function emailManifestBlock(rows: Co[]): string {
+  const seen = new Map<string, string>(); // thread id → label
+  for (const c of rows) {
+    const r = c.emailRefs ?? {};
+    for (const [stage, id] of Object.entries(r)) if (id) seen.set(id, stage);
+    for (const rd of c.rounds) if (rd.emailId) seen.set(rd.emailId, `round ${rd.round ?? "?"} (${rd.kind ?? "interview"})`);
+  }
+  if (!seen.size) return "";
+  const lines = [...seen].map(([id, label]) => `- \`${id}\` — ${label}`);
+  return (
+    `## Known email threads (seed for Pull interview emails)\n` +
+    `Gmail thread ids inbox-sync already linked — a starting point for the interview-emails job\n` +
+    `(which also searches Gmail by company and writes \`emails.md\` + downloads attachments):\n` +
+    lines.join("\n")
+  );
+}
+
 function buildContext(company: string, slug: string, rows: Co[], profile: CompanyProfile | null, questions: PrepQuestion[]): string {
   const today = new Date().toISOString().slice(0, 10);
   const lead = rows[0];
   const out: string[] = [
     `# ${company} — interview prep`,
-    `_Generated ${today} from the job-hunt app. The single place CoWork should read to prep me for ${company}._`,
+    `_Generated ${today} from Landed. The single place CoWork should read to prep me for ${company}._`,
     "",
     `## Roles in play`,
     ...rows.map((r) => `- **${r.role || "(untitled)"}** — ${r.status}${r.url ? ` · ${r.url}` : ""}`),
@@ -123,6 +145,13 @@ function buildContext(company: string, slug: string, rows: Co[], profile: Compan
   if (qs) out.push(`\n${qs}`);
   const jd = rows.map((r) => r.jd).find(Boolean);
   if (jd) out.push(`\n## Job description\n\n\`\`\`\n${jd}\n\`\`\``);
+  const emails = emailManifestBlock(rows);
+  if (emails) out.push(`\n${emails}`);
+  out.push(
+    `\n## Call transcripts`,
+    `Drop interview call transcripts into \`transcripts/\` in this folder (or paste them from the app's`,
+    `Interview stage). The "Generate interview brief" job reads every file there to ground the gaps.`,
+  );
   out.push(
     `\n---\n## How to use this in a CoWork chat`,
     `Open a Claude Code / CoWork chat in this asset folder and start with something like:`,
@@ -134,7 +163,7 @@ function buildContext(company: string, slug: string, rows: Co[], profile: Compan
 // Map an interviews row → the InterviewRound shape, then sort by round number.
 function roundsFor(appId: number): InterviewRound[] {
   return db.select().from(interviews).where(eq(interviews.applicationId, appId)).all()
-    .map((iv): InterviewRound => ({ round: iv.round ?? undefined, kind: (iv.kind as InterviewRound["kind"]) ?? undefined, date: iv.date ?? undefined, outcome: (iv.outcome as InterviewRound["outcome"]) ?? undefined, notes: iv.notes ?? undefined }))
+    .map((iv): InterviewRound => ({ round: iv.round ?? undefined, kind: (iv.kind as InterviewRound["kind"]) ?? undefined, date: iv.date ?? undefined, outcome: (iv.outcome as InterviewRound["outcome"]) ?? undefined, notes: iv.notes ?? undefined, emailId: iv.emailId ?? undefined }))
     .sort((a, b) => (a.round ?? 0) - (b.round ?? 0));
 }
 
@@ -155,7 +184,7 @@ function gatherCompany(slug: string): { company: string; rows: Co[] } | null {
       company: r.companies.name, role: p.title ?? "", status: p.state, url: p.url,
       comp: p.comp, teamNotes: p.teamNotes, note: p.note, jd: p.jd,
       comments: parse<Comment[]>(p.comments, []), fit: parse<FitAssessment | undefined>(p.fitDetail, undefined),
-      fitScore: p.fitScore, rounds: roundsFor(p.id),
+      fitScore: p.fitScore, rounds: roundsFor(p.id), emailRefs: parse<EmailRefs>(p.emailRefs, {}),
     };
   });
   return { company: rows[0].company, rows };
@@ -168,7 +197,7 @@ export function exportPrepContextFor(slug: string): { at: string } | null {
   if (!g) return null;
   const profile = getCompanyProfile(slug);
   const questions = profile ? listQuestions({ company: slug }) : [];
-  fs.mkdirSync(path.join(PREP_ROOT, slug), { recursive: true });
+  fs.mkdirSync(path.join(PREP_ROOT, slug, "transcripts"), { recursive: true });
   fs.writeFileSync(contextPath(slug), buildContext(g.company, slug, g.rows, profile, questions));
   return { at: new Date().toISOString() };
 }
@@ -176,6 +205,35 @@ export function exportPrepContextFor(slug: string): { at: string } | null {
 // When the context.md for a company was last written (file mtime), or null if none yet.
 export function prepContextDumpedAt(slug: string): string | null {
   try { return fs.statSync(contextPath(slug)).mtime.toISOString(); } catch { return null; }
+}
+
+// Standalone question-research output (`questions.md`) — the PURELY ONLINE-researched question bank
+// from the prep-research job: the researched process, rounds, and question set (with confidence +
+// sources), as a clean file to work from in a per-company CoWork prep chat (separate from the full
+// context.md dump). Returns the write time, or null if the slug has no researched profile yet.
+export function exportQuestionsFor(slug: string): { at: string } | null {
+  const g = gatherCompany(slug);
+  const profile = getCompanyProfile(slug);
+  if (!g || !profile) return null;
+  const questions = listQuestions({ company: slug });
+  const today = new Date().toISOString().slice(0, 10);
+  const out: string[] = [
+    `# ${g.company} — interview questions (online research)`,
+    `_Researched ${today}. Public-source question bank from the prep-research job — 🟢 confirmed = reported as actually asked, 🟡 likely = predicted. Cross-check against your own recruiter intel._`,
+  ];
+  if (profile.process) out.push(`\n## Interview process\n${profile.process}`);
+  if (profile.rounds.length) out.push(`\n## Rounds\n` + profile.rounds.map((r) => `- **${r.name}**${r.format ? ` (${r.format})` : ""}${r.focus ? ` — ${r.focus}` : ""}`).join("\n"));
+  const qs = questionsBlock(questions);
+  if (qs) out.push(`\n${qs}`);
+  if (profile.sources.length) out.push(`\n## Sources\n` + profile.sources.map((s) => `- ${s.url ? `[${s.label}](${s.url})` : s.label}`).join("\n"));
+  fs.mkdirSync(path.join(PREP_ROOT, slug), { recursive: true });
+  fs.writeFileSync(questionsPath(slug), out.join("\n") + "\n");
+  return { at: new Date().toISOString() };
+}
+
+// When questions.md was last written (file mtime), or null if none yet.
+export function questionsDumpedAt(slug: string): string | null {
+  try { return fs.statSync(questionsPath(slug)).mtime.toISOString(); } catch { return null; }
 }
 
 // Export EVERY interview/offer-stage company + a README index. Used by the CLI.
@@ -197,7 +255,7 @@ export function exportAllPrepContext(): { slug: string; company: string }[] {
   const readme = [
     `# Interview prep`, ``,
     `One subfolder per company I'm interviewing with. Each \`<slug>/context.md\` is a full dump of`,
-    `everything the job-hunt app knows about that company — my notes + first-hand intel, the interview`,
+    `everything Landed knows about that company — my notes + first-hand intel, the interview`,
     `loop, the fit assessment, the JD, and the researched prep profile + question set.`, ``,
     `**To prep:** open a CoWork chat per company and point it at that company's \`context.md\`.`,
     `Regenerate from the app (each company's "Dump context" button) or all at once with`,

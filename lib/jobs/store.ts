@@ -464,6 +464,45 @@ export function queuePrepResearch(appId: number): { jobId: string; slug: string 
   return { jobId, slug: canonical(p.company)?.key ?? null };
 }
 
+// (Re)queue an interview-brief job for one posting — CoWork reads that company's interview-prep
+// asset folder (context.md + dropped transcripts + fetched emails) and returns a versioned brief.
+// Deterministic id `interview-brief-<postingId>` so the drawer's "Generate" button re-runs cleanly
+// (createJob supersedes the prior run). Params carry the posting id (the ID-only ingest key), the
+// company/role, and the folder slug so the task can point at interview-prep/<slug>/. Returns the
+// job id + slug (or null if the posting is gone).
+export function enqueueInterviewBrief(appId: number): { jobId: string; slug: string | null } | null {
+  const p = getPosting(appId);
+  if (!p) return null;
+  const slug = canonical(p.company)?.key ?? null;
+  const jobId = createJob({
+    id: `interview-brief-${appId}`,
+    type: "interview-brief",
+    createdBy: "You",
+    params: { id: appId, company: p.company, role: p.role, ...(slug ? { slug } : {}) },
+  });
+  return { jobId, slug };
+}
+
+// (Re)queue a "pull interview emails" job for a posting's COMPANY — CoWork sweeps that company's
+// interviewing emails (last ~3 months) into interview-prep/<slug>/ (emails.md + attachments/). Keyed
+// by companyId (the folder is per-company) so re-runs supersede. Asset-only; never touches tracker
+// status. `since` is a Gmail-style YYYY/MM/DD date 3 months back so the query is deterministic (the
+// buildTask can't compute dates). Returns the job id + slug (or null if the posting is gone).
+export function enqueueInterviewEmails(appId: number): { jobId: string; slug: string | null } | null {
+  const row = db.select().from(postings).where(eq(postings.id, appId)).get();
+  const p = getPosting(appId);
+  if (!row || !p) return null;
+  const slug = canonical(p.company)?.key ?? null;
+  const since = new Date(Date.now() - 92 * 86_400_000).toISOString().slice(0, 10).replace(/-/g, "/");
+  const jobId = createJob({
+    id: `interview-emails-${row.companyId}`,
+    type: "interview-emails",
+    createdBy: "You",
+    params: { company: p.company, ...(slug ? { slug } : {}), since },
+  });
+  return { jobId, slug };
+}
+
 // --- fit queue (postings sent for fit assessment) ----------------------------------------
 type FitPosting = { company?: string; role?: string; jd?: string; url?: string };
 
