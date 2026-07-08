@@ -179,7 +179,10 @@ function DumpContextButton({ slug, initialAt }: { slug: string; initialAt: strin
     try {
       const r = await fetch(`/api/prep/company/${slug}/export`, { method: "POST" });
       const d = await r.json();
-      if (d.at) setAt(d.at);
+      if (d.at) {
+        setAt(d.at);
+        pendo.track("prep_context_exported", { company_slug: slug });
+      }
     } catch { /* ignore */ } finally {
       setBusy(false);
     }

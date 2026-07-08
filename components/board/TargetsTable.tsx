@@ -121,6 +121,11 @@ export default function TargetsTable({
       const d = await r.json();
       if (d.error) throw new Error(d.error);
       const { queued = 0, skipped = 0 } = d as { queued: number; skipped: number };
+      pendo.track("watchlist_scrape_queued", {
+        companies_queued: queued,
+        companies_skipped: skipped,
+        stale_days_threshold: STALE_DAYS,
+      });
       setScrapeMsg(
         queued === 0
           ? skipped > 0
@@ -147,6 +152,7 @@ export default function TargetsTable({
       const r = await fetch("/api/scan/queue", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ company: name }) });
       const d = await r.json();
       if (d.error) throw new Error(d.error);
+      pendo.track("single_company_scan_queued", { company_name: name });
       setScrapeMsg(
         d.status === "in-flight"
           ? `${name} is already queued — it’s waiting in the CoWork queue.`
@@ -172,7 +178,11 @@ export default function TargetsTable({
     const url = liUrl.trim();
     if (!url) return;
     setImporting(true);
-    try { await add({ type: "linkedin-import", params: { url, count: 5 } }); setLiUrl(""); }
+    try {
+      await add({ type: "linkedin-import", params: { url, count: 5 } });
+      pendo.track("linkedin_import_queued", { url });
+      setLiUrl("");
+    }
     finally { setImporting(false); }
   }, [liUrl, add]);
 
@@ -203,6 +213,11 @@ export default function TargetsTable({
     }
     setAddInput("");
     setQueuedMsg({ queued, skipped });
+    pendo.track("watchlist_company_added", {
+      companies_queued: queued.length,
+      companies_skipped: skipped.length,
+      company_names: queued.join(",").slice(0, 200),
+    });
     if (queuedTimer.current) clearTimeout(queuedTimer.current);
     queuedTimer.current = setTimeout(() => setQueuedMsg(null), 10000);
   }, [addInput, targets, jobs, add]);
@@ -231,6 +246,7 @@ export default function TargetsTable({
   // Surfaces an Undo for a few seconds — the × is one click and easy to hit by accident.
   const remove = useCallback(
     async (name: string) => {
+      pendo.track("watchlist_company_removed", { company_name: name });
       setTargets((ts) => (ts ? ts.filter((t) => t.name !== name) : ts));
       await setWatch(name, false);
       setUndoName(name);

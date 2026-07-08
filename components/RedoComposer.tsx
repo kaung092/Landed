@@ -37,7 +37,15 @@ export default function RedoComposer({ postingId, phase, initialNote }: { postin
       const r = await fetch(`/api/applications/${postingId}/redo`, {
         method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ phase, note: text }),
       });
-      if (r.ok) { setDone(true); setNote(""); bump(); }
+      if (r.ok) {
+        pendo.track("redo_queued", {
+          posting_id: postingId,
+          phase,
+          note_length: text.length,
+          is_edit: editing,
+        });
+        setDone(true); setNote(""); bump();
+      }
     } finally {
       setSending(false);
     }

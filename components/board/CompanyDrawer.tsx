@@ -197,6 +197,7 @@ function PrepMaterials({ p, onChanged }: { p: Posting; onChanged?: () => void })
       const res = await fetch(`/api/applications/${p.id}/prep`, { method: "POST" });
       const d = (await res.json().catch(() => ({}))) as { slug?: string | null };
       setPrepSlug(d.slug ?? null); setPrepState("queued"); bump();
+      pendo.track("interview_prep_generated", { posting_id: p.id });
     } catch { setPrepState("idle"); }
   };
   const openFolder = () => {
@@ -870,7 +871,15 @@ export default function CompanyDrawer({
           )}
 
           {selKey === "tailor" && (() => {
-            const choose = (v: string | null) => onEditField(p, { chosenResume: v });
+            const choose = (v: string | null) => {
+              pendo.track("resume_chosen_for_application", {
+                posting_id: p.id,
+                company: p.company,
+                chosen_resume: v,
+                is_base: v === "base",
+              });
+              onEditField(p, { chosenResume: v });
+            };
             const toggleEdited = (slug: string) => {
               const cur = p.editedResumes ?? [];
               onEditField(p, { editedResumes: cur.includes(slug) ? cur.filter((s) => s !== slug) : [...cur, slug] });
