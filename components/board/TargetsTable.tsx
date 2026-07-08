@@ -1,5 +1,5 @@
 import { Fragment, useCallback, useEffect, useRef, useState } from "react";
-import { ChevronRight, ExternalLink, HelpCircle, Loader2, Plus, Radar, RefreshCw, Sparkles, Telescope, Undo2, X } from "lucide-react";
+import { ChevronRight, ExternalLink, HelpCircle, Briefcase, Loader2, Plus, Radar, RefreshCw, Sparkles, Telescope, Undo2, X } from "lucide-react";
 import { ago } from "@/lib/format";
 import { TIER_META, TIERS } from "@/lib/pipeline";
 import TrackerTag from "@/components/TrackerTag";
@@ -163,6 +163,19 @@ export default function TargetsTable({
     }
   }, [load, bump]);
 
+  // Import from LinkedIn — queue a `linkedin-import` job for the LinkedIn Scout to fetch the full JDs
+  // from a recommended/collection feed (or single posting) and land them in the fit queue. Needs the
+  // Chrome browser tools at run time (see linkedin-import.md) — the headless runner can't fetch LinkedIn.
+  const [liUrl, setLiUrl] = useState("");
+  const [importing, setImporting] = useState(false);
+  const queueLinkedin = useCallback(async () => {
+    const url = liUrl.trim();
+    if (!url) return;
+    setImporting(true);
+    try { await add({ type: "linkedin-import", params: { url, count: 5 } }); setLiUrl(""); }
+    finally { setImporting(false); }
+  }, [liUrl, add]);
+
   // Queue a watchlist-add CoWork job per company in the box. Accepts a comma- or newline-separated
   // list, dedups, and skips anything already watchlisted or already queued (so re-pasting is safe).
   const queueAdd = useCallback(async () => {
@@ -295,6 +308,32 @@ export default function TargetsTable({
         >
           {adding ? <Loader2 size={13} className="animate-spin" /> : <Sparkles size={13} />}
           Queue research
+        </button>
+      </form>
+
+      {/* Import jobs from a LinkedIn recommended/collection feed → fit queue (needs browser tools). */}
+      <form
+        onSubmit={(e) => { e.preventDefault(); queueLinkedin(); }}
+        className="mb-3 flex items-center gap-2"
+      >
+        <div className="relative max-w-md flex-1">
+          <Briefcase size={13} className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-sky-500/70" />
+          <input
+            type="text"
+            value={liUrl}
+            onChange={(e) => setLiUrl(e.target.value)}
+            placeholder="Import a LinkedIn jobs / recommended URL"
+            title="Paste a LinkedIn recommended/collection feed or a /jobs/view/ URL. Queues a LinkedIn Scout job that fetches the full JDs (needs the Chrome browser tools) and lands them in the fit queue."
+            className="w-full rounded-md bg-zinc-900 py-1.5 pl-8 pr-2.5 text-[13px] text-zinc-200 outline-none ring-1 ring-inset ring-zinc-800 transition placeholder:text-zinc-600 hover:ring-zinc-700 focus:ring-zinc-600"
+          />
+        </div>
+        <button
+          type="submit"
+          disabled={importing || !liUrl.trim()}
+          className="inline-flex items-center gap-1.5 rounded-md bg-sky-500/15 px-3 py-1.5 text-[13px] font-medium text-sky-300 ring-1 ring-inset ring-sky-500/30 transition hover:bg-sky-500/25 disabled:cursor-not-allowed disabled:opacity-40"
+        >
+          {importing ? <Loader2 size={13} className="animate-spin" /> : <Briefcase size={13} />}
+          Import jobs
         </button>
       </form>
 

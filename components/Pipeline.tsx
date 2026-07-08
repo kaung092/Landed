@@ -1292,6 +1292,29 @@ function CommentCell({ id, comments, onChanged }: { id: number; comments: Commen
     requestAnimationFrame(() => { if (taRef.current) { taRef.current.focus(); taRef.current.selectionStart = taRef.current.selectionEnd = caret; } });
   };
 
+  // The comment editor — reused for BOTH adding (bottom) and editing IN PLACE (inside a comment's own
+  // box). Only one is mounted at a time (editing is exclusive with adding), so they can share `draft`.
+  const editorBox = (mode: "add" | "edit") => (
+    <div className="overflow-hidden rounded-md bg-zinc-800 ring-1 ring-inset ring-zinc-700 transition focus-within:ring-zinc-500">
+      <textarea
+        ref={taRef} autoFocus rows={mode === "edit" ? 2 : 1} value={draft} onChange={(e) => setDraft(e.target.value)}
+        onKeyDown={onKey}
+        placeholder={mode === "edit" ? "Edit comment…" : "Add a comment…"}
+        className="block max-h-40 w-full resize-none bg-transparent px-2.5 py-2 text-[13px] leading-snug text-zinc-200 outline-none placeholder:text-zinc-600"
+      />
+      <div className="flex items-center justify-between gap-2 px-1.5 pb-1.5">
+        <div className="flex items-center gap-0.5">
+          <button onClick={addBullet} title="Bullet list" className="rounded p-1 text-zinc-500 transition hover:bg-zinc-700 hover:text-zinc-200"><List size={14} /></button>
+          <button onMouseDown={(e) => e.preventDefault()} onClick={toggleBold} title="Bold (⌘B)" className="rounded p-1 text-zinc-500 transition hover:bg-zinc-700 hover:text-zinc-200"><Bold size={14} /></button>
+        </div>
+        <div className="flex items-center gap-1.5">
+          {mode === "edit" && <button onClick={cancelEdit} disabled={busy} className="rounded px-2 py-1 text-[12px] font-medium text-zinc-400 transition hover:bg-zinc-700 hover:text-zinc-200 disabled:opacity-40">Cancel</button>}
+          <button onClick={submit} disabled={busy || !draft.trim()} className="rounded bg-violet-500 px-2.5 py-1 text-[12px] font-medium text-violet-50 transition enabled:hover:bg-violet-400 disabled:opacity-40">{mode === "edit" ? "Save" : "Add"}</button>
+        </div>
+      </div>
+    </div>
+  );
+
   return (
     <span className="flex items-center justify-center" onClick={(e) => e.stopPropagation()}>
       <button
@@ -1308,37 +1331,30 @@ function CommentCell({ id, comments, onChanged }: { id: number; comments: Commen
             {list.length === 0 && <p className="px-1 py-2 text-center text-[12px] text-zinc-600">No comments yet.</p>}
             {list.map((c, i) => (
               <div key={i} className={`group rounded-md px-2 py-1.5 transition ${editing === i ? "bg-violet-500/10 ring-1 ring-inset ring-violet-500/40" : "bg-zinc-800/50"}`}>
-                <div className="flex items-start gap-2">
-                  <p className="flex-1 whitespace-pre-wrap break-words text-[13px] text-zinc-200">{renderBold(c.text)}</p>
-                  <div className="flex shrink-0 items-center gap-1.5">
-                    <button onClick={() => startEdit(i)} disabled={busy} title="Edit" className="text-zinc-500 transition hover:text-zinc-200 disabled:opacity-40"><Pencil size={12} /></button>
-                    <button onClick={() => send("DELETE", { index: i })} disabled={busy} title="Delete" className="text-zinc-500 transition hover:text-rose-300 disabled:opacity-40"><Trash2 size={12} /></button>
-                  </div>
-                </div>
-                <p className="mt-0.5 text-[11px] text-zinc-500">{ago(c.at)}{c.editedAt ? " · edited" : ""}</p>
+                {editing === i ? (
+                  // Edit IN PLACE — the comment's own box becomes the editor (same rich box as adding).
+                  editorBox("edit")
+                ) : (
+                  <>
+                    <div className="flex items-start gap-2">
+                      <p className="flex-1 whitespace-pre-wrap break-words text-[13px] text-zinc-200">{renderBold(c.text)}</p>
+                      <div className="flex shrink-0 items-center gap-1.5">
+                        <button onClick={() => startEdit(i)} disabled={busy} title="Edit" className="text-zinc-500 transition hover:text-zinc-200 disabled:opacity-40"><Pencil size={12} /></button>
+                        <button onClick={() => send("DELETE", { index: i })} disabled={busy} title="Delete" className="text-zinc-500 transition hover:text-rose-300 disabled:opacity-40"><Trash2 size={12} /></button>
+                      </div>
+                    </div>
+                    <p className="mt-0.5 text-[11px] text-zinc-500">{ago(c.at)}{c.editedAt ? " · edited" : ""}</p>
+                  </>
+                )}
               </div>
             ))}
           </div>
-          <div className="mt-1.5 border-t border-zinc-800 pt-1.5">
-            <div className="overflow-hidden rounded-md bg-zinc-800 ring-1 ring-inset ring-zinc-700 transition focus-within:ring-zinc-500">
-              <textarea
-                ref={taRef} autoFocus rows={1} value={draft} onChange={(e) => setDraft(e.target.value)}
-                onKeyDown={onKey}
-                placeholder={editing !== null ? "Edit comment…" : "Add a comment…"}
-                className="block max-h-40 w-full resize-none bg-transparent px-2.5 py-2 text-[13px] leading-snug text-zinc-200 outline-none placeholder:text-zinc-600"
-              />
-              <div className="flex items-center justify-between gap-2 px-1.5 pb-1.5">
-                <div className="flex items-center gap-0.5">
-                  <button onClick={addBullet} title="Bullet list" className="rounded p-1 text-zinc-500 transition hover:bg-zinc-700 hover:text-zinc-200"><List size={14} /></button>
-                  <button onMouseDown={(e) => e.preventDefault()} onClick={toggleBold} title="Bold (⌘B)" className="rounded p-1 text-zinc-500 transition hover:bg-zinc-700 hover:text-zinc-200"><Bold size={14} /></button>
-                </div>
-                <div className="flex items-center gap-1.5">
-                  {editing !== null && <button onClick={cancelEdit} disabled={busy} className="rounded px-2 py-1 text-[12px] font-medium text-zinc-400 transition hover:bg-zinc-700 hover:text-zinc-200 disabled:opacity-40">Cancel</button>}
-                  <button onClick={submit} disabled={busy || !draft.trim()} className="rounded bg-violet-500 px-2.5 py-1 text-[12px] font-medium text-violet-50 transition enabled:hover:bg-violet-400 disabled:opacity-40">{editing !== null ? "Save" : "Add"}</button>
-                </div>
-              </div>
+          {/* The add box lives at the bottom — hidden while editing a comment inline (one editor at a time). */}
+          {editing === null && (
+            <div className="mt-1.5 border-t border-zinc-800 pt-1.5">
+              {editorBox("add")}
             </div>
-          </div>
+          )}
         </PopoverPanel>
       )}
     </span>

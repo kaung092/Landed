@@ -1,8 +1,8 @@
-import { Mail, Sparkles, Scissors, Bot, Radar, Building2, GraduationCap, FlaskConical } from "lucide-react";
+import { Mail, Sparkles, Scissors, Bot, Radar, Building2, GraduationCap, FlaskConical, Briefcase } from "lucide-react";
 
 // Per job-type presentation, shared by the CoWork page and the floating queue so they never drift.
 export const JOB_ICON: Record<string, typeof Mail> = {
-  "watchlist-add": Building2, "watchlist-scan": Radar, "inbox-sync": Mail, fit: Sparkles, tailoring: Scissors,
+  "watchlist-add": Building2, "watchlist-scan": Radar, "linkedin-import": Briefcase, "inbox-sync": Mail, fit: Sparkles, tailoring: Scissors,
   prep: GraduationCap, "prep-research": FlaskConical,
 };
 export const jobIcon = (type: string) => JOB_ICON[type] ?? Bot;
@@ -15,6 +15,7 @@ export const AGENT_COLOR: Record<string, string> = {
   "inbox-sync": "text-amber-300",
   "watchlist-scan": "text-cyan-300",
   "watchlist-add": "text-blue-300",
+  "linkedin-import": "text-sky-400",
   leveling: "text-fuchsia-300",
   "prep-research": "text-teal-300",
   prep: "text-lime-300",

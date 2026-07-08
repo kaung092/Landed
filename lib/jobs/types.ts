@@ -4,6 +4,7 @@ export type JobType =
   | "watchlist-add"
   | "leveling"
   | "watchlist-scan"
+  | "linkedin-import"
   | "inbox-sync"
   | "fit"
   | "fitlab-assess"
