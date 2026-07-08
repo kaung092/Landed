@@ -6,10 +6,11 @@ import path from "node:path";
 export const ASSET_ROOT =
   process.env.ASSET_ROOT || path.join(process.cwd(), "asset-root");
 
-// Instruction .md files (one source of truth, editable from the app + on disk).
-// Defaults to <asset>/instructions; override with INSTRUCTIONS_ROOT.
+// Instruction .md files (the CoWork playbooks) — tracked repo SOURCE, not user data.
+// They ship in the repo at <repo>/instructions so a fresh clone has them out of the box; the
+// in-app editor writes back to that tracked folder. Override the location with INSTRUCTIONS_ROOT.
 export const INSTRUCTIONS_ROOT =
-  process.env.INSTRUCTIONS_ROOT || path.join(ASSET_ROOT, "instructions");
+  process.env.INSTRUCTIONS_ROOT || path.join(process.cwd(), "instructions");
 
 // NOTE: the CoWork job queue (agent-jobs/{queue,results,done}) and the app-export/* context
 // files were retired — the job queue + ledger now live in the `jobs` DB table, and CoWork
@@ -22,6 +23,15 @@ export function resolveInstruction(relPath: string): string | null {
   const root = path.resolve(INSTRUCTIONS_ROOT);
   if (full !== root && !full.startsWith(root + path.sep)) return null;
   if (!full.endsWith(".md")) return null;
+  return full;
+}
+
+// Resolve a client-supplied relative path safely inside ASSET_ROOT (any extension) — backs the
+// in-app asset browser. Returns null if it escapes the root or targets the root itself.
+export function resolveAsset(relPath: string): string | null {
+  const root = path.resolve(ASSET_ROOT);
+  const full = path.resolve(root, relPath || "");
+  if (full === root || !full.startsWith(root + path.sep)) return null; // no traversal, no root itself
   return full;
 }
 

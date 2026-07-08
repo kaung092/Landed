@@ -4,7 +4,6 @@ import { useEffect, useState } from "react";
 import { Bot, Loader2, ChevronRight, FileText, AlertTriangle, RotateCcw } from "lucide-react";
 import { ago } from "@/lib/format";
 import { usePersistentState } from "@/hooks/usePersistentState";
-import GmailConnect from "@/components/GmailConnect";
 import AgentsLive from "@/components/AgentsLive";
 import AgentMonitor, { type MonitorJob } from "@/components/agents/AgentMonitor";
 import Playbook from "@/components/agents/Playbook";
@@ -29,10 +28,10 @@ function StatCard({ label, value, tone }: { label: string; value: number; tone: 
   );
 }
 
-// The Agents control surface — three industry-standard views:
-//   Chat        — talk to each agent live (AgentsLive); each agent's playbook is in its header.
-//   Monitor     — observability: run/thread timelines + the job queue, incl. dead-lettered failures.
-//   Connections — external services the agents are authorized into (Gmail today).
+// The Agents control surface — two views:
+//   Chat    — talk to each agent live (AgentsLive); each agent's playbook is in its header.
+//   Monitor — observability: run/thread timelines + the job queue, incl. dead-lettered failures.
+// (Connections/Gmail moved to the Settings page.)
 export default function CoWorkView() {
   const [view, setView] = usePersistentState<string>("landed.agents.view", "chat");
   const [types, setTypes] = useState<JobTypeMeta[]>([]);
@@ -81,7 +80,6 @@ export default function CoWorkView() {
   const tabs = [
     { id: "chat", label: "Chat" },
     { id: "monitor", label: failed.length ? `Monitor · ${failed.length}` : "Monitor" },
-    { id: "connections", label: "Connections" },
   ];
 
   return (
@@ -103,7 +101,7 @@ export default function CoWorkView() {
       </header>
 
       <div className="flex-1 overflow-y-auto px-6 py-5">
-        {view === "chat" && (
+        {view !== "monitor" && ( // chat is the default for any non-monitor value (e.g. a stale "connections")
           <div className="mx-auto max-w-5xl space-y-8">
             <AgentsLive />
             {guides.length > 0 && (
@@ -168,12 +166,6 @@ export default function CoWorkView() {
               </section>
             )}
             <AgentMonitor jobs={jobs} titleOf={titleOf} />
-          </div>
-        )}
-
-        {view === "connections" && (
-          <div className="mx-auto max-w-3xl">
-            <GmailConnect />
           </div>
         )}
       </div>
