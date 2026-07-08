@@ -1,0 +1,14 @@
+#!/bin/sh
+# Local mirror of CI: run the same gates before a push leaves your machine, so a red signal shows up
+# here (instant) instead of in GitHub Actions minutes later. Blocks the push on failure.
+# Wired via `git config core.hooksPath .githooks` — done automatically by the `prepare` npm script.
+# Bypass in a pinch with `git push --no-verify`.
+set -e
+
+echo "pre-push: npm run check (typecheck + tests)…"
+npm run check
+
+echo "pre-push: npm run lint…"
+npm run lint
+
+echo "pre-push: green ✓"

@@ -319,6 +319,9 @@ export default function Pipeline() {
   // stack two jobs; it clears once the queued job actually shows up.
   const [syncing, setSyncing] = useState(false);
   const inboxSyncQueued = jobs.some((j) => j.type === "inbox-sync");
+  // Clear the optimistic pending flag once the queued job actually appears; a one-shot reconcile with
+  // the polled queue, not a render-driving loop.
+  // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => { if (inboxSyncQueued) setSyncing(false); }, [inboxSyncQueued]);
   // A stable signature of the live queue — changes only when a job is added/removed/drained, not on
   // every poll. Deleting a queued fit/tailoring job un-queues its candidate server-side (fit_queue →
@@ -334,6 +337,9 @@ export default function Pipeline() {
   useEffect(() => {
     try {
       const v = localStorage.getItem("pipeline:step");
+      // Hydration-safe rehydrate: SSR/first render uses the default step, then we restore the persisted
+      // step after mount (avoids a mismatch).
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       if (v && ALL_STEPS.some((s) => s.key === v)) setTab(v);
     } catch { /* ignore */ }
   }, []);
@@ -358,6 +364,9 @@ export default function Pipeline() {
     try {
       const saved = JSON.parse(localStorage.getItem(FILTER_KEY) || "[]") as unknown;
       const f = Array.isArray(saved) ? saved.filter((x): x is string => typeof x === "string") : [];
+      // Hydration-safe rehydrate: SSR/first render starts with no chips, then we restore the persisted
+      // filter after mount (avoids a mismatch).
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       if (f.length) setTags(f);
     } catch { /* ignore */ }
   }, []);
@@ -428,6 +437,9 @@ export default function Pipeline() {
     fetch(`/api/scanned?state=${stepStates(tab).join(",")}`).then((r) => r.json()).then((d) => setScanRows(d.postings ?? [])).catch(() => setScanRows([]));
   }, [tab]);
   // Tab switch (and first mount): a fresh data set, so clear to the loading placeholder, then load.
+  // Tab switch: clear to the loading placeholder then load the new step's rows; a one-shot reset on
+  // tab change, not a render loop.
+  // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => { setScanRows(null); loadRows(); }, [loadRows]);
   // `jobKey` change (a queued fit/tailoring job was claimed/deleted — e.g. delete un-queues its
   // candidate server-side: fit_queue → review, tailoring → assessed) re-reads the active step's rows
@@ -440,6 +452,9 @@ export default function Pipeline() {
     loadRows();
   }, [jobKey]); // eslint-disable-line react-hooks/exhaustive-deps
   // Tabs have different columns — a sort key from one needn't exist in the next, so reset.
+  // Reset the sort when the tab changes (a sort key from one tab needn't exist in the next); a
+  // one-shot reset on tab change, not a render loop.
+  // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => setSort(null), [tab]);
 
   // Watchlist rollup (discovered/applied/total per company) — derived from the loaded postings.

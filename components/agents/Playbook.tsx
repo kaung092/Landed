@@ -16,6 +16,9 @@ export default function Playbook({ path, fill = false }: { path: string; fill?: 
 
   useEffect(() => {
     let active = true;
+    // Reset to the loading state when `path` changes, before re-fetching that file; a one-shot
+    // transition, not a render-driving loop.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setStatus("loading");
     fetch(`/api/instructions/file?path=${encodeURIComponent(path)}`)
       .then((r) => r.json())

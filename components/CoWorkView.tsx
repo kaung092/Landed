@@ -53,6 +53,9 @@ export default function CoWorkView() {
     setFiles(i.files ?? []);
     setLoading(false);
   }
+  // Fetch-on-mount loader; its setState runs post-await (async), not synchronously, so it doesn't
+  // cause the cascading render the rule guards against.
+  // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => { load(); }, []);
 
   const lastActive = jobs[0]?.createdAt ?? null;

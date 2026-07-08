@@ -19,7 +19,8 @@
     "levels:scrape": "node scripts/levels-scrape.mjs",
     "test": "node --import tsx --test tests/*.test.ts",
     "check": "npm run typecheck && npm test",
-    "linkedin:login": "node scripts/linkedin-login.mjs"
+    "linkedin:login": "node scripts/linkedin-login.mjs",
+    "prepare": "git config core.hooksPath .githooks || true"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.105.0",

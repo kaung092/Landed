@@ -3,7 +3,6 @@
 import { useState } from "react";
 import { Building2, X, ExternalLink, Link2, Trash2, Radar, GitCompareArrows, CheckCircle2, XCircle, Circle, MapPin, CalendarClock, RefreshCw, Pencil, FileText, Sparkles, Plus } from "lucide-react";
 import type { InterviewKind, InterviewRound, Posting, RedoTurn, Status, Tier } from "@/lib/types";
-import { STATUS_ORDER } from "@/lib/types";
 import { reapplyInfo, STATUS_LABEL, STATUS_CHIP, TIER_META, TIERS } from "@/lib/pipeline";
 import { type CompanyAgg } from "@/lib/board";
 import { useCoWorkQueue } from "@/components/CoWorkQueueProvider";

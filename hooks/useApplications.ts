@@ -40,6 +40,9 @@ export function useApplications() {
   }, []);
 
   useEffect(() => {
+    // Fetch-on-mount loader; its setState runs post-await (async), not synchronously, so it doesn't
+    // cause the cascading render the rule guards against.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     loadAll();
   }, [loadAll]);
 
@@ -140,7 +143,7 @@ export function useApplications() {
       if (!!p.interviewed === interviewed) return;
       applyLocal(p.id, { interviewed });
     },
-    [patch]
+    [applyLocal]
   );
 
   // Move a whole company to a tier (affects all its applications), persist, refresh.

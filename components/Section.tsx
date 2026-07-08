@@ -41,6 +41,9 @@ export default function Section({
     if (!storageKey) return;
     try {
       const v = localStorage.getItem(`sec:${storageKey}`);
+      // Hydration-safe rehydrate: SSR/first render uses `defaultOpen`, then we restore the persisted
+      // open state after mount (avoids a mismatch).
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       if (v != null) setOpen(v === "1");
     } catch {
       /* ignore */
