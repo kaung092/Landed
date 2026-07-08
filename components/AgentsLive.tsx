@@ -217,6 +217,7 @@ function LiveAgentChat({ type, backlog }: { type: string; backlog: number }) {
   const stalled = running && idleSec >= 20;
   const scrollRef = useRef<HTMLDivElement>(null);
   const stickRef = useRef(true); // only auto-scroll when already near the bottom — lets you scroll back
+  const prevRunningRef = useRef(false);
 
   // Track whether the user is parked at the bottom; pause auto-scroll when they scroll up to read.
   const onScroll = () => {
@@ -226,8 +227,37 @@ function LiveAgentChat({ type, backlog }: { type: string; backlog: number }) {
   useEffect(() => {
     if (stickRef.current) scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight });
   }, [entries]);
+  useEffect(() => {
+    if (prevRunningRef.current && !running) {
+      const state = get(type);
+      const lastAssistant = [...state.entries].reverse().find(
+        (e): e is Extract<Entry, { role: "assistant" }> => e.role === "assistant",
+      );
+      if (lastAssistant) {
+        window.pendo?.trackAgent("agent_response", {
+          agentId: "jWe0OBiRjOpN1pzlG5ElbI1IOE0",
+          conversationId: state.sessionId || type,
+          messageId: `agent_response_${lastAssistant.id}`,
+          content: lastAssistant.text,
+          modelUsed: state.model,
+        });
+      }
+    }
+    prevRunningRef.current = running;
+  }, [running, type, get]);
 
-  const submit = () => { const m = input.trim(); if (m && !running) { setInput(""); stickRef.current = true; start(type, m); } };
+  const submit = () => {
+    const m = input.trim();
+    if (m && !running) {
+      window.pendo?.trackAgent("prompt", {
+        agentId: "jWe0OBiRjOpN1pzlG5ElbI1IOE0",
+        conversationId: get(type).sessionId || type,
+        messageId: crypto.randomUUID(),
+        content: m,
+      });
+      setInput(""); stickRef.current = true; start(type, m);
+    }
+  };
   const onKey = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); submit(); }
   };
