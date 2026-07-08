@@ -13,11 +13,21 @@ export type Entry =
   | { id: number; role: "tool"; name: string; input: unknown; result?: { ok: boolean; preview: string } }
   | { id: number; role: "note"; text: string; error?: boolean };
 
-export type ChatState = { entries: Entry[]; sessionId: string | null; running: boolean };
+export type ChatState = {
+  entries: Entry[];
+  sessionId: string | null;
+  running: boolean;
+  // Session context pressure, from the last completed run's usage. contextTokens ≈ input+cache_read
+  // on the final turn = how big this agent's resumed context has grown; model sets the window.
+  contextTokens?: number;
+  model?: string;
+  costUsd?: number;
+};
 const EMPTY: ChatState = { entries: [], sessionId: null, running: false };
 
 const ENTRIES_PREFIX = "landed.agent.entries.";
 const SESSION_PREFIX = "landed.agent.session.";
+const META_PREFIX = "landed.agent.meta."; // { contextTokens, model, costUsd } — the context meter
 
 // Rehydrate all persisted chats from localStorage at mount (keys written below).
 function loadInitial(): Record<string, ChatState> {
@@ -29,7 +39,9 @@ function loadInitial(): Record<string, ChatState> {
     const type = k.slice(ENTRIES_PREFIX.length);
     let entries: Entry[] = [];
     try { const a = JSON.parse(localStorage.getItem(k) || "[]"); if (Array.isArray(a)) entries = a; } catch { /* ignore */ }
-    out[type] = { entries, sessionId: localStorage.getItem(SESSION_PREFIX + type), running: false };
+    let meta: Partial<ChatState> = {};
+    try { meta = JSON.parse(localStorage.getItem(META_PREFIX + type) || "{}"); } catch { /* ignore */ }
+    out[type] = { entries, sessionId: localStorage.getItem(SESSION_PREFIX + type), running: false, contextTokens: meta.contextTokens, model: meta.model, costUsd: meta.costUsd };
   }
   return out;
 }
@@ -70,6 +82,7 @@ export default function AgentChatsProvider({ children }: { children: React.React
         try {
           localStorage.setItem(ENTRIES_PREFIX + type, JSON.stringify(c.entries.slice(-400)));
           if (c.sessionId) localStorage.setItem(SESSION_PREFIX + type, c.sessionId);
+          localStorage.setItem(META_PREFIX + type, JSON.stringify({ contextTokens: c.contextTokens, model: c.model, costUsd: c.costUsd }));
         } catch { /* quota — skip */ }
       }
     }, 400);
@@ -89,7 +102,11 @@ export default function AgentChatsProvider({ children }: { children: React.React
     lastEventRef.current[type] = Date.now(); // any frame = the run is alive (resets the stall clock)
     switch (e.kind) {
       case "session":
-        if (typeof e.sessionId === "string") patch(type, (c) => ({ ...c, sessionId: e.sessionId as string }));
+        patch(type, (c) => ({
+          ...c,
+          sessionId: typeof e.sessionId === "string" ? (e.sessionId as string) : c.sessionId,
+          model: typeof e.model === "string" ? (e.model as string) : c.model,
+        }));
         break;
       case "text":
         patch(type, (c) => {
@@ -112,6 +129,11 @@ export default function AgentChatsProvider({ children }: { children: React.React
         });
         break;
       case "result":
+        patch(type, (c) => ({
+          ...c,
+          contextTokens: typeof e.contextTokens === "number" ? (e.contextTokens as number) : c.contextTokens,
+          costUsd: typeof e.costUsd === "number" ? (e.costUsd as number) : c.costUsd,
+        }));
         if (e.isError) pushNote(type, typeof e.text === "string" && e.text ? e.text : "the agent reported an error", true);
         break;
       case "error": {
@@ -142,11 +164,17 @@ export default function AgentChatsProvider({ children }: { children: React.React
     const ac = new AbortController();
     aborts.current[type] = ac;
     lastEventRef.current[type] = Date.now(); // start the stall clock at launch
-    patch(type, (c) => ({
-      ...c,
-      running: true,
-      entries: message ? [...c.entries, { id: nextId(), role: "user", text: message }] : c.entries,
-    }));
+    // A bare "Work queue" run is a stateless drain (its state lives in the DB, reached via MCP), so it
+    // starts a FRESH session — that keeps context from bloating across runs. A typed message resumes
+    // the conversation, where continuity actually matters. On a fresh drain, drop the old session and
+    // reset the context meter now, so the reset is visible (the server mints + returns a new id).
+    const freshDrain = !message?.trim();
+    patch(type, (c) => {
+      const entries = [...c.entries];
+      if (freshDrain && c.sessionId) entries.push({ id: nextId(), role: "note", text: "↻ fresh session — a drain doesn't carry the previous context" });
+      if (message) entries.push({ id: nextId(), role: "user", text: message });
+      return { ...c, running: true, entries, ...(freshDrain ? { sessionId: null, contextTokens: undefined } : {}) };
+    });
     (async () => {
       try {
         const res = await fetch("/api/agents/live", {

@@ -1,0 +1,37 @@
+name: CI
+
+# The automated feedback signal, enforced on every change. `check` (typecheck + tests) is the
+# gate — it must be green to merge. Lint runs alongside as an advisory job while the repo burns
+# down the pre-existing react-hooks findings; it does not block merges yet. Flip
+# `continue-on-error` to false once that backlog is clear to make lint a hard gate too.
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  check:
+    name: typecheck + tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - run: npm run check
+
+  lint:
+    name: lint (advisory)
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - run: npm run lint

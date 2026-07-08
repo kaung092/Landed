@@ -442,7 +442,7 @@ export default function TargetsTable({
                           onClick={(e) => { e.stopPropagation(); scanOne(t.name); }}
                           disabled={scanningRows.has(t.name)}
                           title={`Scan ${t.name}'s board now (queues a CoWork scan)`}
-                          className="rounded p-0.5 text-zinc-700 opacity-0 transition hover:bg-zinc-800 hover:text-sky-300 group-hover:opacity-100 disabled:opacity-40"
+                          className="rounded p-0.5 text-sky-400/80 transition hover:bg-zinc-800 hover:text-sky-300 disabled:opacity-40"
                         >
                           {scanningRows.has(t.name) ? <Loader2 size={12} className="animate-spin" /> : <Telescope size={12} />}
                         </button>
