@@ -1,8 +1,7 @@
-import { UserCog, Gauge, FileText, FolderOpen, FileUser } from "lucide-react";
+import { UserCog, Gauge, FileText, FolderOpen } from "lucide-react";
 import GmailConnect from "@/components/GmailConnect";
 import ProfilePanel from "@/components/ProfilePanel";
 import LevelingRefEditor from "@/components/settings/LevelingRefEditor";
-import CandidateProfilePanel from "@/components/settings/CandidateProfilePanel";
 import ResumeUpload from "@/components/settings/ResumeUpload";
 import AssetBrowser from "@/components/settings/AssetBrowser";
 import SettingsCard from "@/components/settings/SettingsCard";
@@ -42,19 +41,10 @@ export default function SettingsPage() {
           </SettingsCard>
 
           <SettingsCard
-            icon={<FileUser size={17} />}
-            accent="emerald"
-            title="Candidate profile"
-            description="The résumé prose the fit & leveling playbooks judge against, seeded from your base résumé."
-          >
-            <CandidateProfilePanel />
-          </SettingsCard>
-
-          <SettingsCard
             icon={<FileText size={17} />}
             accent="violet"
             title="Base résumé"
-            description="The .docx tailoring source of truth. Tailored resumes are generated per application by CoWork."
+            description="The .docx tailoring source of truth; its text also feeds the candidate profile fit & leveling judge against. Tailored resumes are generated per application by CoWork."
           >
             <ResumeUpload />
           </SettingsCard>
