@@ -1,6 +1,6 @@
 import { FolderOpen } from "lucide-react";
 import GmailConnect from "@/components/GmailConnect";
-import AssetBrowser from "@/components/settings/AssetBrowser";
+import AssetFolderInfo from "@/components/settings/AssetFolderInfo";
 import SettingsCard from "@/components/settings/SettingsCard";
 
 export const dynamic = "force-dynamic";
@@ -23,9 +23,9 @@ export default function SettingsPage() {
             icon={<FolderOpen size={17} />}
             accent="sky"
             title="Asset folder"
-            description="Browse the files the app and agent share. Relocating the folder is an .env change + restart."
+            description="Where the app and agent share files — résumé, interview-prep, and tailored resumes."
           >
-            <AssetBrowser />
+            <AssetFolderInfo />
           </SettingsCard>
         </div>
       </div>

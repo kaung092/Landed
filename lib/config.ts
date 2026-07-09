@@ -26,15 +26,6 @@ export function resolveInstruction(relPath: string): string | null {
   return full;
 }
 
-// Resolve a client-supplied relative path safely inside ASSET_ROOT (any extension) — backs the
-// in-app asset browser. Returns null if it escapes the root or targets the root itself.
-export function resolveAsset(relPath: string): string | null {
-  const root = path.resolve(ASSET_ROOT);
-  const full = path.resolve(root, relPath || "");
-  if (full === root || !full.startsWith(root + path.sep)) return null; // no traversal, no root itself
-  return full;
-}
-
 // Layout — see instructions/README.md in the asset root (the single source of truth).
 export const PATHS = {
   tracker: () => path.join(ASSET_ROOT, "job_applications_tracker.csv"),
