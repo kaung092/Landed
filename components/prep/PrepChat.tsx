@@ -50,6 +50,13 @@ export default function PrepChat({
     setMsgs((m) => [...m, { role: "user", text }]);
     setInput("");
     setBusy(true);
+    const conversationId = sid || storageId;
+    window.pendo?.trackAgent("prompt", {
+      agentId: "rSt-ZD_8KrkEU2tFKqlaoIpAhAw",
+      conversationId,
+      messageId: crypto.randomUUID(),
+      content: text,
+    });
     try {
       const r = await fetch("/api/agents/chat", {
         method: "POST",
@@ -60,10 +67,17 @@ export default function PrepChat({
       });
       const d = await r.json();
       if (d.sessionId) setSid(d.sessionId);
+      const replyText = d.reply || d.error || "(no reply)";
+      window.pendo?.trackAgent("agent_response", {
+        agentId: "rSt-ZD_8KrkEU2tFKqlaoIpAhAw",
+        conversationId,
+        messageId: crypto.randomUUID(),
+        content: replyText,
+      });
       setMsgs((m) => [
         ...m,
         ...(d.recovered ? [{ role: "note" as const, text: "↻ The previous session had expired — refreshed it automatically. Your history above is kept here." }] : []),
-        { role: "assistant" as const, text: d.reply || d.error || "(no reply)", error: !!d.error || !!d.isError },
+        { role: "assistant" as const, text: replyText, error: !!d.error || !!d.isError },
       ]);
     } catch {
       setMsgs((m) => [...m, { role: "assistant", text: "Couldn't reach Claude Code.", error: true }]);
