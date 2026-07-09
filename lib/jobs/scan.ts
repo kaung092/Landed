@@ -9,6 +9,7 @@ import { db } from "@/lib/db";
 import { companies, postings } from "@/lib/db/schema";
 import { TRACKER_STAGES } from "@/lib/pipeline";
 import { canonical, norm } from "@/lib/agents/canonical";
+import { getProfile } from "@/lib/db/profile";
 import { NON_ENG } from "./exclude";
 
 export type ScannedJob = {
@@ -112,11 +113,14 @@ function titleTokens(titles: string[]): string[] {
 }
 const LOC_ALIASES: Record<string, string[]> = {
   nyc: ["new york", "nyc", "ny "],
+  "new york": ["new york", "nyc", "ny "],
   remote: ["remote", "anywhere"],
 };
+// Split on both `|` and `,` so either format tokenizes: the profile's prose ("New York, Remote")
+// and the legacy per-company pipe form ("NYC|remote").
 function locTokens(loc: string): string[] {
   const out = new Set<string>();
-  for (const part of loc.split("|")) {
+  for (const part of loc.split(/[|,]/)) {
     const k = part.toLowerCase().trim();
     if (!k) continue;
     out.add(k);
@@ -158,14 +162,15 @@ function matchesLocation(loc: string | null, tokens: string[], usOnly: boolean):
   return tokens.some((tok) => l.includes(tok));
 }
 
-// The location gate for a company: its target-location tokens + whether the US-only guard applies.
-// US-only is the global default (you're US-based), applied even with no target_location; only a
-// target that EXPLICITLY names a non-US place opts out. Shared by the scan classifier and the
-// non-local purge so both decide "is this role in range?" identically.
-function locFilter(co: { targetLocation: string | null }): { lTok: string[]; usOnly: boolean } {
-  const lTok = co.targetLocation ? locTokens(co.targetLocation) : [];
-  const tl = co.targetLocation ?? "";
-  const usOnly = !(tl && NON_US.test(tl) && !US_SIGNAL.test(tl));
+// The location gate: the candidate's target-location tokens + whether the US-only guard applies.
+// Sourced from the single profile `locations` (getProfile) — the same preference the fit pass reads —
+// NOT a per-company field, so every company scans against one location identity. US-only is the
+// global default (you're US-based); only a target that EXPLICITLY names a non-US place opts out.
+// Shared by the scan classifier and the non-local purge so both decide "is this role in range?" identically.
+function locFilter(): { lTok: string[]; usOnly: boolean } {
+  const loc = getProfile().locations?.trim() ?? "";
+  const lTok = loc ? locTokens(loc) : [];
+  const usOnly = !(loc && NON_US.test(loc) && !US_SIGNAL.test(loc));
   return { lTok, usOnly };
 }
 
@@ -189,9 +194,9 @@ export function purgeNonLocal(companyId: number, lTok: string[], usOnly: boolean
 // `npm run purge:nonlocal`; ongoing scans purge their own company incrementally). Returns the total.
 export function purgeAllNonLocal(): number {
   const cos = db.select().from(companies).all();
+  const { lTok, usOnly } = locFilter();
   let total = 0;
   for (const co of cos) {
-    const { lTok, usOnly } = locFilter(co);
     total += purgeNonLocal(co.id, lTok, usOnly);
   }
   return total;
@@ -339,7 +344,7 @@ export async function scanCompany(name: string, withJd = true): Promise<ScanResu
 
     // filter by the company's own criteria
     const tTok = titleTokens(safeArr(co.targetTitles));
-    const { lTok, usOnly } = locFilter(co);
+    const { lTok, usOnly } = locFilter();
     const quant = isQuant(co.notes);
 
     // dedup keys from this company's already-tracked postings (by role/title or url)

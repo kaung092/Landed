@@ -1,17 +1,36 @@
-import { Fragment, useCallback, useEffect, useRef, useState } from "react";
-import { ChevronRight, ExternalLink, HelpCircle, Briefcase, Loader2, Plus, Radar, RefreshCw, Sparkles, Telescope, Undo2, X } from "lucide-react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { HelpCircle, Info, Briefcase, Loader2, Plus, Radar, RefreshCw, Sparkles, Trash2, Undo2, X } from "lucide-react";
 import { ago } from "@/lib/format";
 import { TIER_META, TIERS } from "@/lib/pipeline";
 import TrackerTag from "@/components/TrackerTag";
 import { useResizableColumns, ResTh } from "@/components/ResizableTable";
 import { useCoWorkQueue } from "@/components/CoWorkQueueProvider";
-import Section from "@/components/Section";
+import PopoverPanel, { anchorFrom } from "@/components/Popover";
 import type { Tier } from "@/lib/types";
 
-// Scan config (ATS, fetch method, recipe, endpoint) moved into a per-row expander — it's
-// CoWork-curated and rarely edited, so the default table stays compact.
-const WL_COLS = ["company", "tier", "titles", "location", "scraped", "pipeline", "actions"];
-const WL_DEFAULTS = { company: 170, tier: 100, titles: 200, location: 150, scraped: 110, pipeline: 130, actions: 60 };
+// Scan config (fetch method + ATS, plus the recipe as a hover tooltip and a link out) lives in the
+// "Fetch" column — CoWork-curated and read-only here.
+const WL_COLS = ["company", "tier", "titles", "fetch", "scraped", "pipeline", "actions"];
+const WL_DEFAULTS = { company: 170, tier: 100, titles: 200, fetch: 230, scraped: 110, pipeline: 130, actions: 104 };
+
+// How a company's board is read during a scan. The raw slugs (api / careers-get / browser) aren't
+// self-explanatory, so the Fetch column shows an explicit label + a tooltip describing each.
+const FETCH_META: Record<string, { label: string; desc: string }> = {
+  api: { label: "API", desc: "Auto — the app fetches the ATS's JSON API (Greenhouse / Ashby). No manual step." },
+  "careers-get": { label: "HTTP GET", desc: "CoWork fetches the careers page with a plain HTTP GET (static HTML / JSON) — no browser needed." },
+  browser: { label: "Browser", desc: "CoWork reads the board with a headless browser (JS-rendered or bot-protected)." },
+};
+
+// Host + path of a board URL, minus the protocol / "www." / query — for the Fetch column's
+// "<method> on <where>" line (e.g. "https://www.databricks.com/careers?x=1" → "databricks.com/careers").
+function shortUrl(u: string): string {
+  try {
+    const url = new URL(u);
+    return `${url.host.replace(/^www\./, "")}${url.pathname.replace(/\/$/, "")}`;
+  } catch {
+    return u.replace(/^https?:\/\//, "").replace(/^www\./, "").split(/[?#]/)[0];
+  }
+}
 
 // "Scrape watchlist" refreshes companies last scraped more than this many days ago (or never).
 const STALE_DAYS = 3;
@@ -51,7 +70,7 @@ function wlSortVal(t: Target, key: string, counts: Map<string, TargetCounts>): s
     case "company": return t.name.toLowerCase();
     case "tier": return TIERS.indexOf(t.tier);
     case "titles": return (t.titles ?? []).join(", ").toLowerCase();
-    case "location": return (t.location ?? "").toLowerCase();
+    case "fetch": return (t.fetchMethod ?? "").toLowerCase();
     case "scraped": return t.lastScrapedAt ?? "";
     case "pipeline": return counts.get(t.name)?.total ?? 0;
     default: return "";
@@ -66,17 +85,15 @@ function wlCmp(a: string | number, b: string | number, dir: SortDir): number {
 
 export default function TargetsTable({
   counts,
-  onSelect,
 }: {
   counts: Map<string, TargetCounts>;
-  onSelect: (company: string) => void;
 }) {
   const { add, jobs, bump } = useCoWorkQueue();
   const [targets, setTargets] = useState<Target[] | null>(null);
   const [filter, setFilter] = useState("");
-  const [expanded, setExpanded] = useState<Set<number>>(new Set()); // rows showing their scan config
-  const toggleExpand = (id: number) => setExpanded((s) => { const n = new Set(s); if (n.has(id)) n.delete(id); else n.add(id); return n; });
   const [undoName, setUndoName] = useState<string | null>(null); // last removed → offer Undo
+  // Which row's Fetch details popover is open (click-to-open — native title tooltips are too slow).
+  const [fetchPop, setFetchPop] = useState<{ id: number; at: { x: number; y: number } } | null>(null);
   const undoTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   // Add-to-watchlist box. We don't flip the flag here — adding a bare record makes the scan return
   // `unsupported` (no fetch method). Instead we queue a `watchlist-add` CoWork job per company;
@@ -85,6 +102,9 @@ export default function TargetsTable({
   // separately/lazily from the fit view's Lvl column — it's the slow part, off this critical path.
   const [addInput, setAddInput] = useState("");
   const [adding, setAdding] = useState(false);
+  // The single add bar does double duty: "company" queues watchlist-add research; "linkedin"
+  // hands a feed URL to the LinkedIn Scout. Each mode keeps its own input text (addInput / liUrl).
+  const [mode, setMode] = useState<"company" | "linkedin">("company");
   const [queuedMsg, setQueuedMsg] = useState<{ queued: string[]; skipped: string[] } | null>(null);
   const queuedTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   // "Scrape watchlist" — mechanical board fetch for stale companies (POST /api/scan { staleDays }).
@@ -264,12 +284,12 @@ export default function TargetsTable({
     await setWatch(name, true);
   }, [undoName, setWatch]);
 
-  const { widths, onMouseDown, total } = useResizableColumns(WL_DEFAULTS, "watchlist-cols");
+  const { widths, onMouseDown, total } = useResizableColumns(WL_DEFAULTS, "watchlist-cols-v2");
 
   // free-text filter across name / tier / location / titles / ats / fetch method
   const q = filter.trim().toLowerCase();
   const filtered = (targets ?? []).filter(
-    (t) => !q || [t.name, t.tier, t.location, (t.titles ?? []).join(" "), t.ats, t.fetchMethod].filter(Boolean).join(" ").toLowerCase().includes(q)
+    (t) => !q || [t.name, t.tier, (t.titles ?? []).join(" "), t.ats, t.fetchMethod].filter(Boolean).join(" ").toLowerCase().includes(q)
   );
   const shown = sort
     ? [...filtered].sort((a, b) => wlCmp(wlSortVal(a, sort.key, counts), wlSortVal(b, sort.key, counts), sort.dir))
@@ -285,7 +305,7 @@ export default function TargetsTable({
         className="inline-flex items-center gap-1.5 rounded-md bg-zinc-800 px-3 py-1.5 text-[13px] font-medium text-zinc-200 ring-1 ring-inset ring-zinc-700 transition hover:bg-zinc-700 disabled:cursor-not-allowed disabled:opacity-40"
       >
         {scraping ? <Loader2 size={13} className="animate-spin" /> : <RefreshCw size={13} />}
-        {scraping ? "Queuing…" : `Scrape watchlist${staleCount ? ` (${staleCount})` : ""}`}
+        {scraping ? "Queuing…" : `Scan all${staleCount ? ` (${staleCount})` : ""}`}
       </button>
       <span title={SCRAPE_HELP} className="cursor-help text-zinc-600 transition hover:text-zinc-300">
         <HelpCircle size={15} />
@@ -294,125 +314,136 @@ export default function TargetsTable({
   ) : undefined;
 
   return (
-    <Section
-      title="Watchlist"
-      icon={<Radar size={15} className="text-sky-300" />}
-      accent="sky"
-      subtitle={`${targets?.length ?? ""}${targets ? " " : ""}companies CoWork auto-scans for new postings`}
-      right={scrapeAction}
-      storageKey="watchlist"
-    >
-      <form
-        onSubmit={(e) => { e.preventDefault(); queueAdd(); }}
-        className="mb-3 flex items-center gap-2"
-      >
-        <div className="relative max-w-md flex-1">
-          <Plus size={13} className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-zinc-600" />
-          <input
-            type="text"
-            value={addInput}
-            onChange={(e) => setAddInput(e.target.value)}
-            placeholder="Add companies — CoWork researches & configures each"
-            title="Comma-separated for several. CoWork finds the ATS/board and target titles, then adds it to the watchlist. (Leveling is fetched later from the fit view.)"
-            className="w-full rounded-md bg-zinc-900 py-1.5 pl-8 pr-2.5 text-[13px] text-zinc-200 outline-none ring-1 ring-inset ring-zinc-800 transition placeholder:text-zinc-600 hover:ring-zinc-700 focus:ring-zinc-600"
-          />
-        </div>
-        <button
-          type="submit"
-          disabled={adding || !addInput.trim()}
-          className="inline-flex items-center gap-1.5 rounded-md bg-sky-500/15 px-3 py-1.5 text-[13px] font-medium text-sky-300 ring-1 ring-inset ring-sky-500/30 transition hover:bg-sky-500/25 disabled:cursor-not-allowed disabled:opacity-40"
-        >
-          {adding ? <Loader2 size={13} className="animate-spin" /> : <Sparkles size={13} />}
-          Queue research
-        </button>
-      </form>
+    <div className="flex h-full min-h-0 flex-col">
+      {/* Static header — the watchlist is the whole page, so it's always open (no collapse). */}
+      <div className="flex shrink-0 items-center gap-3 border-b border-zinc-800/80 bg-[var(--background)] px-6 py-4">
+        <span aria-hidden className="h-5 w-1 shrink-0 rounded-full bg-sky-500" />
+        <Radar size={15} className="shrink-0 text-sky-300" />
+        <h2 className="shrink-0 text-[15px] font-semibold tracking-tight text-zinc-100">Watchlist</h2>
+        <span className="truncate text-[13px] font-normal text-zinc-500">
+          {`${targets?.length ?? ""}${targets ? " " : ""}companies CoWork auto-scans for new postings`}
+        </span>
+        {scrapeAction && <div className="ml-auto flex shrink-0 items-center gap-2">{scrapeAction}</div>}
+      </div>
 
-      {/* Import jobs from a LinkedIn recommended/collection feed → fit queue (needs browser tools). */}
-      <form
-        onSubmit={(e) => { e.preventDefault(); queueLinkedin(); }}
-        className="mb-3 flex items-center gap-2"
-      >
-        <div className="relative max-w-md flex-1">
-          <Briefcase size={13} className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-sky-500/70" />
-          <input
-            type="text"
-            value={liUrl}
-            onChange={(e) => setLiUrl(e.target.value)}
-            placeholder="Import a LinkedIn jobs / recommended URL"
-            title="Paste a LinkedIn recommended/collection feed or a /jobs/view/ URL. Queues a LinkedIn Scout job that fetches the full JDs (needs the Chrome browser tools) and lands them in the fit queue."
-            className="w-full rounded-md bg-zinc-900 py-1.5 pl-8 pr-2.5 text-[13px] text-zinc-200 outline-none ring-1 ring-inset ring-zinc-800 transition placeholder:text-zinc-600 hover:ring-zinc-700 focus:ring-zinc-600"
-          />
-        </div>
-        <button
-          type="submit"
-          disabled={importing || !liUrl.trim()}
-          className="inline-flex items-center gap-1.5 rounded-md bg-sky-500/15 px-3 py-1.5 text-[13px] font-medium text-sky-300 ring-1 ring-inset ring-sky-500/30 transition hover:bg-sky-500/25 disabled:cursor-not-allowed disabled:opacity-40"
-        >
-          {importing ? <Loader2 size={13} className="animate-spin" /> : <Briefcase size={13} />}
-          Import jobs
-        </button>
-      </form>
-
-      {queuedMsg && (
-        <div className="mb-3 rounded-lg bg-zinc-900 px-3 py-1.5 text-[13px] text-zinc-400 ring-1 ring-inset ring-zinc-800">
-          {queuedMsg.queued.length > 0 && (
-            <span>
-              Queued research for <span className="text-zinc-200">{queuedMsg.queued.join(", ")}</span> — CoWork will
-              configure and watchlist {queuedMsg.queued.length === 1 ? "it" : "them"}. Track it in the queue.
-            </span>
-          )}
-          {queuedMsg.queued.length === 0 && queuedMsg.skipped.length > 0 && (
-            <span>Already watchlisted or queued: <span className="text-zinc-300">{queuedMsg.skipped.join(", ")}</span>.</span>
-          )}
-          {queuedMsg.queued.length > 0 && queuedMsg.skipped.length > 0 && (
-            <span className="ml-1 text-zinc-600">Skipped {queuedMsg.skipped.join(", ")} (already watchlisted or queued).</span>
-          )}
-        </div>
-      )}
-
-      {scrapeMsg && (
-        <div className="mb-3 rounded-lg bg-zinc-900 px-3 py-1.5 text-[13px] text-zinc-400 ring-1 ring-inset ring-zinc-800">
-          {scrapeMsg}
-        </div>
-      )}
-
-      {undoName && (
-        <div className="mb-3 flex items-center gap-2 rounded-lg bg-zinc-900 px-3 py-1.5 text-[13px] text-zinc-400 ring-1 ring-inset ring-zinc-800">
-          <span>Removed <span className="text-zinc-200">{undoName}</span> from the watchlist.</span>
-          <button
-            onClick={undo}
-            className="ml-auto inline-flex items-center gap-1 rounded px-2 py-0.5 font-medium text-emerald-300 transition hover:bg-emerald-500/15"
-          >
-            <Undo2 size={11} /> Undo
-          </button>
-        </div>
-      )}
-
-      {targets && targets.length > 0 && (
-        <div className="mb-3 flex items-center">
-          <input
-            type="text"
-            value={filter}
-            onChange={(e) => setFilter(e.target.value)}
-            placeholder="filter…"
-            className="w-64 rounded-md bg-zinc-900 px-2.5 py-1.5 text-[13px] text-zinc-300 outline-none ring-1 ring-inset ring-zinc-800 transition placeholder:text-zinc-600 hover:ring-zinc-700 focus:ring-zinc-600"
-          />
-          {filter && (
-            <button onClick={() => setFilter("")} title="Clear filter" className="ml-1 text-zinc-500 hover:text-zinc-300">
-              <X size={12} />
+      <div className="flex min-h-0 flex-1 flex-col px-6 pb-6 pt-4">
+      {/* One action bar: a mode toggle picks what the input does — queue watchlist-add research
+          for a company, or hand a LinkedIn feed URL to the Scout — with the filter at the far end. */}
+      <div className="mb-3 flex flex-wrap items-center gap-2">
+        <div className="inline-flex shrink-0 rounded-md p-0.5 ring-1 ring-inset ring-zinc-800">
+          {(["company", "linkedin"] as const).map((m) => (
+            <button
+              key={m}
+              type="button"
+              onClick={() => setMode(m)}
+              className={`rounded px-2.5 py-1 text-[12px] font-medium transition ${
+                mode === m ? "bg-zinc-800 text-zinc-200" : "text-zinc-500 hover:text-zinc-300"
+              }`}
+            >
+              {m === "company" ? "Company" : "LinkedIn"}
             </button>
+          ))}
+        </div>
+
+        <form
+          onSubmit={(e) => { e.preventDefault(); if (mode === "company") queueAdd(); else queueLinkedin(); }}
+          className="flex min-w-0 flex-1 items-center gap-2"
+        >
+          <div className="relative min-w-0 flex-1">
+            {mode === "company" ? (
+              <Plus size={13} className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-zinc-600" />
+            ) : (
+              <Briefcase size={13} className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-sky-500/70" />
+            )}
+            <input
+              type="text"
+              value={mode === "company" ? addInput : liUrl}
+              onChange={(e) => (mode === "company" ? setAddInput(e.target.value) : setLiUrl(e.target.value))}
+              placeholder={mode === "company" ? "Add companies — CoWork researches & configures each" : "Import a LinkedIn jobs / recommended URL"}
+              title={mode === "company"
+                ? "Comma-separated for several. CoWork finds the ATS/board and target titles, then adds it to the watchlist. (Leveling is fetched later from the fit view.)"
+                : "Paste a LinkedIn recommended/collection feed or a /jobs/view/ URL. Queues a LinkedIn Scout job that fetches the full JDs (needs the Chrome browser tools) and lands them in the fit queue."}
+              className="w-full rounded-md bg-zinc-900 py-1.5 pl-8 pr-2.5 text-[13px] text-zinc-200 outline-none ring-1 ring-inset ring-zinc-800 transition placeholder:text-zinc-600 hover:ring-zinc-700 focus:ring-zinc-600"
+            />
+          </div>
+          <button
+            type="submit"
+            disabled={mode === "company" ? adding || !addInput.trim() : importing || !liUrl.trim()}
+            className="inline-flex shrink-0 items-center gap-1.5 rounded-md bg-sky-500/15 px-3 py-1.5 text-[13px] font-medium text-sky-300 ring-1 ring-inset ring-sky-500/30 transition hover:bg-sky-500/25 disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            {mode === "company"
+              ? (adding ? <Loader2 size={13} className="animate-spin" /> : <Sparkles size={13} />)
+              : (importing ? <Loader2 size={13} className="animate-spin" /> : <Briefcase size={13} />)}
+            {mode === "company" ? "Queue research" : "Import jobs"}
+          </button>
+        </form>
+
+        {targets && targets.length > 0 && (
+          <div className="relative shrink-0">
+            <input
+              type="text"
+              value={filter}
+              onChange={(e) => setFilter(e.target.value)}
+              placeholder="filter…"
+              className="w-44 rounded-md bg-zinc-900 py-1.5 pl-2.5 pr-7 text-[13px] text-zinc-300 outline-none ring-1 ring-inset ring-zinc-800 transition placeholder:text-zinc-600 hover:ring-zinc-700 focus:ring-zinc-600"
+            />
+            {filter && (
+              <button onClick={() => setFilter("")} title="Clear filter" className="absolute right-1.5 top-1/2 -translate-y-1/2 text-zinc-500 hover:text-zinc-300">
+                <X size={12} />
+              </button>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* Transient status — queued research / scrape result / removed-with-undo — in one slot. */}
+      {(queuedMsg || scrapeMsg || undoName) && (
+        <div className="mb-3 space-y-2">
+          {queuedMsg && (
+            <div className="rounded-lg bg-zinc-900 px-3 py-1.5 text-[13px] text-zinc-400 ring-1 ring-inset ring-zinc-800">
+              {queuedMsg.queued.length > 0 && (
+                <span>
+                  Queued research for <span className="text-zinc-200">{queuedMsg.queued.join(", ")}</span> — CoWork will
+                  configure and watchlist {queuedMsg.queued.length === 1 ? "it" : "them"}. Track it in the queue.
+                </span>
+              )}
+              {queuedMsg.queued.length === 0 && queuedMsg.skipped.length > 0 && (
+                <span>Already watchlisted or queued: <span className="text-zinc-300">{queuedMsg.skipped.join(", ")}</span>.</span>
+              )}
+              {queuedMsg.queued.length > 0 && queuedMsg.skipped.length > 0 && (
+                <span className="ml-1 text-zinc-600">Skipped {queuedMsg.skipped.join(", ")} (already watchlisted or queued).</span>
+              )}
+            </div>
+          )}
+
+          {scrapeMsg && (
+            <div className="rounded-lg bg-zinc-900 px-3 py-1.5 text-[13px] text-zinc-400 ring-1 ring-inset ring-zinc-800">
+              {scrapeMsg}
+            </div>
+          )}
+
+          {undoName && (
+            <div className="flex items-center gap-2 rounded-lg bg-zinc-900 px-3 py-1.5 text-[13px] text-zinc-400 ring-1 ring-inset ring-zinc-800">
+              <span>Removed <span className="text-zinc-200">{undoName}</span> from the watchlist.</span>
+              <button
+                onClick={undo}
+                className="ml-auto inline-flex items-center gap-1 rounded px-2 py-0.5 font-medium text-emerald-300 transition hover:bg-emerald-500/15"
+              >
+                <Undo2 size={11} /> Undo
+              </button>
+            </div>
           )}
         </div>
       )}
 
-      <div className="max-h-96 overflow-auto">
+      <div className="min-h-0 flex-1 overflow-auto">
         {targets === null ? (
           <div className="flex items-center gap-2 py-6 text-[13px] text-zinc-500">
             <Loader2 size={13} className="animate-spin" /> loading watchlist…
           </div>
         ) : targets.length === 0 ? (
           <div className="rounded-xl border border-dashed border-zinc-800/80 py-6 text-center text-[13px] text-zinc-600">
-            nothing on the watchlist — add a company above, or open one and hit “Watch”
+            nothing on the watchlist yet — add a company above and CoWork will research and configure it
           </div>
         ) : shown.length === 0 ? (
           <div className="rounded-xl border border-dashed border-zinc-800/80 py-6 text-center text-[13px] text-zinc-600">
@@ -422,7 +453,7 @@ export default function TargetsTable({
           <table className="w-full border-separate border-spacing-0 text-left" style={{ tableLayout: "fixed", minWidth: total(WL_COLS) }}>
             <thead>
               <tr>
-                {([["company", "Company"], ["tier", "Tier"], ["titles", "Target titles"], ["location", "Location"], ["scraped", "Last scraped"], ["pipeline", "Pipeline"]] as const).map(([key, label]) => (
+                {([["company", "Company"], ["tier", "Tier"], ["titles", "Target titles"], ["fetch", "Fetch"], ["scraped", "Last scraped"], ["pipeline", "Pipeline"]] as const).map(([key, label]) => (
                   <ResTh
                     key={key}
                     width={widths[key]}
@@ -437,25 +468,18 @@ export default function TargetsTable({
               </tr>
             </thead>
             <tbody>
-              {shown.map((t) => {
+              {shown.map((t, i) => {
                 const c = counts.get(t.name);
-                const link = t.careersUrl || t.endpoint || undefined;
                 const tm = TIER_META[t.tier];
                 return (
-                  <Fragment key={t.id}>
                   <tr
-                    onClick={() => onSelect(t.name)}
-                    className="group cursor-pointer text-[13px] text-zinc-300 transition hover:bg-zinc-900/50"
+                    key={t.id}
+                    className={`group text-[13px] text-zinc-300 transition hover:bg-zinc-800/50 ${i % 2 === 1 ? "bg-zinc-900/30" : ""}`}
                   >
                     <Td>
-                      <div className="flex items-start gap-1.5">
-                        <button onClick={(e) => { e.stopPropagation(); toggleExpand(t.id); }} title="Scan config" className="mt-0.5 shrink-0 text-zinc-600 transition hover:text-zinc-300">
-                          <ChevronRight size={13} className={`transition-transform duration-200 ${expanded.has(t.id) ? "rotate-90" : ""}`} />
-                        </button>
-                        <div className="min-w-0">
-                          <span className="block truncate font-medium text-zinc-100" title={t.name}>{t.name}{t.notes && <span className="ml-1.5 text-[12px] text-zinc-600" title={t.notes}>ⓘ</span>}</span>
-                          {c && <TrackerTag items={c.items} />}
-                        </div>
+                      <div className="min-w-0">
+                        <span className="block truncate font-medium text-zinc-100" title={t.name}>{t.name}{t.notes && <span className="ml-1.5 text-[12px] text-zinc-600" title={t.notes}>ⓘ</span>}</span>
+                        {c && <TrackerTag items={c.items} />}
                       </div>
                     </Td>
                     <Td onClick={(e) => e.stopPropagation()}>
@@ -475,8 +499,14 @@ export default function TargetsTable({
                     <Td onClick={(e) => e.stopPropagation()}>
                       <EditField value={t.titles?.join(", ") ?? ""} placeholder="any title" onCommit={(v) => update(t.name, { titles: v.split(",").map((s) => s.trim()).filter(Boolean) })} />
                     </Td>
-                    <Td onClick={(e) => e.stopPropagation()}>
-                      <EditField value={t.location ?? ""} placeholder="any location" onCommit={(v) => update(t.name, { location: v.trim() || null })} />
+                    <Td>
+                      <FetchCell
+                        t={t}
+                        open={fetchPop?.id === t.id}
+                        at={fetchPop?.at ?? null}
+                        onOpen={(at) => setFetchPop({ id: t.id, at })}
+                        onClose={() => setFetchPop(null)}
+                      />
                     </Td>
                     <Td className="text-zinc-400 tabular-nums">{t.lastScrapedAt ? ago(t.lastScrapedAt) : "—"}</Td>
                     <Td className="tabular-nums">
@@ -497,59 +527,28 @@ export default function TargetsTable({
                           onClick={(e) => { e.stopPropagation(); scanOne(t.name); }}
                           disabled={scanningRows.has(t.name)}
                           title={`Scan ${t.name}'s board now (queues a CoWork scan)`}
-                          className="rounded p-0.5 text-sky-400/80 transition hover:bg-zinc-800 hover:text-sky-300 disabled:opacity-40"
+                          className="inline-flex items-center rounded-md px-2.5 py-1 text-[12px] font-medium text-sky-300 ring-1 ring-inset ring-sky-500/30 transition hover:bg-sky-500/15 disabled:cursor-not-allowed disabled:opacity-40"
                         >
-                          {scanningRows.has(t.name) ? <Loader2 size={12} className="animate-spin" /> : <Telescope size={12} />}
+                          {scanningRows.has(t.name) ? "Scanning…" : "Scan"}
                         </button>
                         <button
                           onClick={(e) => { e.stopPropagation(); remove(t.name); }}
                           title="Remove from watchlist"
-                          className="rounded p-0.5 text-zinc-700 opacity-0 transition hover:bg-zinc-800 hover:text-rose-300 group-hover:opacity-100"
+                          className="rounded p-1 text-zinc-700 opacity-0 transition hover:bg-zinc-800 hover:text-rose-300 group-hover:opacity-100"
                         >
-                          <X size={12} />
+                          <Trash2 size={12} />
                         </button>
                       </div>
                     </Td>
                   </tr>
-                  {expanded.has(t.id) && (
-                    <tr className="bg-zinc-900/20" onClick={(e) => e.stopPropagation()}>
-                      <Td colSpan={WL_COLS.length}>
-                        <div className="grid gap-x-6 gap-y-3 px-1 py-1.5 md:grid-cols-2">
-                          <div>
-                            <p className="mb-0.5 text-[11px] font-medium uppercase tracking-wider text-zinc-600">Fetch method</p>
-                            <span className="inline-flex items-center gap-1 text-[13px] text-zinc-300">
-                              {t.fetchMethod || "—"}
-                              {link && <a href={link} target="_blank" rel="noopener noreferrer" title={t.endpoint || t.careersUrl || ""} className="text-zinc-600 hover:text-sky-400"><ExternalLink size={11} /></a>}
-                            </span>
-                          </div>
-                          <div>
-                            <p className="mb-0.5 text-[11px] font-medium uppercase tracking-wider text-zinc-600">ATS</p>
-                            <span className="text-[13px] text-zinc-400">{t.ats || "—"}</span>
-                          </div>
-                          <div className="md:col-span-2">
-                            <p className="mb-0.5 text-[11px] font-medium uppercase tracking-wider text-zinc-600">Fetch recipe</p>
-                            <textarea
-                              key={t.fetchRecipe ?? ""}
-                              defaultValue={t.fetchRecipe ?? ""}
-                              placeholder="how to read this board (filters, exclusions, where level comes from)…"
-                              rows={2}
-                              onBlur={(e) => { if (e.target.value !== (t.fetchRecipe ?? "")) update(t.name, { fetchRecipe: e.target.value.trim() || null }); }}
-                              onKeyDown={(e) => { if (e.key === "Escape") { e.currentTarget.value = t.fetchRecipe ?? ""; e.currentTarget.blur(); } }}
-                              className="w-full resize-y rounded bg-zinc-900/60 px-2 py-1 text-[13px] leading-snug text-zinc-300 outline-none ring-1 ring-inset ring-zinc-800 transition placeholder:text-zinc-600 focus:ring-zinc-600"
-                            />
-                          </div>
-                        </div>
-                      </Td>
-                    </tr>
-                  )}
-                  </Fragment>
                 );
               })}
             </tbody>
           </table>
         )}
       </div>
-    </Section>
+      </div>
+    </div>
   );
 }
 
@@ -557,8 +556,64 @@ function Td({ children, className, onClick, colSpan }: { children: React.ReactNo
   return <td colSpan={colSpan} onClick={onClick} className={`border-b border-zinc-900 px-2.5 py-1.5 align-top first:pl-0 ${className ?? ""}`}>{children}</td>;
 }
 
+// The "Fetch" cell: a one-line "<method> on <board>" summary that opens a CLICK popover (native
+// title tooltips are too slow) with what the method means, the full board URL, the ATS, and the
+// fetch recipe. Open state is owned by the table so only one popover shows at a time.
+function FetchCell({ t, open, at, onOpen, onClose }: {
+  t: Target;
+  open: boolean;
+  at: { x: number; y: number } | null;
+  onOpen: (at: { x: number; y: number }) => void;
+  onClose: () => void;
+}) {
+  const link = t.careersUrl || t.endpoint || undefined;
+  const fm = t.fetchMethod ? FETCH_META[t.fetchMethod] : null;
+  const methodLabel = fm?.label ?? t.fetchMethod ?? null;
+  if (!methodLabel) return <span className="text-zinc-600">—</span>;
+  const desc = link ? `${methodLabel} on ${shortUrl(link)}` : t.ats ? `${methodLabel} · ${t.ats}` : methodLabel;
+  return (
+    <>
+      <button
+        onClick={(e) => { e.stopPropagation(); if (open) onClose(); else onOpen(anchorFrom(e)); }}
+        title="Fetch details"
+        className="flex w-full items-center gap-1.5 text-left"
+      >
+        <span className="min-w-0 truncate text-[13px] text-zinc-400 transition group-hover:text-zinc-300">{desc}</span>
+        <Info size={12} className={`shrink-0 transition ${open ? "text-sky-400" : "text-zinc-600"}`} />
+      </button>
+      {open && at && (
+        <PopoverPanel at={at} onClose={onClose} className="w-80 space-y-2.5 p-3">
+          <div>
+            <p className="text-[11px] font-medium uppercase tracking-wider text-zinc-600">Fetch method</p>
+            <p className="text-[13px] font-medium text-zinc-200">{methodLabel}</p>
+            {fm && <p className="mt-0.5 text-[12px] leading-relaxed text-zinc-400">{fm.desc}</p>}
+          </div>
+          {link && (
+            <div>
+              <p className="text-[11px] font-medium uppercase tracking-wider text-zinc-600">Board</p>
+              <a href={link} target="_blank" rel="noopener noreferrer" className="break-all text-[12px] text-sky-400 hover:underline">{link}</a>
+            </div>
+          )}
+          {t.ats && (
+            <div>
+              <p className="text-[11px] font-medium uppercase tracking-wider text-zinc-600">ATS</p>
+              <p className="text-[12px] text-zinc-300">{t.ats}</p>
+            </div>
+          )}
+          {t.fetchRecipe && (
+            <div>
+              <p className="text-[11px] font-medium uppercase tracking-wider text-zinc-600">Fetch recipe</p>
+              <p className="whitespace-pre-wrap text-[12px] leading-relaxed text-zinc-300">{t.fetchRecipe}</p>
+            </div>
+          )}
+        </PopoverPanel>
+      )}
+    </>
+  );
+}
+
 // Inline-editable cell: uncontrolled, commits on blur/Enter, reverts on Escape. Stops click
-// from bubbling to the row (which would re-filter Scan Review).
+// from bubbling to the row.
 function EditField({ value, onCommit, placeholder }: { value: string; onCommit: (v: string) => void; placeholder?: string }) {
   return (
     <input

@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { ArrowRight, Bold, Bot, Check, ChevronRight, ExternalLink, GitCompareArrows, List, Loader2, Mail, MessageSquare, MoreHorizontal, Pencil, Pin, Settings, Trash2, X } from "lucide-react";
+import { ArrowRight, Bold, Bot, Check, ChevronRight, ExternalLink, GitCompareArrows, List, Loader2, Mail, MessageSquare, MoreHorizontal, Pencil, Pin, Trash2, X } from "lucide-react";
 import PopoverPanel, { anchorFrom } from "@/components/Popover";
 import { columnOf, fitColor, statusesForColumn, STATUS_CHIP, STATUS_LABEL, type ColumnId } from "@/lib/pipeline";
 import TrackerTag from "@/components/TrackerTag";
@@ -850,13 +850,10 @@ export default function Pipeline() {
           </div>
         </div>
 
-        {/* Scan Watchlist step = scan settings + watchlist (no postings table; matches now live in Fit). */}
+        {/* Scan Watchlist step = the watchlist itself (no postings table; matches now live in Fit). */}
         {tab === "review" && (
-          <div className="flex-1 overflow-auto">
-            <div className="flex items-center gap-1.5 px-6 pb-1 pt-4 text-[12px] font-semibold uppercase tracking-wider text-zinc-500">
-              <Settings size={13} /> Scan settings
-            </div>
-            <TargetsTable counts={counts} onSelect={addTag} />
+          <div className="flex min-h-0 flex-1 flex-col">
+            <TargetsTable counts={counts} />
           </div>
         )}
 
