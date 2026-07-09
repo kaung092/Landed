@@ -8,6 +8,7 @@ import AgentsLive from "@/components/AgentsLive";
 import AgentMonitor, { type MonitorJob } from "@/components/agents/AgentMonitor";
 import Playbook from "@/components/agents/Playbook";
 import TabBar from "@/components/prep/TabBar";
+import McpDocsPanel from "@/components/mcp/McpDocsPanel";
 
 type JobView = MonitorJob;
 type JobTypeMeta = { type: string; title: string; description: string; playbook: string };
@@ -80,7 +81,10 @@ export default function CoWorkView() {
   const tabs = [
     { id: "chat", label: "Chat" },
     { id: "monitor", label: failed.length ? `Monitor · ${failed.length}` : "Monitor" },
+    { id: "mcp", label: "MCP" },
   ];
+  // Normalize to a known tab so a stale persisted value (e.g. the removed "connections") falls back to chat.
+  const activeTab = tabs.some((t) => t.id === view) ? view : "chat";
 
   return (
     <div className="relative flex h-full flex-col text-zinc-100">
@@ -97,11 +101,11 @@ export default function CoWorkView() {
         <p className="mt-0.5 text-[13px] text-zinc-500">
           Live agents that read &amp; write your pipeline over MCP.{lastActive && <> Last active {ago(lastActive)}.</>}
         </p>
-        <div className="mt-3"><TabBar tabs={tabs} active={view} onChange={setView} /></div>
+        <div className="mt-3"><TabBar tabs={tabs} active={activeTab} onChange={setView} /></div>
       </header>
 
       <div className="flex-1 overflow-y-auto px-6 py-5">
-        {view !== "monitor" && ( // chat is the default for any non-monitor value (e.g. a stale "connections")
+        {activeTab === "chat" && (
           <div className="mx-auto max-w-5xl space-y-8">
             <AgentsLive />
             {guides.length > 0 && (
@@ -133,7 +137,13 @@ export default function CoWorkView() {
           </div>
         )}
 
-        {view === "monitor" && (
+        {activeTab === "mcp" && (
+          <div className="mx-auto max-w-3xl">
+            <McpDocsPanel />
+          </div>
+        )}
+
+        {activeTab === "monitor" && (
           <div className="mx-auto max-w-5xl space-y-6">
             {/* Health strip — the at-a-glance state of the agent fleet + queue. */}
             <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
