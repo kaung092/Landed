@@ -30,6 +30,7 @@
     "imapflow": "^1.4.3",
     "lucide-react": "^1.21.0",
     "mailparser": "^3.9.12",
+    "mammoth": "^1.12.0",
     "next": "16.2.9",
     "react": "19.2.4",
     "react-dom": "19.2.4",

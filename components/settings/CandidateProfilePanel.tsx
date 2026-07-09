@@ -12,7 +12,11 @@ export default function CandidateProfilePanel() {
   const [saved, setSaved] = useState(false);
 
   useEffect(() => {
-    fetch("/api/fitlab/profile").then((r) => r.json()).then((d) => setProfile(d.profile ?? "")).catch(() => setProfile(""));
+    const load = () => fetch("/api/fitlab/profile").then((r) => r.json()).then((d) => setProfile(d.profile ?? "")).catch(() => setProfile(""));
+    load();
+    // Re-fetch when a résumé upload fills the profile (ResumeUpload broadcasts this).
+    window.addEventListener("fitlab-profile-updated", load);
+    return () => window.removeEventListener("fitlab-profile-updated", load);
   }, []);
 
   const save = async () => {
