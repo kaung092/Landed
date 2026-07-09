@@ -80,6 +80,12 @@ export default function FitLab() {
       const r = await fetch("/api/fitlab/run", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
       const d = await r.json();
       if (!r.ok) throw new Error(d.error ?? "could not queue");
+      pendo.track("fitlab_assessment_queued", {
+        mode,
+        posting_id: mode === "posting" ? postingId : undefined,
+        company: mode === "paste" ? paste.company : undefined,
+        role: mode === "paste" ? paste.role : undefined,
+      });
       setRun(null);
       setPendingRunId(d.runId);
       loadBootstrap();
@@ -102,12 +108,26 @@ export default function FitLab() {
   const label = useCallback(async (verdictId: number, humanVerdict: Verdict | null, humanNote?: string | null) => {
     const r = await fetch("/api/fitlab/label", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ verdictId, humanVerdict, humanNote }) });
     const d = await r.json();
-    if (d.run) { setRun(d.run); loadBootstrap(); }
+    if (d.run) {
+      const v = (d.run as Run).verdicts.find((x: VerdictRow) => x.id === verdictId);
+      pendo.track("fitlab_verdict_labeled", {
+        verdict_id: verdictId,
+        criterion_key: v?.criterionKey,
+        model_verdict: v?.verdict,
+        human_verdict: humanVerdict,
+        was_overturned: humanVerdict != null && humanVerdict !== v?.verdict,
+        has_note: !!humanNote,
+      });
+      setRun(d.run); loadBootstrap();
+    }
   }, [loadBootstrap]);
 
   const saveProfile = useCallback(async () => {
     setSavingProfile(true);
-    try { await fetch("/api/fitlab/profile", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ profile }) }); }
+    try {
+      await fetch("/api/fitlab/profile", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ profile }) });
+      pendo.track("fitlab_profile_saved", { profile_length: profile.length });
+    }
     finally { setSavingProfile(false); }
   }, [profile]);
 

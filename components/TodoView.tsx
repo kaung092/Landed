@@ -78,6 +78,10 @@ export default function TodoView() {
         setText("");
         setDue("");
         inputRef.current?.focus();
+        pendo.track("todo_created", {
+          has_due_date: !!due,
+          text_length: t.length,
+        });
       }
     } finally {
       setAdding(false);
@@ -86,6 +90,12 @@ export default function TodoView() {
 
   async function toggle(todo: Todo) {
     const done = !todo.done;
+    if (done) {
+      pendo.track("todo_completed", {
+        todo_id: todo.id,
+        was_overdue: !!todo.due && todo.due < TODAY,
+      });
+    }
     setTodos((all) => all.map((t) => (t.id === todo.id ? { ...t, done } : t)));
     await fetch(`/api/todos/${todo.id}`, {
       method: "PATCH",
@@ -95,6 +105,10 @@ export default function TodoView() {
   }
 
   async function remove(todo: Todo) {
+    pendo.track("todo_deleted", {
+      todo_id: todo.id,
+      was_done: todo.done,
+    });
     setTodos((all) => all.filter((t) => t.id !== todo.id));
     await fetch(`/api/todos/${todo.id}`, { method: "DELETE" });
   }

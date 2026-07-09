@@ -26,6 +26,9 @@ export default function ProfilePanel() {
 
   // Optimistic merge + persist just the changed field (on blur). Save just returns to the preview.
   const save = (patch: Partial<Profile>) => {
+    pendo.track("profile_updated", {
+      changed_fields: Object.keys(patch).join(","),
+    });
     setP({ ...p, ...patch });
     fetch("/api/profile", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(patch) }).catch(() => {});
   };

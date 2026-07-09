@@ -70,6 +70,10 @@ export default function CoWorkQueueProvider({ children }: { children: React.Reac
 
   const add = useCallback(async (spec: AddJobSpec) => {
     firePulse();
+    pendo.track("cowork_job_added", {
+      job_type: spec.type,
+      has_params: !!spec.params,
+    });
     try {
       await fetch("/api/jobs", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(spec) });
     } finally {
@@ -78,6 +82,7 @@ export default function CoWorkQueueProvider({ children }: { children: React.Reac
   }, [firePulse, refresh]);
 
   const remove = useCallback(async (id: string) => {
+    pendo.track("cowork_job_removed", { job_id: id });
     setJobs((js) => js.filter((j) => j.id !== id)); // optimistic
     try {
       await fetch(`/api/jobs/${encodeURIComponent(id)}`, { method: "DELETE" });
@@ -89,6 +94,7 @@ export default function CoWorkQueueProvider({ children }: { children: React.Reac
   // Manual recovery: an agent claimed a job (wip) but never finished. Return it to `queued` so
   // another agent can pick it up. Optimistic flip; the poll/refresh reconciles.
   const requeue = useCallback(async (id: string) => {
+    pendo.track("cowork_job_requeued", { job_id: id });
     setJobs((js) => js.map((j) => (j.id === id ? { ...j, status: "queued", claimedAt: null, claimedBy: null } : j)));
     try {
       await fetch(`/api/jobs/${encodeURIComponent(id)}/requeue`, { method: "POST" });

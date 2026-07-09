@@ -28,13 +28,14 @@ export default function GmailConnect() {
       body: JSON.stringify({ user: user.trim(), appPassword: pass }),
     }).then((x) => x.json()).catch(() => ({ error: "request failed" }));
     setBusy(false);
-    if (r.ok) { setPass(""); setUser(""); refresh(); }
+    if (r.ok) { pendo.track("gmail_connected", { success: true }); setPass(""); setUser(""); refresh(); }
     else setError(r.error || "couldn't connect — check the address and app password");
   };
 
   const disconnect = async () => {
     setBusy(true);
     await fetch("/api/gmail", { method: "DELETE" }).catch(() => {});
+    pendo.track("gmail_disconnected");
     setBusy(false);
     refresh();
   };

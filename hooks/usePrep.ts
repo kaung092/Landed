@@ -41,9 +41,17 @@ export function usePrep(track?: string, company?: string) {
       opts: { durationSec?: number; status?: AttemptStatus; notes?: string } = {}
     ) => {
       const status = opts.status ?? "solved";
+      const _q = questions.find((q) => q.id === id);
+      pendo.track("prep_attempt_logged", {
+        question_id: id,
+        track: _q?.track,
+        status,
+        duration_sec: opts.durationSec,
+        question_name: _q?.name,
+      });
       patchOne(id, {
-        timesDone: (questions.find((q) => q.id === id)?.timesDone ?? 0) + 1,
-        done: status === "solved" ? true : questions.find((q) => q.id === id)?.done ?? false,
+        timesDone: (_q?.timesDone ?? 0) + 1,
+        done: status === "solved" ? true : _q?.done ?? false,
       });
       const r = await fetch("/api/prep/attempts", {
         method: "POST",
@@ -63,6 +71,10 @@ export function usePrep(track?: string, company?: string) {
     async (id: string) => {
       const q = questions.find((x) => x.id === id);
       if (!q?.lastAttemptId) return;
+      pendo.track("prep_attempt_undone", {
+        question_id: id,
+        track: q.track,
+      });
       await fetch(`/api/prep/attempts/${q.lastAttemptId}`, { method: "DELETE" });
       await reload();
     },

@@ -47,6 +47,12 @@ export default function PrepChat({
   const send = async () => {
     const text = input.trim();
     if (!text || busy) return;
+    pendo.track("prep_chat_message_sent", {
+      company_slug: storageId,
+      message_length: text.length,
+      is_first_message: msgs.length === 0,
+      session_active: !!sid,
+    });
     setMsgs((m) => [...m, { role: "user", text }]);
     setInput("");
     setBusy(true);

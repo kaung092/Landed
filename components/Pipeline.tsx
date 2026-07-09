@@ -520,6 +520,17 @@ export default function Pipeline() {
     // drops out. The other rows keep their position instead of flashing/re-sorting.
     const next = ACTION_RESULT_STATE[action];
     const stays = stepStates(tab).includes(next);
+    const row = scanRows?.find((r) => r.id === id);
+    pendo.track("candidate_action_taken", {
+      posting_id: id,
+      company: row?.company,
+      title: row?.title,
+      action,
+      from_state: row?.state,
+      to_state: next,
+      pipeline_step: tab,
+      fit_score: row?.fitScore,
+    });
     setScanRows((rs) =>
       rs == null ? rs
         : stays ? rs.map((r) => (r.id === id ? { ...r, state: next } : r))
@@ -538,6 +549,14 @@ export default function Pipeline() {
   // leaves its old stage and lands in the new one.
   const moveTo = async (p: FRow, state: string) => {
     if (p.state === state) return;
+    pendo.track("candidate_moved_to_stage", {
+      posting_id: p.id,
+      company: p.company,
+      title: p.title,
+      from_state: p.state,
+      to_state: state,
+      target_stage: MOVE_TARGETS.find((t) => t.state === state)?.label,
+    });
     setScanRows((rs) => (rs ? rs.filter((r) => r.id !== p.id) : rs)); // optimistic for scan-stage rows
     const extra: Record<string, unknown> =
       state === "applied" && !p.appliedDate ? { appliedDate: new Date().toISOString().slice(0, 10) }
@@ -737,6 +756,10 @@ export default function Pipeline() {
     if (co && co !== p.company) body.moveToCompany = co; // reassign this posting to that company (created if new)
     setEditingId(null);
     if (Object.keys(body).length) {
+      pendo.track("posting_inline_edited", {
+        posting_id: p.id,
+        fields_changed: Object.keys(body).join(","),
+      });
       await fetch(`/api/applications/${p.id}`, { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify(body) }).catch(() => {});
       refreshScan(); // refresh both the scan rows and the tracker postings + counts
     }
@@ -787,7 +810,7 @@ export default function Pipeline() {
                   Disabled while one is already outstanding so clicks don't stack duplicates. */}
               {(() => { const queued = inboxSyncQueued || syncing; return (
               <button
-                onClick={() => { if (!queued) { setSyncing(true); add({ type: "inbox-sync" }); } }}
+                onClick={() => { if (!queued) { setSyncing(true); add({ type: "inbox-sync" }); pendo.track("inbox_sync_queued"); } }}
                 disabled={queued}
                 title={queued ? "An inbox sync is already queued — run your CoWork queue" : "Queue an inbox sync for CoWork"}
                 className="flex shrink-0 items-center gap-1.5 rounded-md px-2.5 py-1.5 text-[13px] font-medium text-zinc-300 ring-1 ring-inset ring-zinc-800 transition hover:text-zinc-100 hover:ring-zinc-700 disabled:cursor-default disabled:text-zinc-600 disabled:ring-zinc-800/60 disabled:hover:text-zinc-600"
@@ -1181,7 +1204,15 @@ function CommentCell({ id, comments, onChanged }: { id: number; comments: Commen
   const send = async (method: "POST" | "PATCH" | "DELETE", body: object) => {
     setBusy(true);
     const r = await fetch(`/api/applications/${id}/comment`, { method, headers: { "content-type": "application/json" }, body: JSON.stringify(body) }).catch(() => null);
-    if (r?.ok) { const d = await r.json(); setList(d.posting?.comments ?? []); onChanged(); }
+    if (r?.ok) {
+      const d = await r.json(); setList(d.posting?.comments ?? []); onChanged();
+      if (method === "POST") {
+        pendo.track("comment_added", {
+          posting_id: id,
+          comment_length: (body as { text?: string }).text?.length,
+        });
+      }
+    }
     setBusy(false);
   };
   // Submit the draft: PATCH when editing an existing comment, otherwise POST a new one.

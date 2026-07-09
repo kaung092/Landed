@@ -74,6 +74,16 @@ export function useApplications() {
   const setStatus = useCallback(
     (p: Posting, to: Status) => {
       if (p.status === to) return;
+      pendo.track("application_status_changed", {
+        posting_id: p.id,
+        company: p.company,
+        role: p.role,
+        from_status: p.status,
+        to_status: to,
+        has_fit_score: p.fitScore != null,
+        fit_score: p.fitScore,
+        has_resume: !!p.resumeDir,
+      });
       const changes = stageChanges(p, to);
       if (changes.fitScore != null) setActivity(`stub: would call Claude to score fit for ${p.company} — ${p.role}`);
       if (changes.appliedDate) setActivity(`${p.company} → Applied · stub: would re-export job_applications_tracker.csv`);
@@ -151,6 +161,11 @@ export function useApplications() {
     async (company: string, tier: Tier) => {
       const items = postings.filter((p) => p.company === company);
       if (!items.length || items[0].tier === tier) return;
+      pendo.track("company_tier_changed", {
+        company,
+        from_tier: items[0].tier,
+        to_tier: tier,
+      });
       const ids = items.map((i) => i.id);
       setPostings((all) => all.map((x) => (ids.includes(x.id) ? { ...x, tier } : x)));
       await patch(ids[0], { tier });
@@ -181,6 +196,14 @@ export function useApplications() {
   // persists; on failure, reload to restore the true server state.
   const deleteJob = useCallback(
     async (p: Posting) => {
+      pendo.track("posting_deleted", {
+        posting_id: p.id,
+        company: p.company,
+        role: p.role,
+        status_at_deletion: p.status,
+        had_fit_assessment: p.fit != null || p.fitScore != null,
+        had_tailored_resume: !!p.resumeDir,
+      });
       setPostings((all) => all.filter((x) => x.id !== p.id));
       setActivity(`deleted ${p.company} — ${p.role ?? "—"}`);
       const r = await fetch(`/api/applications/${p.id}`, { method: "DELETE" });
