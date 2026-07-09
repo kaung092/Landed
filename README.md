@@ -43,7 +43,6 @@ interview-prep catalog:
 
 ```bash
 npm run seed:prep
-npm run seed:prep-companies
 ```
 
 ### Configuration
@@ -125,7 +124,7 @@ Because launchd owns port 3000, don't also run `npm run dev` by hand while it's 
 | `npm run dev` / `build` / `start` | Next.js dev / production build / serve |
 | `npm run lint` | ESLint |
 | `npm run test` | Node test runner (`tests/*.test.ts`) |
-| `npm run seed:prep` / `seed:prep-companies` | Seed the interview-prep catalog |
+| `npm run seed:prep` | Seed the interview-prep catalog |
 | `npm run import:prep` | Import coding-prep progress |
 | `npm run backup` | Snapshot the SQLite DB |
 | `npm run diagram:arch` / `diagram:pipeline` | Regenerate the docs diagrams |
