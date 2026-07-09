@@ -32,9 +32,9 @@ export default function LevelingRefPanel({ value, onSave }: { value: LevelingRef
         </div>
       ) : (
         <dl className="grid gap-x-8 gap-y-4 sm:grid-cols-3">
-          <PreviewItem label="Company" value={ref.company} />
-          <PreviewItem label="Role" value={ref.role} />
-          <PreviewItem label="Level" value={ref.targetBand} />
+          <PreviewItem accent="sky" label="Company" value={ref.company} />
+          <PreviewItem accent="sky" label="Role" value={ref.role} />
+          <PreviewItem accent="sky" label="Level" value={ref.targetBand} />
           {targetMissing && (
             <p className="text-[11px] text-amber-400/80 sm:col-span-3">⚠ no rung named “{ref.targetBand}” in the levels.fyi ladder</p>
           )}
