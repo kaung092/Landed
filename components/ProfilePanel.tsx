@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { X } from "lucide-react";
 import Field from "@/components/Field";
-import { EditButton, SaveButton, PreviewItem, ChipsPreview } from "@/components/settings/EditControls";
+import { EditToggle, PreviewItem, ChipsPreview } from "@/components/settings/EditControls";
 
 type Profile = {
   levelBaseline: string;
@@ -18,7 +18,6 @@ type Profile = {
 // second pass and fit's leveling (via getContext). Chrome-less: the settings page owns the card.
 export default function ProfilePanel() {
   const [p, setP] = useState<Profile | null>(null);
-  const [editing, setEditing] = useState(false);
 
   useEffect(() => {
     fetch("/api/profile").then((r) => r.json()).then((d) => setP(d.profile)).catch(() => {});
@@ -32,20 +31,8 @@ export default function ProfilePanel() {
   };
 
   return (
-    <div className="space-y-4">
-      <div className="flex justify-end">
-        {editing ? <SaveButton onClick={() => setEditing(false)} /> : <EditButton onClick={() => setEditing(true)} />}
-      </div>
-      {editing ? (
-        <div className="grid gap-x-8 gap-y-5 sm:grid-cols-2">
-          <Field label="Level baseline" value={p.levelBaseline} onCommit={(v) => save({ levelBaseline: v })} />
-          <Field label="Locations" value={p.locations} onCommit={(v) => save({ locations: v })} />
-          <Field label="Target-level rule" value={p.levelRule} onCommit={(v) => save({ levelRule: v })} full />
-          <Tags label="Include disciplines" tone="emerald" value={p.includeDisciplines} onCommit={(a) => save({ includeDisciplines: a })} />
-          <Tags label="Exclude disciplines" tone="rose" value={p.excludeDisciplines} onCommit={(a) => save({ excludeDisciplines: a })} />
-          <Field label="Notes for CoWork" value={p.notes} onCommit={(v) => save({ notes: v })} full placeholder="anything else that should shape the match…" />
-        </div>
-      ) : (
+    <EditToggle
+      renderPreview={() => (
         <dl className="grid gap-x-8 gap-y-4 sm:grid-cols-2">
           <PreviewItem label="Level baseline" value={p.levelBaseline} />
           <PreviewItem label="Locations" value={p.locations} />
@@ -55,7 +42,17 @@ export default function ProfilePanel() {
           <PreviewItem label="Notes for CoWork" value={p.notes} full />
         </dl>
       )}
-    </div>
+      renderEdit={() => (
+        <div className="grid gap-x-8 gap-y-5 sm:grid-cols-2">
+          <Field label="Level baseline" value={p.levelBaseline} onCommit={(v) => save({ levelBaseline: v })} />
+          <Field label="Locations" value={p.locations} onCommit={(v) => save({ locations: v })} />
+          <Field label="Target-level rule" value={p.levelRule} onCommit={(v) => save({ levelRule: v })} full />
+          <Tags label="Include disciplines" tone="emerald" value={p.includeDisciplines} onCommit={(a) => save({ includeDisciplines: a })} />
+          <Tags label="Exclude disciplines" tone="rose" value={p.excludeDisciplines} onCommit={(a) => save({ excludeDisciplines: a })} />
+          <Field label="Notes for CoWork" value={p.notes} onCommit={(v) => save({ notes: v })} full placeholder="anything else that should shape the match…" />
+        </div>
+      )}
+    />
   );
 }
 

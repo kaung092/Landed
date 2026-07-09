@@ -1,11 +1,27 @@
 "use client";
 
+import { useState, type ReactNode } from "react";
 import { Pencil, Check } from "lucide-react";
 
 // Shared view/edit affordances for the settings panels: an Edit toggle, a Save (confirm) toggle,
 // and read-only preview cells. Values persist on field blur; Save just returns to the preview.
 
-export function EditButton({ onClick }: { onClick: () => void }) {
+// The view/edit scaffold every editable settings panel shares: a right-aligned Edit/Save control
+// over either the read-only preview or the input fields. Values persist on blur, so Save just
+// returns to the preview.
+export function EditToggle({ renderPreview, renderEdit }: { renderPreview: () => ReactNode; renderEdit: () => ReactNode }) {
+  const [editing, setEditing] = useState(false);
+  return (
+    <div className="space-y-4">
+      <div className="flex justify-end">
+        {editing ? <SaveButton onClick={() => setEditing(false)} /> : <EditButton onClick={() => setEditing(true)} />}
+      </div>
+      {editing ? renderEdit() : renderPreview()}
+    </div>
+  );
+}
+
+function EditButton({ onClick }: { onClick: () => void }) {
   return (
     <button
       onClick={onClick}
@@ -16,7 +32,7 @@ export function EditButton({ onClick }: { onClick: () => void }) {
   );
 }
 
-export function SaveButton({ onClick }: { onClick: () => void }) {
+function SaveButton({ onClick }: { onClick: () => void }) {
   return (
     <button
       onClick={onClick}
