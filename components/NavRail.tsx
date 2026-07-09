@@ -3,11 +3,11 @@
 import { Fragment, useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Home, Briefcase, History, Bot, GraduationCap, FlaskConical, LayoutDashboard, Settings } from "lucide-react";
+import { Home, Briefcase, History, Bot, GraduationCap, FlaskConical, LayoutDashboard, Settings, UserCircle } from "lucide-react";
 
 // The rail is grouped into clusters (rendered with a divider between each); each item's optional
 // `badge` carries its color and the live count is looked up by href from the `counts` map below.
-// Workspace (the job-search surfaces) · Agents (MCP now lives inside the Agents page) · Activity.
+// Workspace (the job-search surfaces) · Agents (MCP lives inside the Agents page) · Activity · You.
 const GROUPS = [
   [
     { href: "/", label: "Home", icon: Home },
@@ -19,12 +19,14 @@ const GROUPS = [
     { href: "/dashboard", label: "Stats", icon: LayoutDashboard },
     { href: "/changes", label: "Changes", icon: History, badge: "bg-amber-500 text-amber-950" },
   ],
+  [
+    { href: "/profile", label: "Profile", icon: UserCircle },
+    { href: "/settings", label: "Settings", icon: Settings },
+  ],
 ];
-// Pinned to the bottom of the rail.
-const BOTTOM = [{ href: "/settings", label: "Settings", icon: Settings }];
 
 type NavItem = { href: string; label: string; icon: typeof Home; badge?: string };
-const ALL_ITEMS: NavItem[] = [...GROUPS.flat(), ...BOTTOM];
+const ALL_ITEMS: NavItem[] = GROUPS.flat();
 
 export default function NavRail() {
   const pathname = usePathname();
@@ -98,7 +100,6 @@ export default function NavRail() {
           {group.map(renderItem)}
         </Fragment>
       ))}
-      <div className="mt-auto flex flex-col items-center gap-1">{BOTTOM.map(renderItem)}</div>
     </nav>
   );
 }
