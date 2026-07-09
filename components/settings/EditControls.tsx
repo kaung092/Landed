@@ -27,27 +27,40 @@ export function SaveButton({ onClick }: { onClick: () => void }) {
   );
 }
 
-export function PreviewItem({ label, value, full }: { label: string; value?: string; full?: boolean }) {
+type Tone = "emerald" | "sky" | "rose";
+const TONE: Record<Tone, { label: string; dot: string; ring: string; chip: string }> = {
+  emerald: { label: "text-emerald-300/90", dot: "bg-emerald-400", ring: "ring-emerald-500/20", chip: "bg-emerald-500/15 text-emerald-300" },
+  sky: { label: "text-sky-300/90", dot: "bg-sky-400", ring: "ring-sky-500/20", chip: "bg-sky-500/15 text-sky-300" },
+  rose: { label: "text-rose-300/90", dot: "bg-rose-400", ring: "ring-rose-500/20", chip: "bg-rose-500/15 text-rose-300" },
+};
+
+export function PreviewItem({ label, value, accent = "emerald", full }: { label: string; value?: string; accent?: Tone; full?: boolean }) {
+  const t = TONE[accent];
+  const set = !!value?.trim();
   return (
     <div className={full ? "sm:col-span-2" : ""}>
-      <dt className="text-[12px] font-medium text-zinc-500">{label}</dt>
-      <dd className="mt-0.5 text-[13px] leading-relaxed text-zinc-200">
-        {value?.trim() ? value : <span className="text-zinc-600">—</span>}
+      <dt className={`mb-1 flex items-center gap-1.5 text-[11px] font-medium uppercase tracking-wide ${t.label}`}>
+        <span className={`h-1 w-1 rounded-full ${t.dot}`} /> {label}
+      </dt>
+      <dd className={`rounded-lg bg-zinc-950/40 px-3 py-2 text-[13px] leading-relaxed ring-1 ring-inset ${set ? `text-zinc-100 ${t.ring}` : "text-zinc-600 ring-zinc-800"}`}>
+        {set ? value : "Not set"}
       </dd>
     </div>
   );
 }
 
 export function ChipsPreview({ label, items, tone, full }: { label: string; items: string[]; tone: "emerald" | "rose"; full?: boolean }) {
-  const chip = tone === "emerald" ? "bg-emerald-500/15 text-emerald-300" : "bg-rose-500/15 text-rose-300";
+  const t = TONE[tone];
   return (
     <div className={full ? "sm:col-span-2" : ""}>
-      <dt className="text-[12px] font-medium text-zinc-500">{label}</dt>
-      <dd className="mt-1 flex flex-wrap gap-1">
+      <dt className={`mb-1 flex items-center gap-1.5 text-[11px] font-medium uppercase tracking-wide ${t.label}`}>
+        <span className={`h-1 w-1 rounded-full ${t.dot}`} /> {label}
+      </dt>
+      <dd className={`flex flex-wrap gap-1 rounded-lg bg-zinc-950/40 px-3 py-2 ring-1 ring-inset ${items.length ? t.ring : "ring-zinc-800"}`}>
         {items.length ? (
-          items.map((t) => <span key={t} className={`rounded px-1.5 py-0.5 text-[12px] font-medium ${chip}`}>{t}</span>)
+          items.map((x) => <span key={x} className={`rounded px-1.5 py-0.5 text-[12px] font-medium ${t.chip}`}>{x}</span>)
         ) : (
-          <span className="text-[13px] text-zinc-600">—</span>
+          <span className="text-[13px] text-zinc-600">Not set</span>
         )}
       </dd>
     </div>
