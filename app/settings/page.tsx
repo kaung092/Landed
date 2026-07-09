@@ -34,7 +34,7 @@ export default function SettingsPage() {
           <SettingsCard
             icon={<Gauge size={17} />}
             accent="sky"
-            title="Leveling reference"
+            title="Levels.fyi Reference"
             description="The anchor ladder every company is matched against. Changing it re-draws the level popover instantly."
           >
             <LevelingRefEditor />
