@@ -22,15 +22,15 @@ import type { Comment, Posting, FitAssessment, RedoTurn, Status } from "@/lib/ty
 import { JobStatusChip, type WorkStatus } from "@/components/JobStatus";
 import { ago } from "@/lib/format";
 
-const FUNNEL_LABEL: Record<string, string> = { company: "Company", title: "Title", location: "Location", fit: "Fit", lvl: "Lvl", comment: "Note", gaps: "Gaps", resume: "Resume", status: "Status", applied: "Applied", updated: "Last updated", act: "Action" };
+const FUNNEL_LABEL: Record<string, string> = { sel: "", company: "Company", title: "Title", location: "Location", fit: "Fit", lvl: "Lvl", comment: "Note", gaps: "Gaps", resume: "Resume", status: "Status", applied: "Applied", updated: "Last updated", act: "Action" };
 // The table is `table-layout: fixed` (frozen columns need their declared widths to be authoritative,
 // or the sticky-left offsets — fixed FROZEN_W sums — drift past the real column edges and the frozen
 // cells overlap). So every column needs ONE definite width. Frozen columns use FROZEN_W; the rest get
 // a fixed width here. Content that exceeds it wraps/truncates instead of expanding the column.
 const NONFROZEN_W: Record<string, number> = {
-  comment: 56, fit: 420, gaps: 260, resume: 140, status: 120, applied: 110, updated: 120,
+  location: 150, lvl: 60, comment: 72, fit: 420, gaps: 260, resume: 140, status: 120, applied: 110, updated: 120,
 };
-const colW = (k: string): number => (isFrozen(k) ? FROZEN_W[k] : NONFROZEN_W[k] ?? 120);
+const colW = (k: string): number => FROZEN_W[k] ?? RIGHT_W[k] ?? NONFROZEN_W[k] ?? 120;
 const colStyle = (k: string): React.CSSProperties => ({ width: colW(k), minWidth: colW(k), maxWidth: colW(k) });
 // Per-column td className (alignment / tone).
 const COL_CLASS: Record<string, string> = {
@@ -51,36 +51,42 @@ const isTrackerStep = (key: string) => key in STEP_COLUMN;
 // see fit + résumé, status, etc., wherever you are). Cells render "—" where a column doesn't apply
 // to a given row. Order: the four frozen leading columns, then fit/gaps/résumé (the artifacts you
 // most want everywhere), then tracker fields, then the per-row action.
-const UNIFIED_COLS = ["company", "title", "location", "lvl", "act", "comment", "fit", "gaps", "resume", "status", "applied", "updated"];
+const UNIFIED_COLS = ["sel", "company", "title", "location", "lvl", "comment", "fit", "gaps", "resume", "status", "applied", "updated", "act"];
 
-// The leading columns are FROZEN (sticky-left) while the rest scroll horizontally — including the
-// per-row action, kept pinned right after Lvl so the quick actions are always reachable. Sticky
-// cells need a concrete `left`, so the frozen columns get fixed widths and we sum them for each offset.
-const FROZEN_COLS = ["company", "title", "location", "lvl", "act"] as const;
-// `act` is sized for the WIDEST case: the fit stage shows two inline buttons ("Assess fit" + "Discard")
-// plus the ⋯ menu (see ActionCell). 170 clipped them and — being right-aligned — they overflowed LEFT
-// into the Lvl column. 230 fits that row on one line; ActionCell also flex-wraps as a hard backstop.
-const FROZEN_W: Record<string, number> = { company: 190, title: 210, location: 150, lvl: 60, act: 230 };
+// PINNED columns (sticky) — one mechanism, two edges. The identity leads freeze LEFT (a tiny checkbox
+// column, then Company + Title — a narrow ~440px block), while the per-row Action column pins RIGHT so
+// quick actions stay reachable no matter how far the middle scrolls. They differ only in the edge they
+// anchor to (and the divider side); `pinnedStyle` / `pinnedCls` branch on that.
+const FROZEN_COLS = ["sel", "company", "title"] as const; // left-pinned, in order (offsets accrue)
+const FROZEN_W: Record<string, number> = { sel: 40, company: 190, title: 210 };
+const RIGHT_W: Record<string, number> = { act: 96 }; // right-pinned (one column → right: 0, no accumulation)
 const LAST_FROZEN = FROZEN_COLS[FROZEN_COLS.length - 1];
 const isFrozen = (k: string) => k in FROZEN_W;
+const isRight = (k: string) => k in RIGHT_W;
+const isPinned = (k: string) => isFrozen(k) || isRight(k);
+// Left offset = the widths of the frozen columns before `k`.
 const frozenLeft = (k: string): number => {
   let x = 0;
   for (const f of FROZEN_COLS) { if (f === k) return x; x += FROZEN_W[f]; }
   return 0;
 };
-// Sticky style for a frozen cell (zIndex 20 for the header, 10 for body cells so the header wins).
-const frozenStyle = (k: string, z: number): React.CSSProperties => ({
-  position: "sticky", left: frozenLeft(k), width: FROZEN_W[k], minWidth: FROZEN_W[k], maxWidth: FROZEN_W[k], zIndex: z,
-});
-// Opaque, theme-aware background so scrolled cells slide *under* the frozen column cleanly; the last
-// frozen column carries a divider. Body cells track row-hover via group-hover.
-const frozenCls = (k: string, body: boolean): string =>
-  `bg-[var(--background)] ${body ? "group-hover:bg-zinc-900" : ""} ${k === LAST_FROZEN ? "border-r border-zinc-800/80" : ""}`;
-// Header cells stick on BOTH axes — top (so the column labels stay put as rows scroll) and, for the
-// frozen leading columns, left. They sit above the body cells (z 30 frozen / 25 the rest) and carry
-// an opaque bg (frozenCls / the className below) so rows slide cleanly underneath.
+// Sticky style for a pinned cell — left-anchored (offset accrues) or right-anchored (flush). zIndex
+// lets the header win over the body.
+const pinnedStyle = (k: string, z: number): React.CSSProperties => {
+  const w = colW(k);
+  const base = { position: "sticky" as const, width: w, minWidth: w, maxWidth: w, zIndex: z };
+  return isFrozen(k) ? { ...base, left: frozenLeft(k) } : { ...base, right: 0 };
+};
+// Opaque, theme-aware background so scrolled cells slide *under* the pinned column cleanly, plus the
+// divider on the block's inner edge (right for the last frozen column, left for the right pin).
+const pinnedCls = (k: string, body: boolean): string => {
+  const divider = isFrozen(k) ? (k === LAST_FROZEN ? "border-r border-zinc-800/80" : "") : "border-l border-zinc-800/80";
+  return `bg-[var(--background)] ${body ? "group-hover:bg-zinc-900" : ""} ${divider}`;
+};
+// Header cells stick on BOTH axes — top (labels stay put as rows scroll) and, for pinned columns,
+// their edge. They sit above the body cells (z 30 pinned / 25 the rest) with an opaque bg.
 const headerStyle = (k: string): React.CSSProperties =>
-  isFrozen(k) ? { ...frozenStyle(k, 30), top: 0 } : { position: "sticky", top: 0, zIndex: 25 };
+  isPinned(k) ? { ...pinnedStyle(k, 30), top: 0 } : { position: "sticky", top: 0, zIndex: 25 };
 // Row actions per candidate state, PRIMARY FIRST — the first is the quick button, the rest fold
 // into a ⋯ menu. A queued row (fit_queue / tailoring) only offers Discard until CoWork writes back.
 const ACTIONS_BY_STATE: Record<string, ActionKey[]> = {
@@ -127,8 +133,8 @@ const TONE_TEXT: Record<string, string> = {
 const ACTION_META: Record<ActionKey, { label: string; tone: "emerald" | "rose" | "sky" | "amber"; title: string; icon?: typeof Bot; arrow?: boolean }> = {
   "queue-fit": { label: "Assess fit", tone: "sky", title: "Hand off to CoWork — assess fit → next stage", icon: Bot, arrow: true },
   tailor: { label: "Tailor", tone: "sky", title: "Hand off to CoWork — tailor a resume → next stage", icon: Bot, arrow: true },
-  apply: { label: "Mark applied", tone: "emerald", title: "Mark applied → moves to the tracker", arrow: true },
-  discard: { label: "Discard", tone: "rose", title: "Discard — won't resurface" },
+  apply: { label: "Mark applied", tone: "emerald", title: "Mark applied → moves to the tracker", icon: Check, arrow: true },
+  discard: { label: "Discard", tone: "rose", title: "Discard — won't resurface", icon: Trash2 },
 };
 
 // "Move to…" jumps a posting straight to any stage, OUT of sequence — surfaced in the ⋯ menu on every
@@ -227,7 +233,7 @@ function resumeLabel(dir: string): string {
 type SortDir = "asc" | "desc";
 type Sort = { key: string; dir: SortDir };
 // Columns that carry no orderable value — clicking their header does nothing.
-const UNSORTABLE = new Set(["act"]);
+const UNSORTABLE = new Set(["act", "sel"]);
 
 // A company's level ceiling on the normalized 1–10 scale — the top of its highest band. Used to
 // order the Lvl column; no ladder sinks to the bottom.
@@ -389,6 +395,20 @@ export default function Pipeline() {
   // Active spine step + its table state. Persisted so a refresh keeps you on the same step (start
   // from the default for a clean SSR/first render, then restore the saved step after mount).
   const [tab, setTab] = useState("fit");
+  // Bulk selection: the set of selected row ids (checkbox column). Cleared whenever the step changes
+  // so a selection never leaks across stages. The bulk-action bar (bottom-center) appears when non-empty.
+  const [selected, setSelected] = useState<Set<number>>(new Set());
+  useEffect(() => {
+    // Reacting to the step changing (an external value), not a cascading render off our own state.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setSelected(new Set());
+  }, [tab]);
+  const toggleSel = useCallback((id: number) => setSelected((s) => {
+    const n = new Set(s);
+    if (n.has(id)) n.delete(id); else n.add(id);
+    return n;
+  }), []);
+  const clearSel = useCallback(() => setSelected(new Set()), []);
   // Restore the persisted active step on mount. Start from the default for a clean SSR/first render,
   // then restore after mount (avoids a hydration mismatch). The filter chips restore similarly,
   // just below — after their state is declared.
@@ -739,6 +759,21 @@ export default function Pipeline() {
   const cellContent = (k: string, p: FRow): React.ReactNode => {
     const editing = editingId === p.id;
     switch (k) {
+      case "sel":
+        // Left gutter lives here (pl-3), NOT on the scroll container — so the frozen cell background
+        // reaches the true left edge and the scrolling columns can't show through beside it.
+        return (
+          <span className="flex pl-3 pt-1">
+            <input
+              type="checkbox"
+              checked={selected.has(p.id)}
+              onClick={(e) => e.stopPropagation()}
+              onChange={() => toggleSel(p.id)}
+              className="h-3.5 w-3.5 cursor-pointer accent-sky-500"
+              aria-label="Select row"
+            />
+          </span>
+        );
       case "company": {
         if (editing) return editInput("company", p, "company");
         const scanned = relAge(p.scannedAt);
@@ -864,6 +899,41 @@ export default function Pipeline() {
   // The scan-stage drawer edits persist by id through PATCH (works for any stage) and update the
   // drawer from the response; then we refresh the scan rows + counts so the funnel reflects it.
   const refreshScan = () => { loadRows(); loadCounts(terms); reload(); };
+
+  // --- Bulk actions over the selected rows ---
+  const visibleIds = (rows ?? []).map((r) => r.id);
+  const allSelected = visibleIds.length > 0 && visibleIds.every((id) => selected.has(id));
+  const someSelected = visibleIds.some((id) => selected.has(id));
+  const toggleAll = () => setSelected((s) => {
+    const n = new Set(s);
+    visibleIds.forEach((id) => (allSelected ? n.delete(id) : n.add(id)));
+    return n;
+  });
+  const afterBulk = () => { clearSel(); refreshScan(); };
+  // State changes go through /api/applications/:id (works for a posting in ANY stage), so one path
+  // covers discard + every "move to". Applied captures a single date for the whole batch.
+  const bulkPatch = async (body: Record<string, unknown>) => {
+    const ids = [...selected];
+    await Promise.all(ids.map((id) => fetch(`/api/applications/${id}`, { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify(body) }).catch(() => {})));
+    afterBulk();
+  };
+  const bulkMove = async (state: string) => {
+    let extra: Record<string, unknown> = {};
+    if (state === "applied") { const d = await askAppliedDate(); if (d === null) return; extra = { appliedDate: d }; }
+    else if (state === "interview") extra = { interviewed: true };
+    pendo.track("bulk_action", { action: `move:${state}`, count: selected.size, step: tab });
+    await bulkPatch({ status: state, ...extra });
+  };
+  const bulkDiscard = () => { pendo.track("bulk_action", { action: "discard", count: selected.size, step: tab }); return bulkPatch({ status: "dismissed" }); };
+  // CoWork hand-offs enqueue jobs, so they go through the scanned endpoint (which creates the fit/
+  // tailoring job); then pulse the queue.
+  const bulkHandoff = async (action: "queue-fit" | "tailor") => {
+    pendo.track("bulk_action", { action, count: selected.size, step: tab });
+    const ids = [...selected];
+    await Promise.all(ids.map((id) => fetch(`/api/scanned/${id}`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action }) }).catch(() => {})));
+    bump();
+    afterBulk();
+  };
   const scanEdit = async (id: string, body: Record<string, unknown>) => {
     const r = await fetch(`/api/applications/${id}`, { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify(body) }).catch(() => null);
     if (r?.ok) setScanPosting((await r.json()).posting ?? null);
@@ -1029,16 +1099,20 @@ export default function Pipeline() {
           </div>
         </div>
 
-        {/* The rows scroll here (both axes). The spine above is fixed chrome and the table header is
-            sticky-top, so only the body moves. px-6 lives on THIS scroll container so the frozen
-            sticky-left columns line up with the table; the top gutter is an inner pad (container
-            padding-top would leave a strip above the pinned header). */}
-        <div className="flex-1 overflow-auto px-6 pb-8">
+        {/* Closed collapses several outcomes — offer a per-status sub-filter. Kept OUT of the scroll
+            container below so it stays fixed instead of sliding horizontally with the table columns. */}
+        {tab === "closed" && closedPresent.length >= 2 && (
+          <div className="shrink-0 px-6 pt-4">
+            <ClosedFilter present={closedPresent} base={trackerBase} active={effClosed} onChange={setClosedFilter} />
+          </div>
+        )}
+        {/* The rows scroll here (both axes). The spine above is fixed chrome and the header is
+            sticky-top, so only the body moves. NO padding on this container: any pad anchors the
+            sticky columns inside it, leaving a strip the scrolling columns show through. The checkbox's
+            left gutter lives INSIDE its cell instead (see the "sel" cell), so the frozen background
+            still reaches x=0 and covers the scrolling content. */}
+        <div className="flex-1 overflow-auto pb-8">
           <div className="pt-4">
-            {/* Closed collapses several outcomes — offer a per-status sub-filter. */}
-            {tab === "closed" && closedPresent.length >= 2 && (
-              <ClosedFilter present={closedPresent} base={trackerBase} active={effClosed} onChange={setClosedFilter} />
-            )}
             {tableLoading ? (
               <div className="flex items-center gap-2 py-8 text-[13px] text-zinc-500"><Loader2 size={14} className="animate-spin" /> loading…</div>
             ) : empty ? (
@@ -1052,10 +1126,21 @@ export default function Pipeline() {
                         key={k}
                         width={colW(k)}
                         style={headerStyle(k)}
-                        className={isFrozen(k) ? frozenCls(k, false) : "bg-[var(--background)]"}
+                        className={isPinned(k) ? pinnedCls(k, false) : "bg-[var(--background)]"}
                         onSort={UNSORTABLE.has(k) ? undefined : () => toggleSort(k)}
                         sortDir={sort?.key === k ? sort.dir : null}
-                      >{FUNNEL_LABEL[k]}</ResTh>
+                      >{k === "sel"
+                        ? <span className="flex pl-3">
+                            <input
+                              type="checkbox"
+                              checked={allSelected}
+                              ref={(el) => { if (el) el.indeterminate = someSelected && !allSelected; }}
+                              onChange={toggleAll}
+                              className="h-3.5 w-3.5 cursor-pointer accent-sky-500"
+                              aria-label="Select all rows"
+                            />
+                          </span>
+                        : FUNNEL_LABEL[k]}</ResTh>
                     ))}
                   </tr>
                 </thead>
@@ -1069,8 +1154,9 @@ export default function Pipeline() {
                       {fcols.map((k) => (
                         <Td
                           key={k}
-                          style={isFrozen(k) ? frozenStyle(k, 10) : colStyle(k)}
-                          className={`${COL_CLASS[k] ?? ""} ${isFrozen(k) ? frozenCls(k, true) : ""}`}
+                          onClick={k === "sel" ? (e) => e.stopPropagation() : undefined}
+                          style={isPinned(k) ? pinnedStyle(k, 10) : colStyle(k)}
+                          className={`${COL_CLASS[k] ?? ""} ${isPinned(k) ? pinnedCls(k, true) : ""}`}
                         >{cellContent(k, p)}</Td>
                       ))}
                     </tr>
@@ -1140,6 +1226,17 @@ export default function Pipeline() {
       {diffSlug && <ResumeDiffModal key={diffSlug} slug={diffSlug} postingId={diffPostingId ?? undefined} redoNote={diffPostingId ? redoNoteFor(diffPostingId, "tailor") : null} annotated={diffAnnotated} title={diffSlug} onClose={() => { setDiffSlug(null); setDiffPostingId(null); setDiffAnnotated(undefined); }} />}
       {peerOpen && <PeerCompModal onClose={() => setPeerOpen(false)} />}
       {appliedAsk && <AppliedDateModal existing={appliedAsk.existing} onResolve={resolveApplied} />}
+      {selected.size > 0 && (
+        <BulkBar
+          count={selected.size}
+          candidate={!isTrackerStep(tab)}
+          onClear={clearSel}
+          onDiscard={bulkDiscard}
+          onAssess={() => bulkHandoff("queue-fit")}
+          onTailor={() => bulkHandoff("tailor")}
+          onMove={bulkMove}
+        />
+      )}
       {dropAsk && <DropTailoringModal company={dropAsk.company} role={dropAsk.role} target={dropAsk.target} onResolve={resolveDrop} />}
       {toast && (
         <div className="pointer-events-none fixed inset-x-0 bottom-6 z-50 flex justify-center px-4">
@@ -1188,6 +1285,53 @@ function DropTailoringModal({ company, role, target, onResolve }: { company: str
 // Captures the real applied date when a posting is moved to Applied. Two modes: a fresh prompt
 // (default today, Cancel aborts the move) and, when a date already exists, an update prompt that
 // lets you keep it or change it. Resolves with the chosen date, or null to cancel.
+// Floating bulk-action bar (bottom-center) shown while rows are selected. Hand-offs (Assess fit /
+// Tailor) only appear for candidate steps; "Move to" opens the same stage list as a row's ⋯ menu.
+function BulkBar({ count, candidate, onClear, onDiscard, onAssess, onTailor, onMove }: {
+  count: number; candidate: boolean; onClear: () => void; onDiscard: () => void; onAssess: () => void; onTailor: () => void; onMove: (state: string) => void;
+}) {
+  const [movePos, setMovePos] = useState<{ x: number; y: number } | null>(null);
+  return (
+    <div className="fixed bottom-6 left-1/2 z-40 -translate-x-1/2">
+      <div className="flex items-center gap-1.5 rounded-2xl border border-zinc-700 bg-zinc-900/95 px-3 py-2 shadow-2xl shadow-black/50 ring-1 ring-white/5 backdrop-blur">
+        <span className="rounded-lg bg-sky-500/15 px-2 py-1 text-[12px] font-semibold tabular-nums text-sky-200">{count} selected</span>
+        <span className="mx-0.5 h-5 w-px bg-zinc-700" />
+        {candidate && (
+          <>
+            <BulkBtn tone="sky" icon={Bot} onClick={onAssess}>Assess fit</BulkBtn>
+            <BulkBtn tone="sky" icon={Bot} onClick={onTailor}>Tailor</BulkBtn>
+          </>
+        )}
+        <BulkBtn tone="zinc" icon={ArrowRight} onClick={(e) => setMovePos(movePos ? null : anchorFrom(e))}>Move to</BulkBtn>
+        {movePos && (
+          <PopoverPanel at={movePos} onClose={() => setMovePos(null)} className="p-1">
+            <div className="flex flex-col gap-0.5">
+              {MOVE_TARGETS.map((t) => (
+                <button
+                  key={t.state}
+                  onClick={() => { onMove(t.state); setMovePos(null); }}
+                  className="whitespace-nowrap rounded-md px-2.5 py-1.5 text-left text-[13px] font-medium text-zinc-300 transition hover:bg-zinc-800"
+                >{t.label}</button>
+              ))}
+            </div>
+          </PopoverPanel>
+        )}
+        <BulkBtn tone="rose" icon={Trash2} onClick={onDiscard}>Discard</BulkBtn>
+        <button onClick={onClear} title="Clear selection" className="ml-0.5 rounded-lg p-1.5 text-zinc-500 transition hover:bg-zinc-800 hover:text-zinc-200"><X size={15} /></button>
+      </div>
+    </div>
+  );
+}
+
+function BulkBtn({ tone, icon: Icon, onClick, children }: { tone: "sky" | "rose" | "zinc"; icon: typeof Bot; onClick: (e: React.MouseEvent) => void; children: React.ReactNode }) {
+  const cls = tone === "sky" ? "text-sky-200 hover:bg-sky-500/15" : tone === "rose" ? "text-rose-200 hover:bg-rose-500/15" : "text-zinc-200 hover:bg-zinc-800";
+  return (
+    <button onClick={onClick} className={`inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-[12px] font-medium transition ${cls}`}>
+      <Icon size={13} />{children}
+    </button>
+  );
+}
+
 function AppliedDateModal({ existing, onResolve }: { existing?: string; onResolve: (d: string | null) => void }) {
   const today = new Date().toISOString().slice(0, 10);
   const [date, setDate] = useState(existing || today);
@@ -1668,12 +1812,11 @@ function ActionCell({ actions, state, fitDone, resumeDone, onAct, onMove, onEdit
   // tracker rows with no contextual quick action.
   // Exception: in the FIT stage triage is the whole job (queue vs. drop), so Discard rides along as a
   // second quick button — dropping a match is one click instead of a dig through the ⋯ menu. The
-  // action column (FROZEN_W.act) is sized for that two-button row; the wrapper also flex-wraps so a
-  // tight row stacks onto a second line rather than overflowing left into the Lvl column.
-  const isFit = STATE_STAGE[state] === "fit";
-  const inline = isFit && actions.includes("discard")
-    ? [...actions.slice(0, 1).filter((a) => a !== "discard"), "discard"] as ActionKey[]
-    : actions.slice(0, 1);
+  // action column is icon-only and pinned to the right edge (RIGHT_W.act); the wrapper flex-wraps as
+  // a backstop if a row ever carries more than a couple of quick actions.
+  // Only Discard is a one-click quick action now; every other action lives in the ⋯ menu, and bulk
+  // selection handles the rest across many rows at once.
+  const inline = actions.includes("discard") ? (["discard"] as ActionKey[]) : [];
   // Queue hand-offs get their own section, so keep them out of the generic secondary list.
   const more = actions.filter((a) => !inline.includes(a) && !QUEUE_KEYS.includes(a));
   // On candidate rows, offer both queue hand-offs — minus whichever is already the inline quick button.
@@ -1686,8 +1829,9 @@ function ActionCell({ actions, state, fitDone, resumeDone, onAct, onMove, onEdit
       {inline.map((a) => {
         const m = ACTION_META[a];
         const I = m.icon;
+        // Icon-only (label is the tooltip) so the column stays compact enough to pin to the right edge.
         return (
-          <Btn key={a} tone={m.tone} onClick={() => onAct(a)} title={m.title}>{I && <I size={12} className="-ml-0.5" />}{m.label}{m.arrow && <ArrowRight size={12} className="-mr-0.5" />}</Btn>
+          <Btn key={a} tone={m.tone} onClick={() => onAct(a)} title={m.title}>{I ? <I size={14} /> : m.label}</Btn>
         );
       })}
       {hasMenu && (
@@ -1776,6 +1920,6 @@ function NewTag() {
   );
 }
 
-function Td({ children, className, style }: { children?: React.ReactNode; className?: string; style?: React.CSSProperties }) {
-  return <td style={style} className={`border-b border-zinc-900 px-2.5 py-2.5 align-top first:pl-0 ${className ?? ""}`}>{children}</td>;
+function Td({ children, className, style, onClick }: { children?: React.ReactNode; className?: string; style?: React.CSSProperties; onClick?: (e: React.MouseEvent) => void }) {
+  return <td onClick={onClick} style={style} className={`border-b border-zinc-900 px-2.5 py-2.5 align-top first:pl-0 ${className ?? ""}`}>{children}</td>;
 }
