@@ -15,14 +15,13 @@
     "diagram:pipeline": "tsx scripts/gen-pipeline-diagram.ts",
     "backup": "node scripts/backup-db.mjs",
     "purge:nonlocal": "tsx scripts/purge-nonlocal.ts",
+    "tailor:docx": "node --import tsx scripts/tailor-docx.ts",
     "levels:scrape": "node scripts/levels-scrape.mjs",
     "test": "node --import tsx --test tests/*.test.ts",
     "check": "npm run typecheck && npm test",
-    "linkedin:login": "node scripts/linkedin-login.mjs",
     "prepare": "git config core.hooksPath .githooks || true"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.105.0",
     "better-sqlite3": "^12.11.1",
     "drizzle-orm": "^0.45.2",
     "googleapis": "^173.0.0",
@@ -37,7 +36,6 @@
     "remark-gfm": "^4.0.1"
   },
   "devDependencies": {
-    "@playwright/mcp": "^0.0.77",
     "@tailwindcss/postcss": "^4",
     "@types/better-sqlite3": "^7.6.13",
     "@types/mailparser": "^3.4.6",

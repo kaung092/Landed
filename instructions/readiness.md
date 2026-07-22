@@ -25,6 +25,17 @@ edits and any `closed` history. Never rewrite from scratch or drop rows.
   live here: **verbatim transcripts** (`transcript-*.md`) and **my hand-typed notes**
   (`notes-*.md`, when I couldn't capture a transcript during the call). Treat both as primary; weight
   a verbatim transcript higher than terse notes, and don't over-read gaps into thin notes.
+- **Every** file under `interview-prep/GLOBAL/mock-interviews/*` (`session-*.md`) — my **mock-interview
+  practice** sessions, pushed here from a separate mock-practice chat (via the `logMockInterview` MCP
+  tool). Cross-company, not tied to any one loop. Each has freeform notes and often a `## Gaps surfaced`
+  list — a primary source of real, specific weaknesses. Reconcile their gaps into the gap ledger the
+  same way as transcripts (dedupe / severity / never-delete).
+- **Every** file under `interview-prep/GLOBAL/career/**` — my **whole Obsidian Career vault** (`.md`,
+  synced in via a symlink; the vault owns the writes, so treat them as read-only). It holds my
+  **latest** STAR answers (under `career/Interview Prep - Behavioral/*` — weight these over stale
+  `stories.md` rows), plus **project write-ups** (`career/Projects (…)/*`), **trade-off notes**
+  (`career/Trade-offs/*`), backend/SE notes, and my resume. Treat the project/trade-off/SE notes as
+  part of the **experience corpus** (what I actually have) alongside `GLOBAL/experience/*`.
 - **Every** `interview-prep/*/context.md` — per-company loop, rounds, dates, fit gaps, JD. Use these
   for interview demands and the upcoming-interviews sweep.
 - `interview-prep/GLOBAL/experience/*` + the base resume under `resume/` — what I actually have.
@@ -38,8 +49,10 @@ list docs in that folder, `read_file_content` per doc, and **write a snapshot** 
 `interview-prep/GLOBAL/experience/<doc-title>.md`. Google Docs stays the source of truth — **read
 only, never write back**. Update the header's folder name + last-synced date.
 
-### 2. "Update my readiness" (from transcripts)
-1. Read all `transcripts/*` (verbatim transcripts **and** my hand-typed `notes-*.md`) + all `context.md`.
+### 2. "Update my readiness" (from transcripts + mock practice + my latest answers)
+1. Read all `transcripts/*` (verbatim transcripts **and** my hand-typed `notes-*.md`), all
+   `GLOBAL/mock-interviews/session-*.md`, all of `GLOBAL/career/**` (esp. `Interview Prep - Behavioral/*`
+   for latest answers; projects/trade-offs for the experience corpus), and all `context.md`.
 2. **Sweep upcoming interviews** into `readiness.md`'s table — only **active** loops (pending rounds
    with a date, soonest first, with days-out). A company that's **rejected / withdrawn / ghosted /
    closed** (per its `context.md` status) drops **off** this table — it's no longer upcoming.
@@ -50,11 +63,13 @@ only, never write back**. Update the header's folder name + last-synced date.
    - **Dedupe** against existing rows — if a gap already exists, update its evidence/severity/status
      rather than adding a duplicate. Find missing-experience gaps by comparing interview demands
      against the experience corpus.
-   - Cite **evidence** (which transcript · date). Set `severity` and `status`. **Never delete rows** —
-     mark resolved ones `closed` (keep the history).
+   - Cite **evidence** (which transcript / mock session · date). Set `severity` and `status`. **Never
+     delete rows** — mark resolved ones `closed` (keep the history).
 4. **Reconcile the story bank** (`stories.md`): for each behavioral-story gap, is there a matching
    story? Flag `needs-metric` / `draft`, and add `missing` rows for competencies I get asked about
-   with no story. Draw stories from the experience corpus.
+   with no story. Draw stories from the experience corpus **and my latest answers in
+   `GLOBAL/career/Interview Prep - Behavioral/*`** — when a behavioral note supersedes a story row,
+   update the row to match my current answer (don't leave a stale version).
 5. Update the header's last-assessed date.
 
 **Rejected / closed loops — keep the lessons.** When a company's loop ends in a rejection (or

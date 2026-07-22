@@ -24,6 +24,7 @@
 //   upsertCompanies   → add/update company records (tier + scrape config)
 //   addToWatchlist / removeFromWatchlist → manage the discovery scan list (separate concern)
 //   updateApplication → manual posting corrections
+//   logMockInterview  → capture a mock-interview session into interview-prep/GLOBAL/mock-interviews/
 // The job queue + ledger now live in the app's DB; the agent-jobs/ and app-export/ files
 // are retired. Resume bundles in resume/<slug>/ stay on disk by design (binary artifacts).
 
@@ -414,7 +415,7 @@ const TOOLS = [
     description:
       "Hand a job's result back to the app — the write path that REPLACES dropping a " +
       "results/<id>.json file. `type` is the job type (discovery | inbox-sync | fit | " +
-      "tailoring | prep | prep-research | interview-brief | interview-emails); `records` is the array of result records (fields per that job's " +
+      "tailoring | prep | prep-research | interview-brief | interview-emails | peer-comp); `records` is the array of result records (fields per that job's " +
       "playbook Output section). Omit `jobId` for a self-initiated run (the app synthesizes " +
       "a ledger entry); pass it when fulfilling an app-queued job. **You must hold a live claim on " +
       "that job (via claimNext/claimJob) — the app REJECTS a submit for a job you haven't claimed or " +
@@ -425,7 +426,7 @@ const TOOLS = [
       properties: {
         type: {
           type: "string",
-          description: "Job type: discovery | inbox-sync | fit | tailoring | prep | prep-research | interview-brief | interview-emails.",
+          description: "Job type: discovery | inbox-sync | fit | tailoring | prep | prep-research | interview-brief | interview-emails | peer-comp.",
         },
         records: {
           type: "array",
@@ -540,7 +541,7 @@ const TOOLS = [
     inputSchema: {
       type: "object",
       properties: {
-        type: { type: "string", description: "Job type: discovery | inbox-sync | fit | tailoring | prep | prep-research | interview-brief | interview-emails." },
+        type: { type: "string", description: "Job type: discovery | inbox-sync | fit | tailoring | prep | prep-research | interview-brief | interview-emails | peer-comp." },
         params: {
           type: "object",
           description: "Job input, e.g. { postings: [{ company, role, url, jd }] } for a fit job.",
@@ -641,6 +642,39 @@ const TOOLS = [
       additionalProperties: false,
     },
     run: async (args) => apiSend("DELETE", `/api/watchlist?company=${encodeURIComponent(args.company)}`),
+  },
+  {
+    name: "logMockInterview",
+    description:
+      "Log one mock-interview practice session into the cross-company readiness layer " +
+      "(interview-prep/GLOBAL/mock-interviews/). Pass the session's freeform `notes` and, if known, " +
+      "the `gaps` it surfaced ({ area, detail, severity? }). Optional `title` heads the file. Capture " +
+      "only — each call writes a fresh numbered session file; the readiness chat (readiness.md) " +
+      "reconciles the gaps into the GLOBAL gap ledger. Returns the saved file's metadata.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        notes: { type: "string", description: "Freeform notes / recap of the mock session (required)." },
+        gaps: {
+          type: "array",
+          description: "Weaknesses the session surfaced (optional).",
+          items: {
+            type: "object",
+            properties: {
+              area: { type: "string", description: "Short tag, e.g. \"system-design\", \"behavioral\", \"coding\"." },
+              detail: { type: "string", description: "The specific miss." },
+              severity: { type: "string", description: "low | medium | high (optional)." },
+            },
+            required: ["area", "detail"],
+            additionalProperties: false,
+          },
+        },
+        title: { type: "string", description: "Optional H1 title for the session file, e.g. \"System design mock — 2026-07-10\"." },
+      },
+      required: ["notes"],
+      additionalProperties: false,
+    },
+    run: async (args) => apiSend("POST", "/api/prep/global/mock-interview", args),
   },
 ];
 
@@ -770,7 +804,7 @@ function startStdio() {
     inputEnded = true;
     maybeExit();
   });
-  log(`started; thread ${THREAD_ID} (pid ${process.pid}); ${TOOLS.length} tools (7 read + 2 scan + 6 write); backing ${BASE_URL}`);
+  log(`started; thread ${THREAD_ID} (pid ${process.pid}); ${TOOLS.length} tools (7 read + 2 scan + 7 write); backing ${BASE_URL}`);
 }
 
 // Only start the stdio server when launched directly (`node jobhunt-server.mjs`). Importing this

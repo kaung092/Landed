@@ -94,6 +94,14 @@ export type InterviewBrief = {
   materials?: string[]; // which materials fed this version (e.g. "recruiter transcript", "JD", "2 emails")
 };
 
+// The peer-comp comparison — one generated markdown artifact (the 6-column table + synthesis across
+// the roles you're actively interviewing for). GLOBAL and latest-only: generated inline from your
+// stored data (a direct Claude call) and kept as the latest in app_config.
+export type PeerComp = {
+  generatedAt: string; // ISO
+  markdown: string; // the full comparison table + synthesis, as markdown (GFM)
+};
+
 // One interview round in the "interviewing" stage — extracted from inbox-sync (scheduling /
 // outcome emails) into the `interviews` table, one row per round. `kind` is a coarse type so the
 // drawer can label and order rounds; `outcome` drives the current/upcoming highlight.

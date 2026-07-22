@@ -52,11 +52,41 @@ is the rare exception (see 2c). Work every zone below for every posting.
    (ii) each role's bullets were reworded into the JD's vocabulary (or, for any bullet kept as-is,
    the diff comment says why no truthful keyword applied); (iii) nothing fabricated.
 
-5. Save to the **exact folder the app gives you** — `resume/<params.postings[].slug>/` — with
-   **generic filenames** (`resume.docx` and `resume.pdf`). The app dictates the slug
-   (a versioned path like `databricks-senior-123/v2`); **don't invent your own** — write to the
-   one in `params` and echo it back unchanged. Each redo is a new `v<N>` folder, so a prior
-   version's files are never overwritten.
+5. **Produce the files with the `tailor:docx` helper — do NOT hand-edit `document.xml`.** Word
+   splits one visible sentence across several runs (the base résumé's "…built a 0" | "→" |
+   "1 full-stack product…"), so string-searching the raw XML for a phrase misses any match that
+   straddles a run — that's the trap that used to send this job probing byte offsets and corrupting
+   the file. The helper matches against each paragraph's *concatenated* text, applies your edits,
+   and renders the PDF with LibreOffice. Express your tailoring as `{find, replace}` pairs:
+   `find` is text copied **verbatim from the base résumé** (read it with `--text`), `replace` is your
+   tailored line.
+
+   ```bash
+   # 1. Read the base résumé as plain text to copy exact `find` strings from:
+   npm run tailor:docx -- "$ASSET_ROOT/resume/resume-ref.docx" --text
+
+   # 2. Write your edits, then build resume.docx + resume.pdf into the app's slug folder:
+   #    edits.json = [{ "find": "<verbatim base line>", "replace": "<tailored line>" }, ...]
+   npm run tailor:docx -- "$ASSET_ROOT/resume/resume-ref.docx" \
+       "$ASSET_ROOT/resume/<slug>" edits.json
+   ```
+
+   Save to the **exact folder the app gives you** — `resume/<params.postings[].slug>/` — with the
+   **generic filenames** the helper writes (`resume.docx`, `resume.pdf`). The app dictates the slug
+   (a versioned path like `databricks-senior-123/v2`); **don't invent your own** — pass the one in
+   `params` and echo it back unchanged. Each redo is a new `v<N>` folder, so a prior version's files
+   are never overwritten.
+
+   Rules the helper enforces for you, so respect them:
+   - **Every `find` must match, or nothing is written.** It prints `✓`/`✗ MISSED` per edit and exits
+     non-zero if any `find` is absent. A miss means your `find` isn't verbatim — re-copy it from the
+     `--text` dump (watch for the em-dash `→`, double spaces, and `&`), don't force it.
+   - **The PDF comes from LibreOffice** (`soffice`), which reads the template's real formatting, so
+     it matches the `.docx`. It builds in a temp dir and copies fresh files in (ASSET_ROOT is
+     cloud-synced — an in-place overwrite corrupts). **Never** reach for
+     `fpdf`/`reportlab`/`weasyprint`/`pandoc`; if `soffice` is genuinely missing, say so in your
+     result rather than improvising a renderer.
+   - **The base résumé renders to 3 pages — that is correct, not an overflow bug.** Don't "fix" it.
 
 ### Redos (when the task carries a prior conversation)
 

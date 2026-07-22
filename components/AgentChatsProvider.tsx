@@ -149,6 +149,9 @@ export default function AgentChatsProvider({ children }: { children: React.React
         }
         break;
       }
+      case "note":
+        pushNote(type, String(e.text ?? ""));
+        break;
       case "exit":
         if (e.code && e.code !== 0) pushNote(type, `agent exited (code ${e.code})`, true);
         break;
@@ -175,38 +178,68 @@ export default function AgentChatsProvider({ children }: { children: React.React
       if (message) entries.push({ id: nextId(), role: "user", text: message });
       return { ...c, running: true, entries, ...(freshDrain ? { sessionId: null, contextTokens: undefined } : {}) };
     });
+    // One connection to the run: consume the SSE stream until it ends. Returns whether the server
+    // closed it cleanly (an `exit` frame) or the stream just dropped — the run is DECOUPLED from this
+    // request (see the route), so a drop usually means the dev server recompiled, not that the agent
+    // stopped. `gotData` lets the caller reset its retry budget when a reconnect made real progress.
+    const runOnce = async (payload: Record<string, unknown>): Promise<{ ended: boolean; gotData: boolean }> => {
+      const res = await fetch("/api/agents/live", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(payload),
+        signal: ac.signal,
+      });
+      if (res.status === 204) return { ended: true, gotData: false }; // attach: the run already finished
+      if (!res.ok || !res.body) {
+        const err = await res.json().catch(() => ({}));
+        pushNote(type, err.error || `failed to start (${res.status})`, true);
+        return { ended: true, gotData: false };
+      }
+      const reader = res.body.getReader();
+      const dec = new TextDecoder();
+      let buf = "";
+      let ended = false;
+      let gotData = false;
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buf += dec.decode(value, { stream: true });
+        let idx: number;
+        while ((idx = buf.indexOf("\n\n")) >= 0) {
+          const frame = buf.slice(0, idx);
+          buf = buf.slice(idx + 2);
+          const dataLine = frame.split("\n").find((l) => l.startsWith("data:"));
+          if (!dataLine) continue;
+          try {
+            const ev = JSON.parse(dataLine.slice(5).trim());
+            gotData = true;
+            if (ev.kind === "exit") ended = true; // the server closed the stream on purpose (run done)
+            handleEvent(type, ev);
+          } catch { /* skip malformed */ }
+        }
+      }
+      return { ended, gotData };
+    };
+
     (async () => {
       try {
-        const res = await fetch("/api/agents/live", {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          // Resume the conversation ONLY when steering (a typed message). A bare "Work queue" drain
-          // starts a FRESH session — otherwise it tries to resume a stored sessionId that may no longer
-          // exist on Claude's side (after a restart), which fails with "No conversation found" and the
-          // agent can't start at all. (The server mints + returns a new id, which we then store.)
-          body: JSON.stringify({ type, message, sessionId: message ? (chatsRef.current[type]?.sessionId ?? undefined) : undefined }),
-          signal: ac.signal,
-        });
-        if (!res.ok || !res.body) {
-          const err = await res.json().catch(() => ({}));
-          pushNote(type, err.error || `failed to start (${res.status})`, true);
-          return;
-        }
-        const reader = res.body.getReader();
-        const dec = new TextDecoder();
-        let buf = "";
+        // Resume the conversation ONLY when steering (a typed message). A bare "Work queue" drain
+        // starts a FRESH session — otherwise it tries to resume a stored sessionId that may no longer
+        // exist on Claude's side (after a restart), which fails with "No conversation found" and the
+        // agent can't start at all. (The server mints + returns a new id, which we then store.)
+        let payload: Record<string, unknown> = { type, message, sessionId: message ? (chatsRef.current[type]?.sessionId ?? undefined) : undefined };
+        let retries = 0;
         for (;;) {
-          const { done, value } = await reader.read();
-          if (done) break;
-          buf += dec.decode(value, { stream: true });
-          let idx: number;
-          while ((idx = buf.indexOf("\n\n")) >= 0) {
-            const frame = buf.slice(0, idx);
-            buf = buf.slice(idx + 2);
-            const dataLine = frame.split("\n").find((l) => l.startsWith("data:"));
-            if (!dataLine) continue;
-            try { handleEvent(type, JSON.parse(dataLine.slice(5).trim())); } catch { /* skip malformed */ }
-          }
+          const { ended, gotData } = await runOnce(payload);
+          if (ended || ac.signal.aborted) break;
+          // The stream dropped without an `exit` (dev-server recompile cut it). The detached run
+          // survives — reconnect and keep watching it. `attach` NEVER respawns: if the run has since
+          // finished, the server answers 204 and we stop.
+          if (gotData) retries = 0;
+          if (++retries > 60) break; // safety bound against a reload storm
+          await new Promise((r) => setTimeout(r, 400));
+          if (ac.signal.aborted) break;
+          payload = { type, action: "attach" };
         }
       } catch (err) {
         if ((err as Error).name !== "AbortError") pushNote(type, String((err as Error).message ?? err), true);
@@ -223,11 +256,18 @@ export default function AgentChatsProvider({ children }: { children: React.React
   const stop = useCallback((type: string) => {
     aborts.current[type]?.abort();
     aborts.current[type] = null;
+    // Aborting the fetch only stops US watching — the run is detached, so it keeps going. Tell the
+    // server to actually kill it (fire-and-forget).
+    fetch("/api/agents/live", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ type, action: "stop" }) }).catch(() => {});
     patch(type, (c) => ({ ...c, running: false }));
   }, [patch]);
 
   const clear = useCallback((type: string) => {
     aborts.current[type]?.abort();
+    aborts.current[type] = null;
+    // Eraser = wipe this agent: kill any live run AND delete its on-disk journal, on top of the
+    // local transcript + session id.
+    fetch("/api/agents/live", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ type, action: "clear" }) }).catch(() => {});
     setChats((prev) => { const n = { ...prev }; delete n[type]; return n; });
     try { localStorage.removeItem(ENTRIES_PREFIX + type); localStorage.removeItem(SESSION_PREFIX + type); } catch { /* ignore */ }
   }, []);

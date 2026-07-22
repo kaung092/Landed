@@ -307,6 +307,12 @@ export default function Pipeline() {
     setWatchlist, setField, renameCompany, moveJob, deleteJob,
   } = useApplications();
   const { jobs, add, bump, redoNoteFor, isWorking } = useCoWorkQueue();
+  // Moving a posting into "Applied" opens a small prompt to capture (or update) the real applied
+  // date — kept distinct from the status change itself. `askAppliedDate` resolves with the chosen
+  // date, or null if the user cancels (which aborts the whole move).
+  const [appliedAsk, setAppliedAsk] = useState<{ existing?: string; resolve: (d: string | null) => void } | null>(null);
+  const askAppliedDate = (existing?: string) => new Promise<string | null>((resolve) => setAppliedAsk({ existing, resolve }));
+  const resolveApplied = (d: string | null) => { setAppliedAsk((cur) => { cur?.resolve(d); return null; }); };
   // Whether an inbox-sync job is already outstanding (queued or claimed) — one at a time is enough.
   // `syncing` covers the gap between clicking and the queue re-fetch so a fast double-click can't
   // stack two jobs; it clears once the queued job actually shows up.
@@ -579,6 +585,16 @@ export default function Pipeline() {
   // leaves its old stage and lands in the new one.
   const moveTo = async (p: FRow, state: string) => {
     if (p.state === state) return;
+    // Applied is special: capture the real applied date (or confirm/keep an existing one) before we
+    // move. Cancelling the prompt aborts the move entirely.
+    let extra: Record<string, unknown> = {};
+    if (state === "applied") {
+      const date = await askAppliedDate(p.appliedDate);
+      if (date === null) return;
+      extra = { appliedDate: date };
+    } else if (state === "interview") {
+      extra = { interviewed: true };
+    }
     pendo.track("candidate_moved_to_stage", {
       posting_id: p.id,
       company: p.company,
@@ -588,16 +604,26 @@ export default function Pipeline() {
       target_stage: MOVE_TARGETS.find((t) => t.state === state)?.label,
     });
     setScanRows((rs) => (rs ? rs.filter((r) => r.id !== p.id) : rs)); // optimistic for scan-stage rows
-    const extra: Record<string, unknown> =
-      state === "applied" && !p.appliedDate ? { appliedDate: new Date().toISOString().slice(0, 10) }
-        : state === "interview" ? { interviewed: true }
-        : {};
     const r = await fetch(`/api/applications/${p.id}`, {
       method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ status: state, ...extra }),
     }).catch(() => null);
     if (!r || !r.ok) { loadRows(); return; } // failed — reconcile the active scan table from the server
     loadCounts(terms);
     reload(); // refresh the tracker postings — the row may now live in a tracker step (the open scan table is already updated optimistically)
+  };
+
+  // Drawer stage selector for tracker postings. Same as the hook's setStatus, but gates the move to
+  // Applied behind the applied-date prompt so the date is captured (or updated), never silently
+  // stamped to today.
+  const setStatusGuarded = async (p: Posting, to: Status) => {
+    if (p.status === to) return;
+    if (to === "applied") {
+      const date = await askAppliedDate(p.appliedDate);
+      if (date === null) return;
+      setStatus(p, to, { appliedDate: date });
+    } else {
+      setStatus(p, to);
+    }
   };
 
   // Pin/unpin a posting → it floats to the top of its stage table. Tracker rows go through the
@@ -990,7 +1016,7 @@ export default function Pipeline() {
           c={companyGroup}
           focusId={selectedJobId}
           onClose={closeDrawer}
-          onSetStatus={setStatus}
+          onSetStatus={setStatusGuarded}
           onSetInterviewed={setInterviewed}
           onTier={(tier) => setCompanyTier(companyGroup.company, tier)}
           onToggleWatchlist={(on) => setWatchlist(companyGroup.company, on)}
@@ -1018,11 +1044,15 @@ export default function Pipeline() {
           c={scanAgg}
           focusId={scanPosting.id}
           onClose={() => setScanPosting(null)}
-          onSetStatus={(p, status) => scanEdit(p.id, {
-            status,
-            ...(status === "applied" && !p.appliedDate ? { appliedDate: new Date().toISOString().slice(0, 10) }
-              : status === "interview" && !p.interviewed ? { interviewed: true } : {}),
-          })}
+          onSetStatus={async (p, status) => {
+            if (status === "applied") {
+              const date = await askAppliedDate(p.appliedDate);
+              if (date === null) return;
+              scanEdit(p.id, { status, appliedDate: date });
+            } else {
+              scanEdit(p.id, { status, ...(status === "interview" && !p.interviewed ? { interviewed: true } : {}) });
+            }
+          }}
           onSetInterviewed={(p, on) => scanEdit(p.id, { interviewed: on })}
           onTier={(tier) => scanEdit(scanPosting.id, { tier })}
           onToggleWatchlist={(on) => { setWatchlist(scanPosting.company, on); setScanPosting((cur) => (cur ? { ...cur, watchlist: on } : cur)); }}
@@ -1036,6 +1066,54 @@ export default function Pipeline() {
 
       {diffSlug && <ResumeDiffModal key={diffSlug} slug={diffSlug} postingId={diffPostingId ?? undefined} redoNote={diffPostingId ? redoNoteFor(diffPostingId, "tailor") : null} annotated={diffAnnotated} title={diffSlug} onClose={() => { setDiffSlug(null); setDiffPostingId(null); setDiffAnnotated(undefined); }} />}
       {peerOpen && <PeerCompModal onClose={() => setPeerOpen(false)} />}
+      {appliedAsk && <AppliedDateModal existing={appliedAsk.existing} onResolve={resolveApplied} />}
+    </div>
+  );
+}
+
+// Captures the real applied date when a posting is moved to Applied. Two modes: a fresh prompt
+// (default today, Cancel aborts the move) and, when a date already exists, an update prompt that
+// lets you keep it or change it. Resolves with the chosen date, or null to cancel.
+function AppliedDateModal({ existing, onResolve }: { existing?: string; onResolve: (d: string | null) => void }) {
+  const today = new Date().toISOString().slice(0, 10);
+  const [date, setDate] = useState(existing || today);
+  const isUpdate = !!existing;
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onResolve(null); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onResolve]);
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4" onClick={() => onResolve(null)}>
+      <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" />
+      <div className="relative w-full max-w-sm rounded-2xl border border-zinc-800 bg-zinc-950 p-5 shadow-2xl" onClick={(e) => e.stopPropagation()}>
+        <h3 className="text-[15px] font-semibold text-zinc-100">{isUpdate ? "Update applied date?" : "When did you apply?"}</h3>
+        <p className="mt-1 text-[12px] text-zinc-500">
+          {isUpdate ? <>Already marked applied on <span className="tabular-nums text-zinc-300">{existing}</span>. Change the date, or keep it.</> : "Set the date this application was submitted."}
+        </p>
+        <input
+          type="date"
+          value={date}
+          max={today}
+          autoFocus
+          onChange={(e) => setDate(e.target.value)}
+          className="mt-3 w-full rounded-lg bg-zinc-900 px-3 py-2 text-[13px] text-zinc-100 outline-none ring-1 ring-inset ring-zinc-800 [color-scheme:dark] focus:ring-sky-500/40"
+        />
+        <div className="mt-4 flex justify-end gap-2">
+          {isUpdate ? (
+            <button onClick={() => onResolve(existing!)} className="rounded-lg px-3 py-1.5 text-[13px] text-zinc-400 transition hover:text-zinc-200">Keep {existing}</button>
+          ) : (
+            <button onClick={() => onResolve(null)} className="rounded-lg px-3 py-1.5 text-[13px] text-zinc-400 transition hover:text-zinc-200">Cancel</button>
+          )}
+          <button
+            onClick={() => date && onResolve(date)}
+            disabled={!date}
+            className="rounded-lg bg-sky-600 px-3 py-1.5 text-[13px] font-medium text-white transition hover:bg-sky-500 disabled:opacity-40"
+          >
+            {isUpdate ? "Update" : "Save"}
+          </button>
+        </div>
+      </div>
     </div>
   );
 }

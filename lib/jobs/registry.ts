@@ -6,12 +6,14 @@ import { logEvent, enqueueUnboundResult } from "@/lib/db/queries";
 import { reconcile } from "@/lib/agents/reconcile";
 import { incomingFromInboxRecords } from "@/lib/agents/sources/inbox";
 import { canonical, norm } from "@/lib/agents/canonical";
-import { ingestPrepRecords, ingestPrepResearch, companySlug } from "@/lib/db/prep";
+import { ingestPrepRecords, ingestPrepResearch, ingestLeetcodeAdd, companySlug } from "@/lib/db/prep";
 import { exportPrepContextFor, exportQuestionsFor } from "@/lib/prep/export-context";
 import { str, num } from "@/lib/coerce";
 import { parseRedoLog, nextVersion } from "./redolog";
 import { parseBriefs, nextBriefVersion, coerceGaps, coerceSourced } from "./briefs";
 import { ingestFitLabResult } from "@/lib/fitlab/ingest";
+import { gatherPeerInputs, renderRoster } from "@/lib/peercomp/inputs";
+import { setPeerComp } from "./peercomps";
 import { coerceDiff } from "@/lib/linediff";
 import type { FitAssessment, InterviewBrief, RedoTurn } from "@/lib/types";
 import type { ChangeDetail, ReconcileResult } from "@/lib/agents/types";
@@ -176,6 +178,19 @@ function ingestInterviewBrief(records: ResultRecord[], dryRun?: boolean): Reconc
   });
 }
 
+// peer-comp record: ONE { markdown } — the full comp comparison (6-column table + prose synthesis)
+// CoWork produced across every actively-interviewing role. GLOBAL (not tied to a posting), so it
+// doesn't use ingestCandidateUpdates: just persist the markdown as the latest artifact in app_config
+// (latest-only, overwrites). See lib/jobs/peercomps.ts.
+function ingestPeerComp(records: ResultRecord[], dryRun?: boolean): ReconcileResult {
+  const markdown = records.map((r) => str(r.markdown)).find(Boolean);
+  if (!markdown) {
+    return { inserted: 0, updated: 0, fieldChanges: 0, flagged: 0, pending: 0, newCompanies: 0, summary: "no peer-comp markdown in result", details: [] };
+  }
+  if (!dryRun) setPeerComp(markdown, new Date().toISOString());
+  return { inserted: 0, updated: 1, fieldChanges: 1, flagged: 0, pending: 0, newCompanies: 0, summary: "peer-comp comparison updated", details: [{ action: "update", summary: "peer-comp comparison updated" }] };
+}
+
 // prep record: { leetcodeNum?|name, status, durationSec?, notes?, noted?, redo?, ... }.
 // CoWork logged a coding practice attempt; ingestPrepRecords resolves it to a catalog
 // question (or inserts a new one) and appends the attempt. Doesn't touch applications.
@@ -193,6 +208,22 @@ function ingestPrep(records: ResultRecord[], dryRun?: boolean): ReconcileResult 
     pending: 0,
     newCompanies: 0,
     summary: parts.join(", ") || "no prep changes",
+    details: r.details,
+  };
+}
+
+// leetcode-add record: { id, name?, difficulty?, topic?|pattern?, leetcodeNum? }. CoWork resolved a
+// manually-added stub's real name/difficulty/topic from its URL; ingestLeetcodeAdd fills the row by id.
+function ingestLeetcodeAddJob(records: ResultRecord[], dryRun?: boolean): ReconcileResult {
+  const r = ingestLeetcodeAdd(records, dryRun);
+  return {
+    inserted: 0,
+    updated: r.enriched,
+    fieldChanges: r.enriched,
+    flagged: 0,
+    pending: 0,
+    newCompanies: 0,
+    summary: r.enriched ? `${r.enriched} leetcode question${r.enriched === 1 ? "" : "s"} enriched` : "no leetcode changes",
     details: r.details,
   };
 }
@@ -261,44 +292,6 @@ function ingestDiscovered(source: string) {
   };
 }
 
-// Ingest for the linkedin-import source: an agent fetched full JDs from a LinkedIn recommended/
-// collection feed (see linkedin-import.md) and submits one record per job — same landing as a scan
-// (fit_queue posting, company created on the fly), but we ALSO persist the JD + comp so fit/tailoring
-// reuse it without re-fetching. Deduped by url, else company+title.
-function ingestLinkedinImport(records: ResultRecord[], dryRun?: boolean): ReconcileResult {
-  const details: ChangeDetail[] = [];
-  let inserted = 0, updated = 0, newCompanies = 0;
-  for (const r of records) {
-    const company = str(r.company) ?? "";
-    const key = canonical(company)?.key;
-    const role = str(r.role) ?? str(r.title) ?? "(untitled)";
-    if (!key) { details.push({ action: "skip", summary: `LinkedIn import — no company for "${role}", skipped` }); continue; }
-    const url = str(r.url);
-    const jd = str(r.jd) ?? str(r.description);
-    const comp = str(r.salary) ?? str(r.comp);
-    const location = str(r.location);
-    let co = db.select().from(companies).all().find((c) => canonical(c.name)?.key === key);
-    if (!co) {
-      if (dryRun) { details.push({ action: "insert", summary: `${company} — ${role} · would import (new company) → fit queue` }); inserted++; newCompanies++; continue; }
-      const ts = new Date().toISOString();
-      co = db.insert(companies).values({ name: company, tier: "tier3", createdAt: ts, updatedAt: ts }).returning().get();
-      newCompanies++;
-    }
-    const list = db.select().from(postings).where(eq(postings.companyId, co.id)).all();
-    const existing = (url ? list.find((c) => c.url === url) : undefined) ?? list.find((c) => c.title.toLowerCase() === role.toLowerCase());
-    if (existing) {
-      if (!dryRun) db.update(postings).set({ state: "fit_queue", jd: jd ?? existing.jd, comp: comp ?? existing.comp, location: location ?? existing.location, url: url ?? existing.url }).where(eq(postings.id, existing.id)).run();
-      details.push({ action: "update", summary: `${co.name} — ${role} · JD imported → fit queue` }); updated++;
-    } else {
-      const ts = new Date().toISOString();
-      if (!dryRun) db.insert(postings).values({ companyId: co.id, title: role, location: location ?? null, url: url ?? null, department: null, verdict: "kept", reason: null, state: "fit_queue", jd: jd ?? null, comp: comp ?? null, source: "linkedin", channel: "direct", scannedAt: ts, discoveredAt: ts }).run();
-      details.push({ action: "insert", summary: `${co.name} — ${role} · imported from LinkedIn → fit queue` }); inserted++;
-    }
-    if (!dryRun) logEvent({ actor: "CoWork", source: "linkedin-import", entity: "company", entityId: co.id, action: existing ? "update" : "insert", summary: `${co.name} — ${role} · LinkedIn import → fit queue` });
-  }
-  return { inserted, updated, fieldChanges: inserted + updated, flagged: 0, pending: 0, newCompanies, summary: `${inserted} imported, ${updated} updated`, details };
-}
-
 // watchlist-add has no submitJobResult ingest — CoWork writes directly via upsertCompanies +
 // addToWatchlist. The def exists so it shows as a job (with its playbook); ingest is a no-op.
 const noopIngest = (): ReconcileResult => ({ inserted: 0, updated: 0, fieldChanges: 0, flagged: 0, pending: 0, newCompanies: 0, summary: "", details: [] });
@@ -332,15 +325,6 @@ export const JOB_DEFS: Record<JobType, JobDef> = {
     buildTask: () =>
       `Watchlist scan: call scanWatchlist, glance every candidate by title + location only (no JD) against my profile, and submit a high/low/drop verdict per posting via submitGlance — high auto-queues a fit job. Follow watchlist-scan.md.`,
     ingest: ingestDiscovered("watchlist-scan"),
-  },
-  "linkedin-import": {
-    type: "linkedin-import",
-    title: "Import LinkedIn Jobs",
-    description: "Fetch full JDs from a LinkedIn recommended/collection feed and land them in the fit queue.",
-    playbook: "linkedin-import.md",
-    buildTask: (p) =>
-      `Open ${p?.url ? `\`${p.url}\`` : "the LinkedIn feed URL in params.url"} in the browser, fetch the full verbatim JD for the first ${p?.count ?? 5} recommended jobs, and submit one record per job via submitJobResult(type:"linkedin-import") per linkedin-import.md. Requires the Chrome browser tools + a logged-in LinkedIn session.`,
-    ingest: ingestLinkedinImport,
   },
   fit: {
     type: "fit",
@@ -399,6 +383,15 @@ export const JOB_DEFS: Record<JobType, JobDef> = {
       }`,
     ingest: ingestPrepResearchJob,
   },
+  "leetcode-add": {
+    type: "leetcode-add",
+    title: "Add Leetcode Question",
+    description: "Resolve a manually-added LeetCode URL — fill the problem name, difficulty, and topic on the stub.",
+    playbook: "leetcode-add.md",
+    buildTask: (p) =>
+      `A LeetCode question stub (id \`${p?.id ?? "in params.id"}\`) was added from ${p?.url ? `\`${p.url}\`` : "the URL in params.url"}. Determine its exact problem name, difficulty (Easy/Medium/Hard), and — unless params.topic is set — the primary topic/pattern (e.g. Heap, Graphs, DP). Submit one record { id, name, difficulty, topic, leetcodeNum? } via submitJobResult(type:"leetcode-add") per leetcode-add.md.`,
+    ingest: ingestLeetcodeAddJob,
+  },
   "interview-brief": {
     type: "interview-brief",
     title: "Interview brief",
@@ -441,6 +434,26 @@ export const JOB_DEFS: Record<JobType, JobDef> = {
       );
     },
     ingest: noopIngest,
+  },
+  "peer-comp": {
+    type: "peer-comp",
+    title: "Peer comp comparison",
+    description: "Research + synthesize a compensation comparison across every role being actively interviewed for. Global (not tied to a posting) — the latest run is stored and shown in the Compare comp popup.",
+    playbook: "peer-comp.md",
+    hidden: true,
+    buildTask: () => {
+      const roster = gatherPeerInputs();
+      const body = roster.length ? renderRoster(roster) : "(no roles currently in the interview/offer stage)";
+      return (
+        `Build a compensation comparison across every role I'm actively interviewing for (the roster below — one block per role, ` +
+        `with whatever comp notes / recruiter emails / JD I already have). For each, also read \`interview-prep/<slug>/\` and ` +
+        `research external comp/valuation (levels.fyi, funding news) to fill gaps — label estimates, NEVER invent numbers. Produce ONE ` +
+        `markdown document (a table with columns Role | Base | Bonus | Equity | Company stage | Upside character, then a 3–5 sentence ` +
+        `synthesis) and submit ONE record via submitJobResult(type:"peer-comp") shaped { markdown } per peer-comp.md.\n\n` +
+        `Roles I'm actively interviewing for:\n\n${body}`
+      );
+    },
+    ingest: ingestPeerComp,
   },
 };
 

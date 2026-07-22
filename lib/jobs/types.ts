@@ -4,15 +4,16 @@ export type JobType =
   | "watchlist-add"
   | "leveling"
   | "watchlist-scan"
-  | "linkedin-import"
   | "inbox-sync"
   | "fit"
   | "fitlab-assess"
   | "tailoring"
   | "prep"
   | "prep-research"
+  | "leetcode-add"
   | "interview-brief"
-  | "interview-emails";
+  | "interview-emails"
+  | "peer-comp";
 
 // What the app (or CoWork) drops into agent-jobs/queue/<id>.json.
 export type JobFile = {

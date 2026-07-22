@@ -14,14 +14,14 @@ const TABS = [
   { id: "interview", label: "Interview" },
 ];
 
-// Generic coding prep: the 14-day curriculum tracker (DB-backed) + algo-pattern,
+// Generic Leetcode prep: the topic-grouped question tracker (DB-backed) + algo-pattern,
 // complexity, and interview-meta reference.
 export default function CodingPrep() {
   const [tab, setTab] = useState("tracker");
   return (
     <PrepShell
-      title="Coding Prep"
-      subtitle="14-day curriculum · algo patterns · complexity · interview meta"
+      title="Leetcode Prep"
+      subtitle="Problems by topic · algo patterns · complexity · interview meta"
       tabs={TABS}
       active={tab}
       onChange={setTab}

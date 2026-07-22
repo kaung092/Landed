@@ -17,7 +17,7 @@ folder one level up from this file, i.e. the parent of `instructions/`.)
   by editing files. Reads: `listJobs`/`getPlaybook`/`listApplications`/`listWatchlist`/
   `listCompanies`/`getContext`/`scanWatchlist`/`scanCompany`/`searchGmail`/`getGmailThread`. Writes:
   `claimNext`/`claimJob`/`submitJobResult`/`submitGlance`/`savePostingJd`/`createJob`/
-  `upsertCompanies`/`addToWatchlist`/`removeFromWatchlist`/`updateApplication`.
+  `upsertCompanies`/`addToWatchlist`/`removeFromWatchlist`/`updateApplication`/`logMockInterview`.
 - **Gmail is app-owned too:** `searchGmail`/`getGmailThread` (read-only) are how inbox-sync reads
   mail — over the app's own IMAP connection (no external Gmail connector) — so it works the same for
   the Claude Code runner in any environment. Needs Gmail connected once in the app's Settings (app
@@ -40,7 +40,9 @@ folder one level up from this file, i.e. the parent of `instructions/`.)
 │   ├── GLOBAL/              ← cross-company interview readiness (see readiness.md playbook)
 │   │   ├── readiness.md    ← living global assessment: upcoming interviews, current focus, gap ledger
 │   │   ├── stories.md      ← my STAR story bank (status per story)
-│   │   └── experience/     ← my experience corpus: _resume.md seed + one .md per Google Doc write-up
+│   │   ├── experience/     ← my experience corpus: _resume.md seed + one .md per Google Doc write-up
+│   │   ├── mock-interviews/ ← mock-practice sessions (session-*.md) pushed via the logMockInterview MCP tool
+│   │   └── career/         ← my whole Obsidian Career vault: behavioral answers, project write-ups, trade-offs, resume (symlinked in; read-only)
 │   └── <company-slug>/
 │       ├── context.md       ← DB dump: intel, loop, fit, JD, prep profile + Qs (refreshed by Research questions)
 │       ├── questions.md     ← online-research question bank the Research questions job writes (input #2)
@@ -64,10 +66,12 @@ during a chat survive re-exports.
 
 **`interview-prep/GLOBAL/`** is the **cross-company readiness layer** — the opposite altitude from a
 per-company prep chat. When you open a **readiness chat**, follow `readiness.md` (below): read
-**all** companies' transcripts + `context.md`, keep the global **gap ledger** and **story bank**
-current, sync the user's project write-ups from Google Drive into `experience/`, and answer "what
-should I study/do next" across every active interview. It's chat-driven (no queued job) and all
-writes are local markdown the user can edit; merge, don't clobber.
+**all** companies' transcripts + `context.md` + the user's mock-practice sessions
+(`GLOBAL/mock-interviews/`) + the user's Obsidian career vault (`GLOBAL/career/` — behavioral answers,
+project write-ups, trade-offs, resume), keep the global **gap
+ledger** and **story bank** current, sync the user's project write-ups from Google Drive into
+`experience/`, and answer "what should I study/do next" across every active interview. It's chat-driven
+(no queued job) and all writes are local markdown the user can edit; merge, don't clobber.
 
 ## Your run, in order
 1. **Process the queue** (below). If it's empty, **self-initiate** today's jobs (see
@@ -139,11 +143,6 @@ and submit each via `submitJobResult` with **no `jobId`** (the app synthesizes a
 - `watchlist-add.md` — research + configure a company (fetch method, titles), then watchlist it
 - `leveling.md` — fetch a company's levels.fyi ladder (lazy; queued from the fit view's Lvl column)
 - `watchlist-scan.md` — check watchlisted companies' boards for new postings
-- `linkedin-import.md` — fetch full JDs from a LinkedIn recommended/collection feed → fit queue.
-  **Needs the `playwright` MCP browser tools + a logged-in LinkedIn profile** (LinkedIn is login-gated;
-  the plain `jobhunt`-only runner can't). The app wires Playwright into the Claude Code runner when
-  `LINKEDIN_PROFILE_DIR` is set (seed it once with `npm run linkedin:login`). Queued when you paste
-  a LinkedIn URL on the watchlist. If you don't have `browser_*` tools, say so and stop — never fabricate.
 - `fit.md` — score fit for postings
 - `fitlab-assess.md` — score ONE posting against the Fit Lab rubric (per-criterion verdicts); app-queued from the Fit Lab page, self-contained task
 - `tailoring.md` — tailor a resume per posting
@@ -164,6 +163,9 @@ and submit each via `submitJobResult` with **no `jobId`** (the app synthesizes a
   the standalone `questions.md` (the purely online-research question bank). A job
   may still arrive with `params.intel` (recruiter-confirmed comp/team/rounds) — treat it as authoritative
   if present.
+- `leetcode-add.md` — resolve a manually-added LeetCode URL: fill the stub's problem name, difficulty,
+  and (unless the user set one) topic. Small self-contained job — queued when you paste a URL into the
+  Leetcode tracker (General Prep → Leetcode). Fills the existing stub by `id`; never duplicates.
 - `interview-brief.md` — synthesize a **versioned, source-tagged interview brief** (role · TC · team ·
   what-they're-looking-for · next step · gaps-to-prep) from everything already dumped under
   `interview-prep/<slug>/` (`context.md` + `transcripts/` + `emails.md` + `attachments/`). Queued by the
@@ -175,11 +177,27 @@ and submit each via `submitJobResult` with **no `jobId`** (the app synthesizes a
   Queued by the **Pull interview emails** button; searches ~3 months by company, writes the files, and
   downloads attachments via `downloadGmailAttachments`. **Asset capture only** — it does NOT touch
   tracker status or rounds (global inbox-sync owns those).
+  - The pipeline's Interviewing view also has a global **Update interview status** button that fans
+    this out in one click: a global inbox-sync, then for EVERY interview/offer company it refreshes
+    `context.md` on disk, (re)queues this `interview-emails` job, and queues `prep-research` only where
+    it's never been done.
+- `peer-comp.md` — **research + synthesize a compensation comparison** across the roles being actively
+  interviewed for (every posting in the interview/offer stage). Start from each role's stored intel
+  (`comp` free-text + the latest interview-brief TC + `interview-prep/<slug>/`), then research external
+  comp/valuation (levels.fyi, funding news) to fill gaps — label estimates, never invent numbers.
+  Produce ONE markdown document (comparison table + prose synthesis) and submit ONE `peer-comp` record
+  `{ markdown }`. **Global** (not tied to a posting) — the run **overwrites** the latest in app_config
+  (latest-only, no version history). Queued by the **Generate / Regenerate** button in the **Peer comp
+  comparison** popup, which opens from the **Compare comp** button on the pipeline's Interviewing view.
 - `readiness.md` — **chat-driven, not a queued job.** My **global interview-readiness assistant**:
   keeps a cross-company gap ledger + STAR story bank + experience corpus under
-  `interview-prep/GLOBAL/`, inferring recurring weaknesses from **all** transcripts, syncing my Google
-  Docs project write-ups from a named Drive folder, and answering "what should I study/do next" across
-  every active interview. Read-only on Drive/Gmail; all writes are local markdown I can edit.
+  `interview-prep/GLOBAL/`, inferring recurring weaknesses from **all** transcripts **plus my
+  mock-practice sessions** (`GLOBAL/mock-interviews/`, captured by the `logMockInterview` MCP tool),
+  reconciling my **Obsidian career vault** (`GLOBAL/career/`, symlinked from Obsidian — latest behavioral
+  answers, project write-ups, trade-offs, resume) into the story bank + experience corpus, syncing my
+  Google Docs project write-ups from a named Drive folder, and answering "what
+  should I study/do next" across every active interview. Read-only on Drive/Gmail; all writes are local
+  markdown I can edit.
 
 > **The discovery funnel (glance → fit → tailor → apply):** `watchlist-scan` is a cheap **glance**
 > — you judge each candidate on **title + location only, NO JD** — and you submit a verdict per

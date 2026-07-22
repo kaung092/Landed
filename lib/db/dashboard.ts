@@ -1,5 +1,6 @@
+import { eq } from "drizzle-orm";
 import { db } from "./index";
-import { postings, companies, prepAttempts, prepCompany, jobs, events } from "./schema";
+import { postings, companies, prepAttempts, prepQuestions, prepCompany, jobs, events } from "./schema";
 
 // Dashboard aggregation — everything the /dashboard page shows, computed from existing tables in one
 // pass. `state` is a single point-in-time value, so funnel counts are CUMULATIVE ("reached at least
@@ -10,28 +11,59 @@ const ACTIVE_STATES = new Set(["applied", "interview", "offer"]); // in-flight, 
 const OFFER_STATES = new Set(["offer", "accepted"]);
 
 export type Tone = "good" | "warning" | "critical" | "neutral" | "accent";
+// A time-series computed at two granularities the UI toggles between (default: week). "week" = last
+// 12 weeks (Monday-anchored), "month" = last 12 months. Both are always sent so the toggle is instant
+// (no refetch).
+export type Ranged<T> = { week: T[]; month: T[] };
+export type SeriesPoint = { key: string; label: string; count: number };
+export type PrepPoint = { key: string; label: string; leetcode: number; systemDesign: number };
 export type DashboardStats = {
   kpis: { applied: number; interviewed: number; offers: number; active: number; assessed: number; watchlist: number };
   rates: { interview: number; offer: number }; // fractions 0–1, of applied
   funnel: { key: string; label: string; count: number }[]; // cumulative, ordered
   outcomes: { key: string; label: string; count: number; tone: Tone }[]; // of applications
-  weekly: { week: string; label: string; count: number }[]; // applications per week (last 12)
+  applications: Ranged<SeriesPoint>; // applications by appliedDate
+  prep: Ranged<PrepPoint>; // two lines: leetcode problems solved + system-design problems practiced
+  prepTotals: { attempts: number; companies: number };
   agent: { done: number; queued: number; wip: number };
-  prep: { attempts: number; companies: number };
   recent: { at: string; summary: string; actor: string }[]; // last activity from the change log
 };
 
-// Monday-anchored week key (YYYY-MM-DD) — computed entirely in UTC so the bucket keys here and the
-// week axis below always agree (mixing local getDay() with UTC toISOString silently shifts the day
-// and drops every applied date into the wrong bucket).
-function weekMonday(iso: string): string {
+const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+// Bucket KEYS — everything in UTC so the keys here and the axes below always agree (mixing local
+// getDay() with UTC toISOString silently shifts the day and drops dates into the wrong bucket).
+function weekKey(iso: string): string {
   const d = new Date(iso.slice(0, 10) + "T00:00:00Z");
   if (Number.isNaN(d.getTime())) return "";
   d.setUTCDate(d.getUTCDate() - ((d.getUTCDay() + 6) % 7)); // back up to Monday
   return d.toISOString().slice(0, 10);
 }
+const monthKey = (iso: string): string => (iso.length >= 7 ? iso.slice(0, 7) : ""); // YYYY-MM
 
-export function dashboardStats(): DashboardStats {
+// Bucket AXES — the last `n` week/month starts up to and including the one containing `now`.
+function weekAxis(now: Date, n = 12): SeriesPoint[] {
+  const mon = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+  mon.setUTCDate(mon.getUTCDate() - ((mon.getUTCDay() + 6) % 7));
+  const out: SeriesPoint[] = [];
+  for (let i = n - 1; i >= 0; i--) {
+    const w = new Date(mon);
+    w.setUTCDate(w.getUTCDate() - i * 7);
+    const key = w.toISOString().slice(0, 10);
+    out.push({ key, label: `${key.slice(5, 7)}/${key.slice(8, 10)}`, count: 0 });
+  }
+  return out;
+}
+function monthAxis(now: Date, n = 12): SeriesPoint[] {
+  const out: SeriesPoint[] = [];
+  for (let i = n - 1; i >= 0; i--) {
+    const d = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - i, 1));
+    out.push({ key: d.toISOString().slice(0, 7), label: MONTHS[d.getUTCMonth()], count: 0 });
+  }
+  return out;
+}
+
+export function dashboardStats(now: Date = new Date()): DashboardStats {
   const ps = db
     .select({ state: postings.state, fitScore: postings.fitScore, appliedDate: postings.appliedDate, interviewed: postings.interviewed })
     .from(postings)
@@ -64,19 +96,26 @@ export function dashboardStats(): DashboardStats {
     { key: "withdrawn", label: "Withdrawn", count: (byState["withdrawn"] ?? 0) + (byState["expired"] ?? 0), tone: "neutral" },
   ];
 
-  // Applications per week for the last 12 weeks (by appliedDate) — Mondays in UTC (see weekMonday).
-  const now = new Date();
-  const thisMon = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
-  thisMon.setUTCDate(thisMon.getUTCDate() - ((thisMon.getUTCDay() + 6) % 7));
-  const weeks: string[] = [];
-  for (let i = 11; i >= 0; i--) {
-    const w = new Date(thisMon);
-    w.setUTCDate(w.getUTCDate() - i * 7);
-    weeks.push(w.toISOString().slice(0, 10));
-  }
-  const perWeek: Record<string, number> = {};
-  for (const p of ps) if (p.appliedDate) { const k = weekMonday(p.appliedDate); if (k) perWeek[k] = (perWeek[k] ?? 0) + 1; }
-  const weekly = weeks.map((w) => ({ week: w, label: `${w.slice(5, 7)}/${w.slice(8, 10)}`, count: perWeek[w] ?? 0 }));
+  // Applications over time — only postings that ACTUALLY reached an applied stage (APPLIED_STATES),
+  // bucketed by appliedDate. A stray appliedDate on a still-in-discovery posting (assessed,
+  // company_skipped, …) is NOT a submitted application and must not inflate the count.
+  const appliedPostings = ps.filter((p) => p.appliedDate && APPLIED_STATES.has(p.state));
+  const applications = {
+    week: fill(weekAxis(now), appliedPostings, (p) => weekKey(p.appliedDate!)),
+    month: fill(monthAxis(now), appliedPostings, (p) => monthKey(p.appliedDate!)),
+  };
+
+  // Prep progress over time — two lines: leetcode problems SOLVED (coding track, status solved) and
+  // system-design problems PRACTICED (any attempt on the system_design track).
+  const attempts = db
+    .select({ at: prepAttempts.attemptedAt, status: prepAttempts.status, track: prepQuestions.track })
+    .from(prepAttempts)
+    .innerJoin(prepQuestions, eq(prepAttempts.questionId, prepQuestions.id))
+    .all();
+  const prep = {
+    week: prepSeries(weekAxis(now), attempts, weekKey),
+    month: prepSeries(monthAxis(now), attempts, monthKey),
+  };
 
   const js = db.select({ status: jobs.status }).from(jobs).all();
   const agent = {
@@ -85,8 +124,8 @@ export function dashboardStats(): DashboardStats {
     wip: js.filter((j) => j.status === "wip").length,
   };
 
-  const prep = {
-    attempts: db.select({ id: prepAttempts.id }).from(prepAttempts).all().length,
+  const prepTotals = {
+    attempts: attempts.length,
     companies: db.select({ slug: prepCompany.slug }).from(prepCompany).all().length,
   };
 
@@ -104,9 +143,36 @@ export function dashboardStats(): DashboardStats {
     rates: { interview: applied ? interviewed / applied : 0, offer: applied ? offers / applied : 0 },
     funnel,
     outcomes,
-    weekly,
-    agent,
+    applications,
     prep,
+    prepTotals,
+    agent,
     recent,
   };
+}
+
+// Tally `rows` into a copy of `axis` by the bucket key each row maps to (empty key = skip).
+function fill<R>(axis: SeriesPoint[], rows: R[], keyOf: (r: R) => string): SeriesPoint[] {
+  const out = axis.map((b) => ({ ...b }));
+  const idx = new Map(out.map((b, i) => [b.key, i]));
+  for (const r of rows) {
+    const i = idx.get(keyOf(r));
+    if (i != null) out[i].count += 1;
+  }
+  return out;
+}
+
+// Tally prep attempts into two lines per bucket: leetcode = solved coding attempts, systemDesign =
+// any system_design attempt.
+type Attempt = { at: string; status: string; track: string };
+function prepSeries(axis: SeriesPoint[], rows: Attempt[], keyOf: (iso: string) => string): PrepPoint[] {
+  const out: PrepPoint[] = axis.map((b) => ({ key: b.key, label: b.label, leetcode: 0, systemDesign: 0 }));
+  const idx = new Map(out.map((b, i) => [b.key, i]));
+  for (const r of rows) {
+    const i = idx.get(keyOf(r.at));
+    if (i == null) continue;
+    if (r.track === "coding" && r.status === "solved") out[i].leetcode += 1;
+    else if (r.track === "system_design") out[i].systemDesign += 1;
+  }
+  return out;
 }

@@ -3,12 +3,14 @@
 import { useEffect, useState } from "react";
 import { Loader2, Briefcase, CalendarDays, GitBranchPlus, Bot, GraduationCap } from "lucide-react";
 import { ago } from "@/lib/format";
-import type { DashboardStats, Tone } from "@/lib/db/dashboard";
+import type { DashboardStats, Tone, SeriesPoint, PrepPoint } from "@/lib/db/dashboard";
 
 const TONE_BAR: Record<Tone, string> = {
   good: "bg-emerald-500", accent: "bg-sky-500", critical: "bg-rose-500", warning: "bg-amber-500", neutral: "bg-zinc-500",
 };
 const pct = (f: number) => `${Math.round(f * 100)}%`;
+
+type Range = "week" | "month";
 
 export default function Dashboard() {
   const [d, setD] = useState<DashboardStats | null>(null);
@@ -21,7 +23,7 @@ export default function Dashboard() {
     <div className="flex h-full flex-col text-zinc-100">
       <header className="border-b border-zinc-800/80 bg-zinc-950/80 px-6 py-3.5 backdrop-blur">
         <h1 className="text-[15px] font-semibold tracking-tight text-zinc-100">Dashboard</h1>
-        <p className="mt-0.5 text-[13px] text-zinc-500">Your job hunt at a glance — funnel, outcomes, and momentum.</p>
+        <p className="mt-0.5 text-[13px] text-zinc-500">Your job hunt at a glance — applications, prep, and momentum.</p>
       </header>
 
       <div className="flex-1 overflow-y-auto px-6 py-6">
@@ -42,6 +44,13 @@ export default function Dashboard() {
                 <StatTile label="Watchlist" value={d.kpis.watchlist} sub="companies" />
               </div>
 
+              {/* The three things you check daily — momentum on applications, on prep, and what just happened. */}
+              <div className="grid gap-6 lg:grid-cols-3">
+                <ApplicationsCard applications={d.applications} />
+                <PrepCard prep={d.prep} totals={d.prepTotals} />
+                <RecentCard recent={d.recent} />
+              </div>
+
               <div className="grid gap-6 lg:grid-cols-2">
                 <Card title="Pipeline funnel" icon={<GitBranchPlus size={14} className="text-sky-300" />}>
                   <Funnel funnel={d.funnel} />
@@ -51,33 +60,9 @@ export default function Dashboard() {
                 </Card>
               </div>
 
-              <Card title="Applications per week" icon={<CalendarDays size={14} className="text-violet-300" />} sub="last 12 weeks">
-                <Weekly weekly={d.weekly} />
+              <Card title="Agents" icon={<Bot size={14} className="text-sky-300" />}>
+                <MiniStats items={[["Jobs done", d.agent.done], ["Queued", d.agent.queued], ["Working", d.agent.wip]]} />
               </Card>
-
-              <div className="grid gap-6 lg:grid-cols-3">
-                <Card title="Agents" icon={<Bot size={14} className="text-sky-300" />}>
-                  <MiniStats items={[["Jobs done", d.agent.done], ["Queued", d.agent.queued], ["Working", d.agent.wip]]} />
-                </Card>
-                <Card title="Prep" icon={<GraduationCap size={14} className="text-emerald-300" />}>
-                  <MiniStats items={[["Practice attempts", d.prep.attempts], ["Companies researched", d.prep.companies]]} />
-                </Card>
-                <Card title="Recent activity">
-                  {d.recent.length === 0 ? (
-                    <p className="py-4 text-center text-[12px] text-zinc-600">No activity yet.</p>
-                  ) : (
-                    <ul className="space-y-1.5">
-                      {d.recent.map((e, i) => (
-                        <li key={i} className="flex items-start gap-2 text-[12px]">
-                          <span className={`mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full ${e.actor === "CoWork" ? "bg-sky-400" : "bg-emerald-400"}`} />
-                          <span className="min-w-0 flex-1 truncate text-zinc-300" title={e.summary}>{e.summary}</span>
-                          <span className="shrink-0 text-zinc-600">{ago(e.at)}</span>
-                        </li>
-                      ))}
-                    </ul>
-                  )}
-                </Card>
-              </div>
             </div>
           )}
         </div>
@@ -97,16 +82,93 @@ function StatTile({ label, value, sub, tone }: { label: string; value: number | 
   );
 }
 
-function Card({ title, icon, sub, children }: { title: string; icon?: React.ReactNode; sub?: string; children: React.ReactNode }) {
+function Card({ title, icon, sub, action, children }: { title: string; icon?: React.ReactNode; sub?: string; action?: React.ReactNode; children: React.ReactNode }) {
   return (
     <section className="rounded-2xl border border-zinc-800 bg-zinc-900/30 p-4">
       <div className="mb-3 flex items-center gap-2">
         {icon}
         <h2 className="text-[13px] font-semibold text-zinc-200">{title}</h2>
         {sub && <span className="text-[11px] text-zinc-600">· {sub}</span>}
+        {action}
       </div>
       {children}
     </section>
+  );
+}
+
+// Week / month segmented control — sits at the right of a card header.
+function RangeToggle({ value, onChange }: { value: Range; onChange: (r: Range) => void }) {
+  return (
+    <div className="ml-auto inline-flex rounded-lg bg-zinc-800/60 p-0.5 text-[11px]">
+      {(["week", "month"] as Range[]).map((r) => (
+        <button
+          key={r}
+          onClick={() => onChange(r)}
+          className={`rounded-md px-2 py-0.5 font-medium capitalize transition ${value === r ? "bg-zinc-700 text-zinc-100" : "text-zinc-500 hover:text-zinc-300"}`}
+        >
+          {r}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function ApplicationsCard({ applications }: { applications: DashboardStats["applications"] }) {
+  const [range, setRange] = useState<Range>("week");
+  const data = applications[range];
+  const total = data.reduce((s, p) => s + p.count, 0);
+  return (
+    <Card title="Applications" icon={<CalendarDays size={14} className="text-sky-300" />} action={<RangeToggle value={range} onChange={setRange} />}>
+      <p className="mb-2 text-[12px] text-zinc-500"><span className="text-lg font-semibold tabular-nums text-zinc-100">{total}</span> total · last 12 {range}s</p>
+      <BarSeries data={data} unit="application" />
+    </Card>
+  );
+}
+
+function PrepCard({ prep, totals }: { prep: DashboardStats["prep"]; totals: DashboardStats["prepTotals"] }) {
+  const [range, setRange] = useState<Range>("week");
+  const data = prep[range];
+  const lc = data.reduce((s, p) => s + p.leetcode, 0);
+  const sd = data.reduce((s, p) => s + p.systemDesign, 0);
+  return (
+    <Card title="Prep" icon={<GraduationCap size={14} className="text-emerald-300" />} action={<RangeToggle value={range} onChange={setRange} />}>
+      <div className="mb-2 flex items-center gap-4 text-[12px]">
+        <LegendDot color="bg-emerald-400" label="LeetCode solved" value={lc} />
+        <LegendDot color="bg-violet-400" label="System design" value={sd} />
+      </div>
+      <PrepLines data={data} />
+      <p className="mt-2 text-[11px] text-zinc-600">{totals.attempts} total attempts · {totals.companies} companies researched</p>
+    </Card>
+  );
+}
+
+function RecentCard({ recent }: { recent: DashboardStats["recent"] }) {
+  return (
+    <Card title="Recent activity">
+      {recent.length === 0 ? (
+        <p className="py-4 text-center text-[12px] text-zinc-600">No activity yet.</p>
+      ) : (
+        <ul className="space-y-1.5">
+          {recent.map((e, i) => (
+            <li key={i} className="flex items-start gap-2 text-[12px]">
+              <span className={`mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full ${e.actor === "CoWork" ? "bg-sky-400" : "bg-emerald-400"}`} />
+              <span className="min-w-0 flex-1 truncate text-zinc-300" title={e.summary}>{e.summary}</span>
+              <span className="shrink-0 text-zinc-600">{ago(e.at)}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </Card>
+  );
+}
+
+function LegendDot({ color, label, value }: { color: string; label: string; value: number }) {
+  return (
+    <span className="flex items-center gap-1.5">
+      <span className={`h-2 w-2 shrink-0 rounded-full ${color}`} />
+      <span className="text-zinc-400">{label}</span>
+      <span className="tabular-nums font-semibold text-zinc-100">{value}</span>
+    </span>
   );
 }
 
@@ -163,30 +225,94 @@ function Outcomes({ outcomes }: { outcomes: DashboardStats["outcomes"] }) {
   );
 }
 
-// Applications over time — vertical magnitude bars, one hue.
-function Weekly({ weekly }: { weekly: DashboardStats["weekly"] }) {
-  const max = Math.max(1, ...weekly.map((w) => w.count));
+// A "nice" round axis top ≥ max (1, 2, 5 × 10ⁿ), so counts sit under a clean gridline.
+function niceMax(max: number): number {
+  if (max <= 1) return 1;
+  const pow = Math.pow(10, Math.floor(Math.log10(max)));
+  const n = max / pow;
+  return (n <= 1 ? 1 : n <= 2 ? 2 : n <= 5 ? 5 : 10) * pow;
+}
+// Integer y-axis ticks from 0..top, aiming for ≤3 intervals so a compact chart isn't crowded.
+function axisTicks(max: number): { top: number; ticks: number[] } {
+  const top = niceMax(max);
+  const step = [1, 2, 5, 10, 20, 25, 50, 100, 200, 250, 500, 1000].find((s) => top / s <= 3 && Number.isInteger(top / s)) ?? top;
+  const ticks: number[] = [];
+  for (let v = 0; v <= top; v += step) ticks.push(v);
+  return { top, ticks };
+}
+
+// Shared plot area: a fixed-height (h-28) chart with left-hand count labels + horizontal gridlines.
+// `children` are absolutely positioned inside the plot and must scale to `top`.
+function ChartFrame({ top, ticks, xStart, xEnd, children }: { top: number; ticks: number[]; xStart?: string; xEnd?: string; children: React.ReactNode }) {
   return (
-    <div className="flex h-32 items-end gap-1.5">
-      {weekly.map((w) => (
-        <div key={w.week} className="flex min-w-0 flex-1 flex-col items-center gap-1" title={`Week of ${w.week}: ${w.count} application${w.count === 1 ? "" : "s"}`}>
-          <div className="flex w-full flex-1 items-end">
-            <div className="w-full rounded-t bg-sky-500/80" style={{ height: `${(w.count / max) * 100}%`, minHeight: w.count ? "3px" : "0" }} />
-          </div>
-          <span className="text-[9px] tabular-nums text-zinc-600">{w.label}</span>
+    <div>
+      <div className="flex gap-1.5">
+        <div className="relative h-28 w-5 shrink-0">
+          {ticks.map((t) => (
+            <span key={t} style={{ bottom: `${(t / top) * 100}%` }} className="absolute right-0 translate-y-1/2 text-[9px] tabular-nums text-zinc-600">{t}</span>
+          ))}
         </div>
-      ))}
+        <div className="relative h-28 flex-1">
+          {ticks.map((t) => (
+            <div key={t} style={{ bottom: `${(t / top) * 100}%` }} className="absolute inset-x-0 border-t border-zinc-800/60" />
+          ))}
+          {children}
+        </div>
+      </div>
+      {(xStart || xEnd) && (
+        <div className="mt-1.5 flex justify-between pl-[26px] text-[10px] tabular-nums text-zinc-600"><span>{xStart}</span><span>{xEnd}</span></div>
+      )}
     </div>
+  );
+}
+
+// Vertical magnitude bars over time, one hue. Bars scale to the axis `top` so they line up with the
+// gridlines. (They're DIRECT flex children of a fixed-height row so `height: %` has a definite parent
+// — nesting them under a flex-1 wrapper made the parent height content-derived and collapsed them.)
+function BarSeries({ data, unit }: { data: SeriesPoint[]; unit: string }) {
+  const { top, ticks } = axisTicks(Math.max(1, ...data.map((p) => p.count)));
+  return (
+    <ChartFrame top={top} ticks={ticks} xStart={data[0]?.label} xEnd={data[data.length - 1]?.label}>
+      <div className="absolute inset-0 flex items-end gap-1">
+        {data.map((p) => (
+          <div
+            key={p.key}
+            className="min-w-0 flex-1 rounded-t bg-sky-500/80 transition hover:bg-sky-400"
+            style={{ height: `${(p.count / top) * 100}%`, minHeight: p.count ? "3px" : "1px" }}
+            title={`${p.label}: ${p.count} ${unit}${p.count === 1 ? "" : "s"}`}
+          />
+        ))}
+      </div>
+    </ChartFrame>
+  );
+}
+
+// Two-line time series (leetcode solved + system design practiced). An SVG with a stretched viewBox
+// (preserveAspectRatio none) so it fills the card width; strokes stay crisp via non-scaling-stroke.
+function PrepLines({ data }: { data: PrepPoint[] }) {
+  const { top, ticks } = axisTicks(Math.max(1, ...data.flatMap((p) => [p.leetcode, p.systemDesign])));
+  const n = data.length;
+  const x = (i: number) => (n <= 1 ? 0 : (i / (n - 1)) * 100);
+  const y = (v: number) => 100 - (v / top) * 100;
+  const path = (key: "leetcode" | "systemDesign") =>
+    data.map((p, i) => `${i ? "L" : "M"}${x(i).toFixed(2)},${y(p[key]).toFixed(2)}`).join(" ");
+  return (
+    <ChartFrame top={top} ticks={ticks} xStart={data[0]?.label} xEnd={data[data.length - 1]?.label}>
+      <svg viewBox="0 0 100 100" preserveAspectRatio="none" className="absolute inset-0 h-full w-full" role="img" aria-label="Prep problems over time">
+        <path d={path("systemDesign")} fill="none" stroke="#a78bfa" strokeWidth={1.5} strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
+        <path d={path("leetcode")} fill="none" stroke="#34d399" strokeWidth={1.5} strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
+      </svg>
+    </ChartFrame>
   );
 }
 
 function MiniStats({ items }: { items: [string, number][] }) {
   return (
-    <div className="space-y-2">
+    <div className="grid grid-cols-3 gap-3">
       {items.map(([label, value]) => (
-        <div key={label} className="flex items-center justify-between">
+        <div key={label} className="flex flex-col">
+          <span className="text-2xl font-semibold tabular-nums text-zinc-100">{value}</span>
           <span className="text-[12px] text-zinc-400">{label}</span>
-          <span className="text-sm font-semibold tabular-nums text-zinc-100">{value}</span>
         </div>
       ))}
     </div>

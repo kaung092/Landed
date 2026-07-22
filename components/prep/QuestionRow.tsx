@@ -1,26 +1,31 @@
 "use client";
 
-import { ExternalLink, FileText, RotateCcw } from "lucide-react";
+import { ExternalLink, FileText, Loader2, RotateCcw } from "lucide-react";
 import type { PrepQuestion } from "@/lib/db/prep";
+import { prettyCompany } from "@/lib/prep/leetcode";
 import { usePrep } from "@/hooks/usePrep";
 import AttemptControl from "./AttemptControl";
 import ConfidenceTag from "./ConfidenceTag";
 import { Badge, diffCls } from "./ui";
 
 // A single trackable coding problem (name, difficulty, note, flags, attempt control).
-// Shared by the curriculum tracker and the company hit lists.
+// Shared by the curriculum tracker and the company hit lists. `showCompanies` adds a chip per
+// company that features the question — used only in the generic Leetcode tracker (redundant in a
+// company lens, where every row already belongs to that company).
 export default function QuestionRow({
   q,
   onLog,
   onUndo,
   onNoted,
   onRedo,
+  showCompanies = false,
 }: {
   q: PrepQuestion;
   onLog: ReturnType<typeof usePrep>["logAttempt"];
   onUndo: ReturnType<typeof usePrep>["undoLast"];
   onNoted: ReturnType<typeof usePrep>["setNoted"];
   onRedo: ReturnType<typeof usePrep>["setRedo"];
+  showCompanies?: boolean;
 }) {
   return (
     <div className="border-b border-zinc-800/40 py-2.5 last:border-0">
@@ -47,7 +52,16 @@ export default function QuestionRow({
               <span className={`text-[14px] font-medium ${q.done ? "text-zinc-500" : "text-zinc-200"}`}>{q.name}</span>
             )}
             {q.leetcodeNum != null && <span className="font-mono text-[12px] text-zinc-600">#{q.leetcodeNum}</span>}
-            <Badge className={diffCls(q.difficulty)}>{q.difficulty}</Badge>
+            {q.content.pendingEnrich ? (
+              <Badge className="text-zinc-400 bg-zinc-800/60 ring-zinc-700/50">
+                <span className="inline-flex items-center gap-1"><Loader2 size={9} className="animate-spin" /> enriching…</span>
+              </Badge>
+            ) : (
+              q.difficulty && <Badge className={diffCls(q.difficulty)}>{q.difficulty}</Badge>
+            )}
+            {showCompanies && q.companies.map((slug) => (
+              <Badge key={slug} className="text-fuchsia-300 bg-fuchsia-500/10 ring-fuchsia-500/25">{prettyCompany(slug)}</Badge>
+            ))}
           </div>
           {q.content.note && <p className="mt-1 font-mono text-[13px] leading-relaxed text-zinc-500">{q.content.note}</p>}
         </div>

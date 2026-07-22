@@ -14,13 +14,19 @@ const STATUS_FOR: Record<ColumnId, Status> = {
 
 // Side effects of landing on a stage, shared by the drawer selector + drag-drop.
 // Only fills info that's missing, so re-setting a stage never clobbers existing data.
-function stageChanges(p: Posting, to: Status): Record<string, unknown> {
+// `opts.appliedDate` is the date the user confirmed in the applied-date prompt — when present it
+// wins (this is how "added to applied" gets its real, possibly-backdated applied date). Without it
+// we only default-stamp today when there's no date yet (drag-drop, which doesn't prompt).
+function stageChanges(p: Posting, to: Status, opts?: { appliedDate?: string }): Record<string, unknown> {
   const c: Record<string, unknown> = { status: to };
   if (to === "assessed" && p.fitScore == null) {
     c.fitScore = 70 + Math.floor(Math.random() * 25);
     c.fitSummary = "Stubbed assessment — real fit note comes from Claude later.";
   }
-  if (to === "applied" && !p.appliedDate) c.appliedDate = TODAY;
+  if (to === "applied") {
+    if (opts?.appliedDate) c.appliedDate = opts.appliedDate;
+    else if (!p.appliedDate) c.appliedDate = TODAY;
+  }
   if (to === "interview") c.interviewed = true; // triggers cooldown if later rejected
   return c;
 }
@@ -72,7 +78,7 @@ export function useApplications() {
   // side effects only fire when they'd add new info, so re-selecting a stage never
   // clobbers an existing applied date / resume folder.
   const setStatus = useCallback(
-    (p: Posting, to: Status) => {
+    (p: Posting, to: Status, opts?: { appliedDate?: string }) => {
       if (p.status === to) return;
       pendo.track("application_status_changed", {
         posting_id: p.id,
@@ -84,7 +90,7 @@ export function useApplications() {
         fit_score: p.fitScore,
         has_resume: !!p.resumeDir,
       });
-      const changes = stageChanges(p, to);
+      const changes = stageChanges(p, to, opts);
       if (changes.fitScore != null) setActivity(`stub: would call Claude to score fit for ${p.company} — ${p.role}`);
       if (changes.appliedDate) setActivity(`${p.company} → Applied · stub: would re-export job_applications_tracker.csv`);
       if (to === "company_skipped") setActivity(`skipped ${p.company} — ${p.role}`);

@@ -5,6 +5,7 @@ import type { PrepQuestionRow, PrepAttemptRow, PrepCompanyRow, PrepFeedbackRow }
 import { canonical, norm } from "@/lib/agents/canonical";
 import { str, num } from "@/lib/coerce";
 import type { ChangeDetail } from "@/lib/agents/types";
+import { parseLeetcodeUrl } from "@/lib/prep/leetcode";
 
 // ── Public shapes (JSON-parsed, derived stats folded in) ──
 
@@ -21,6 +22,7 @@ export type PrepContent = {
   monitoring?: string[];
   category?: string;
   tier?: number;
+  pendingEnrich?: boolean; // manual leetcode add awaiting the leetcode-add job to fill difficulty/topic
 };
 
 export type PrepPlan = {
@@ -414,6 +416,95 @@ export function ingestPrepRecords(records: Record<string, unknown>[], dryRun = f
   }
 
   return { inserted, attempts, flagged, details };
+}
+
+// ── Manual leetcode add (URL → stub, enriched later by the leetcode-add job) ──
+
+export type LeetcodeStubResult =
+  | { status: "exists"; question: PrepQuestion } // already in the bank — no dup, no job needed
+  | { status: "invalid" } // not a parseable LeetCode problem URL
+  | { status: "created"; question: PrepQuestion }; // inserted a stub → caller queues the enrich job
+
+// Insert a provisional coding question from a LeetCode URL: the name is derived from the slug and
+// difficulty/topic are left for the leetcode-add job to fill (content.pendingEnrich = true). An
+// optional user-supplied topic is stored as the first tag (the tracker groups by it); left blank,
+// the job infers it. Deduped against the shared bank by name, so re-adding an existing problem
+// (e.g. one already in the curriculum) is a no-op rather than a duplicate.
+export function addLeetcodeStub(input: { url: string; topic?: string }): LeetcodeStubResult {
+  const parsed = parseLeetcodeUrl(input.url);
+  if (!parsed) return { status: "invalid" };
+
+  const catalog = db.select().from(prepQuestions).all();
+  const existingId = resolveQuestionId({ name: parsed.name }, catalog);
+  if (existingId) {
+    const row = db.select().from(prepQuestions).where(eq(prepQuestions.id, existingId)).get()!;
+    return { status: "exists", question: toQuestion(row, statsFor([]), { noted: false, redo: false }) };
+  }
+
+  const topic = str(input.topic);
+  const taken = new Set(catalog.map((q) => q.id));
+  const id = newQuestionId({ name: parsed.name }, taken);
+  const maxSort = catalog.reduce((m, q) => Math.max(m, q.sortOrder ?? 0), 0);
+  const row = {
+    id,
+    track: "coding" as const,
+    name: parsed.name,
+    prompt: null,
+    difficulty: null,
+    priority: null,
+    url: input.url.trim(),
+    leetcodeNum: null,
+    tags: JSON.stringify(topic ? [topic] : []),
+    companies: JSON.stringify([]),
+    companyMeta: JSON.stringify({}),
+    content: JSON.stringify({ pendingEnrich: true } satisfies PrepContent),
+    plan: null,
+    sortOrder: maxSort + 1,
+  };
+  db.insert(prepQuestions).values(row).run();
+  return { status: "created", question: toQuestion(row as PrepQuestionRow, statsFor([]), { noted: false, redo: false }) };
+}
+
+export type LeetcodeAddResult = { enriched: number; details: ChangeDetail[] };
+
+// Ingest for the leetcode-add job: CoWork resolved a stub's real name/difficulty/topic (from the URL)
+// and submits one record per question, keyed by the stub's `id`. We only FILL — set difficulty, the
+// canonical name + leetcodeNum, the topic tag (unless the user already gave one), and clear the
+// pending flag. Never creates or dedupes here (the stub already exists); an unknown id is skipped.
+export function ingestLeetcodeAdd(records: Record<string, unknown>[], dryRun = false): LeetcodeAddResult {
+  const details: ChangeDetail[] = [];
+  let enriched = 0;
+  for (const rec of records) {
+    const id = str(rec.id);
+    if (!id) { details.push({ action: "skip", summary: "leetcode-add — record with no id, skipped" }); continue; }
+    const row = db.select().from(prepQuestions).where(eq(prepQuestions.id, id)).get();
+    if (!row) { details.push({ action: "skip", summary: `leetcode-add — no stub for "${id}", skipped` }); continue; }
+
+    const name = str(rec.name) ?? row.name;
+    const difficulty = str(rec.difficulty) ?? row.difficulty;
+    const topic = str(rec.topic) ?? str(rec.pattern);
+    const existingTags = parseJSON<string[]>(row.tags, []);
+    // Keep the user's topic if they gave one; otherwise adopt the inferred topic as the first tag.
+    const tags = existingTags.length ? existingTags : topic ? [topic] : existingTags;
+    const content = parseJSON<PrepContent>(row.content, {});
+    delete content.pendingEnrich;
+
+    if (!dryRun) {
+      db.update(prepQuestions)
+        .set({
+          name,
+          difficulty: difficulty ?? null,
+          leetcodeNum: num(rec.leetcodeNum) ?? row.leetcodeNum,
+          tags: JSON.stringify(tags),
+          content: JSON.stringify(content),
+        })
+        .where(eq(prepQuestions.id, id))
+        .run();
+    }
+    enriched++;
+    details.push({ action: "update", summary: `leetcode — ${name}${difficulty ? ` · ${difficulty}` : ""}${tags[0] ? ` · ${tags[0]}` : ""}` });
+  }
+  return { enriched, details };
 }
 
 // Upsert per-question flags (noted / redo). Returns the resulting flag pair.
