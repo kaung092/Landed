@@ -1,5 +1,5 @@
 import { scannedAction, getPosting, setPostingJd, getPostingJd } from "@/lib/db/queries";
-import { createJob, enqueueTailoring } from "@/lib/jobs/store";
+import { createJob, enqueueTailoring, outstandingFitJobId } from "@/lib/jobs/store";
 import { queueRun } from "@/lib/fitlab/queue";
 
 export const dynamic = "force-dynamic";
@@ -31,16 +31,16 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
   return p ? Response.json({ ok: true, id: n }) : Response.json({ error: "not found" }, { status: 404 });
 }
 
-// POST /api/scanned/:id  body: { action: "discard" | "queue-fit" | "tailor" | "apply" | "apply-later" }
+// POST /api/scanned/:id  body: { action: "discard" | "queue-fit" | "tailor" | "apply" }
 //   Discovery-stage moves: discard → discard pile · queue-fit → fit queue (+ enqueue a fit job;
-//   JD fetched from the URL by CoWork) · tailor → tailoring · apply-later → saved hold pile ·
-//   apply → graduate to the tracker (creates an applications row).
-const ACTIONS = ["discard", "queue-fit", "tailor", "apply", "apply-later"] as const;
+//   JD fetched from the URL by CoWork) · tailor → tailoring · apply → graduate to the tracker
+//   (creates an applications row). (The "apply later" hold is set via the drawer's "Move to" instead.)
+const ACTIONS = ["discard", "queue-fit", "tailor", "apply"] as const;
 export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const n = Number(id);
   if (!Number.isInteger(n)) return Response.json({ error: "bad id" }, { status: 400 });
-  let body: { action?: string };
+  let body: { action?: string; appliedDate?: string; queueOnly?: boolean };
   try {
     body = await request.json();
   } catch {
@@ -49,10 +49,17 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   if (!ACTIONS.includes(body.action as (typeof ACTIONS)[number]))
     return Response.json({ error: `action must be ${ACTIONS.join(" | ")}` }, { status: 400 });
 
-  const r = scannedAction(n, body.action as (typeof ACTIONS)[number]);
+  const r = scannedAction(n, body.action as (typeof ACTIONS)[number], { appliedDate: body.appliedDate, queueOnly: body.queueOnly });
   if (r.ok && r.fit) {
-    // The existing HOLISTIC fit job — unchanged. This is the assessment the Pipeline shows.
+    // Don't stack a duplicate: if this posting already has an outstanding fit job (from ANY path —
+    // e.g. a JD-add via enqueueFit, or an earlier queue-fit), ignore the re-queue and tell the client
+    // so it can show a "already queued" notification.
+    if (outstandingFitJobId(r.fit.id)) {
+      return Response.json({ ...r, fitAlreadyQueued: true });
+    }
+    // The existing HOLISTIC fit job. A STABLE per-posting id also makes a repeat overwrite in place.
     createJob({
+      id: `fit-cand-${r.fit.id}`,
       type: "fit",
       createdBy: "You",
       task: "Assess fit for the posting below. Use the JD in params if present, else fetch it from the URL; then score per fit.md.",

@@ -198,3 +198,11 @@ body {
   50%, 100% { opacity: 0.4; box-shadow: 0 0 0 0 rgba(56, 189, 248, 0); }
 }
 .cowork-blink { animation: cowork-blink 1s linear infinite; }
+
+/* Queue-cleared toast: a springy pop-in, so a finished queue reads as a small win, not a dry line. */
+@keyframes cowork-toast-in {
+  0% { opacity: 0; transform: translateY(10px) scale(0.9); }
+  60% { transform: translateY(-3px) scale(1.03); }
+  100% { opacity: 1; transform: translateY(0) scale(1); }
+}
+.cowork-toast-in { animation: cowork-toast-in 0.38s cubic-bezier(0.22, 1, 0.36, 1); }

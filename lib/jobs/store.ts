@@ -680,6 +680,17 @@ export function reconcileFitQueue(): number {
   return created;
 }
 
+// The id of an OUTSTANDING (queued or wip) fit job that already covers this posting, or null. Fit
+// jobs are created by several paths with different id schemes (a JD-add via enqueueFit → fit-app-*,
+// a funnel queue-fit → fit-cand-*), so dedup by the posting id carried in the job params, not by id.
+export function outstandingFitJobId(postingId: number): string | null {
+  for (const r of db.select().from(jobs).where(and(eq(jobs.type, "fit"), inArray(jobs.status, [...PENDING_JOB_STATUSES]))).all()) {
+    const ps = (parseParams(r.params).postings as { id?: unknown }[] | undefined) ?? [];
+    if (ps.some((p) => Number(p?.id) === postingId)) return r.id;
+  }
+  return null;
+}
+
 // The JD isn't stored on the posting — it lives in the fit job that assessed it. Pull it
 // forward so the tailoring job carries the JD instead of making CoWork re-fetch from the URL.
 // Match by canonical company (+ role when known) across all fit jobs (queued or ingested).
@@ -701,7 +712,7 @@ export function removeTailoringJob(appId: number | string): void {
   db.delete(jobs).where(eq(jobs.id, `tailoring-app-${appId}`)).run();
 }
 
-export function syncTailoringJob(p: Posting): void {
+export function syncTailoringJob(p: Posting, opts?: { keepPending?: boolean }): void {
   const id = `tailoring-app-${p.id}`;
   const existing = db.select().from(jobs).where(eq(jobs.id, id)).get();
   // Fresh tailor: entered the stage and no resume yet (v1). Redos go through requeueRedo, not here.
@@ -709,9 +720,11 @@ export function syncTailoringJob(p: Posting): void {
   if (!queued) {
     // Drop a stale, still-pending tailoring job when the posting leaves the tailor stage — but NOT
     // a redo job: a `tailored` posting with a queued redo keeps it (the redo runs against the
-    // resume it already has). Only a true stage exit (e.g. → applied) clears it.
+    // resume it already has). Only a true stage exit (e.g. → applied) clears it. `keepPending` (the
+    // user chose "keep the job" in the move confirm) also spares it — the queued action outlives the
+    // status move.
     const keepRedo = (p.status as string) === "tailored" && hasPendingRedo(p.redoLog ?? [], "tailor");
-    if (existing && existing.status === "queued" && !keepRedo) db.delete(jobs).where(eq(jobs.id, id)).run();
+    if (existing && existing.status === "queued" && !keepRedo && !opts?.keepPending) db.delete(jobs).where(eq(jobs.id, id)).run();
     return;
   }
   enqueueTailoring(p);

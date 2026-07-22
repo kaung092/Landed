@@ -34,6 +34,10 @@ type QueueCtx = {
   // Whether a posting's fit/tailor job is currently being worked (an agent claimed it → wip). Drives
   // the table's spinning "In progress" status. Live off the same polled queue.
   isWorking: (postingId: string, phase: "fit" | "tailor") => boolean;
+  // Whether a posting has an OUTSTANDING fit/tailor job (queued or wip), regardless of its pipeline
+  // stage. Lets the table show a "queued" chip for work handed off out of sequence (a re-tailor of an
+  // already-tailored row, a re-assess) — decoupled from the posting's status.
+  isQueued: (postingId: string, phase: "fit" | "tailor") => boolean;
 };
 
 const Ctx = createContext<QueueCtx | null>(null);
@@ -111,18 +115,20 @@ export default function CoWorkQueueProvider({ children }: { children: React.Reac
     return typeof note === "string" ? note : null;
   }, [jobs]);
 
-  // Find the live job for a posting's phase (tailor: stable id; fit: the redo id, else a fit job
-  // whose params carry this posting) and report whether it's claimed (wip = being worked now).
-  const isWorking = useCallback((postingId: string, phase: "fit" | "tailor"): boolean => {
-    const job = phase === "tailor"
+  // The live job for a posting's phase (tailor: stable id; fit: the redo id, else any fit job whose
+  // params carry this posting). `jobs` holds only outstanding rows (queued + wip).
+  const jobFor = useCallback((postingId: string, phase: "fit" | "tailor"): QueueJob | undefined =>
+    phase === "tailor"
       ? jobs.find((j) => j.id === `tailoring-app-${postingId}`)
       : jobs.find((j) => j.id === `fit-redo-${postingId}`)
-        ?? jobs.find((j) => j.type === "fit" && (j.params?.postings as { id?: unknown }[] | undefined)?.some((p) => String(p?.id) === postingId));
-    return job?.status === "wip";
-  }, [jobs]);
+        ?? jobs.find((j) => j.type === "fit" && (j.params?.postings as { id?: unknown }[] | undefined)?.some((p) => String(p?.id) === postingId)),
+  [jobs]);
+  // Claimed (wip = being worked now) vs merely outstanding (queued or wip).
+  const isWorking = useCallback((postingId: string, phase: "fit" | "tailor"): boolean => jobFor(postingId, phase)?.status === "wip", [jobFor]);
+  const isQueued = useCallback((postingId: string, phase: "fit" | "tailor"): boolean => !!jobFor(postingId, phase), [jobFor]);
 
   return (
-    <Ctx.Provider value={{ jobs, count: jobs.length, pulse, add, remove, requeue, refresh, bump, redoNoteFor, isWorking }}>
+    <Ctx.Provider value={{ jobs, count: jobs.length, pulse, add, remove, requeue, refresh, bump, redoNoteFor, isWorking, isQueued }}>
       {children}
     </Ctx.Provider>
   );

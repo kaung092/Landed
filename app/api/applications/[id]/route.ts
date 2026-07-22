@@ -30,7 +30,7 @@ export async function PATCH(
   const appId = Number(id);
   if (!Number.isInteger(appId)) return Response.json({ error: "bad id" }, { status: 400 });
 
-  let body: ApplicationPatch & { tier?: Tier; companyName?: string; moveToCompany?: string };
+  let body: ApplicationPatch & { tier?: Tier; companyName?: string; moveToCompany?: string; keepTailoringJob?: boolean };
   try {
     body = await request.json();
   } catch {
@@ -38,7 +38,9 @@ export async function PATCH(
   }
 
   const actor = actorFromRequest(request);
-  const { tier, companyName, moveToCompany, ...patch } = body;
+  // keepTailoringJob is a control flag (not a posting field) — pull it out so it never reaches
+  // updateApplication as a column write. It spares a queued tailoring job from the stage-exit drop.
+  const { tier, companyName, moveToCompany, keepTailoringJob, ...patch } = body;
   let updated = Object.keys(patch).length ? updateApplication(appId, patch, actor) : null;
   if (tier) updated = setTierForApplication(appId, tier, actor) ?? updated;
   if (companyName != null) updated = setCompanyName(appId, companyName, actor) ?? updated; // rename company (all postings)
@@ -46,7 +48,7 @@ export async function PATCH(
   if (!updated) updated = updateApplication(appId, {}, actor); // no-op refresh
 
   if (updated) {
-    syncTailoringJob(updated); // queue/drop a tailoring job as the posting enters/leaves Queued
+    syncTailoringJob(updated, { keepPending: !!keepTailoringJob }); // queue/drop a tailoring job as the posting enters/leaves Queued
   }
 
   return updated

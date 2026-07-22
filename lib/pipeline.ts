@@ -85,12 +85,12 @@ export type TargetCounts = {
 export function buildTargetCounts(postings: Posting[]): Map<string, TargetCounts> {
   const m = new Map<string, TargetCounts>();
   for (const p of postings) {
-    const c = m.get(p.company) ?? { discovered: 0, applied: 0, total: 0, items: [] };
+    let c = m.get(p.company);
+    if (!c) { c = { discovered: 0, applied: 0, total: 0, items: [] }; m.set(p.company, c); }
     c.total++;
     if (p.status === "discovered") c.discovered++;
     if (p.status === "applied") c.applied++;
     c.items.push({ role: p.role, status: p.status, date: trackerDate(p), appliedDate: p.appliedDate, interviewed: p.interviewed });
-    m.set(p.company, c);
   }
   return m;
 }

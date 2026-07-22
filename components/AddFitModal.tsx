@@ -5,6 +5,10 @@ import { createPortal } from "react-dom";
 import { FilePlus2, Loader2, Sparkles, X } from "lucide-react";
 import { useCoWorkQueue } from "@/components/CoWorkQueueProvider";
 
+// Fired on the window after a JD is queued, so any mounted list (the pipeline) can refresh. Shared
+// constant so the dispatch here and the listener in Pipeline can't drift apart on a typo.
+export const JOB_ADDED_EVENT = "landed:job-added";
+
 // Add a job to Fit Assessment by pasting its JD — the manual entry point that mirrors discovery.
 // POSTs to /api/jobs/fit (enqueueFit): ensures a fit_queue candidate exists and queues a fit job
 // for CoWork to score. Company + JD are required; role/url are optional context. Opened from the
@@ -47,7 +51,7 @@ export default function AddFitModal({ onClose }: { onClose: () => void }) {
       bump(); // handed work to CoWork — pulse the queue
       // Let any mounted view (e.g. the pipeline) refresh its list — the modal can now be opened
       // globally from the nav rail, decoupled from whoever renders the funnel.
-      window.dispatchEvent(new CustomEvent("landed:job-added"));
+      window.dispatchEvent(new CustomEvent(JOB_ADDED_EVENT));
       onClose();
     } catch (err) {
       setError(String(err instanceof Error ? err.message : err));

@@ -635,12 +635,16 @@ export function listScannedPostings(f: { company?: string; state?: string } = {}
 // candidate (discovery); apply graduates it into the tracker (creates an postings row).
 export function scannedAction(
   id: number,
-  action: "discard" | "queue-fit" | "tailor" | "apply" | "apply-later"
+  action: "discard" | "queue-fit" | "tailor" | "apply",
+  // apply: the date the user entered/confirmed; defaults to today. queueOnly: hand the work to CoWork
+  // WITHOUT moving the posting's stage — the queue action is decoupled from status tracking.
+  opts?: { appliedDate?: string; queueOnly?: boolean }
 ): { ok: boolean; appId?: number; fit?: { id: number; company: string; role: string; url?: string; jd?: string }; tailor?: { id: number; company: string; role: string; url?: string; jd?: string } } {
   const row = db.select().from(postings).where(eq(postings.id, id)).get();
   if (!row) return { ok: false };
   const co = db.select().from(companies).where(eq(companies.id, row.companyId)).get();
   const name = co?.name ?? "?";
+  const queueOnly = opts?.queueOnly ?? false;
 
   if (action === "discard") {
     db.update(postings).set({ state: "dismissed" }).where(eq(postings.id, id)).run();
@@ -648,26 +652,32 @@ export function scannedAction(
     return { ok: true };
   }
   if (action === "queue-fit") {
-    db.update(postings).set({ state: "fit_queue" }).where(eq(postings.id, id)).run();
-    logEvent({ entity: "company", entityId: row.companyId, action: "update", source: "discovery", summary: `${name} — ${row.title} · queued for fit` });
+    // queueOnly: just enqueue the fit job (see the route) — leave the stage alone. Otherwise advance
+    // the posting into the fit queue (the status-tracking move) as well.
+    if (!queueOnly) {
+      db.update(postings).set({ state: "fit_queue" }).where(eq(postings.id, id)).run();
+      logEvent({ entity: "company", entityId: row.companyId, action: "update", source: "discovery", summary: `${name} — ${row.title} · queued for fit` });
+    } else {
+      logEvent({ entity: "company", entityId: row.companyId, action: "update", source: "discovery", summary: `${name} — ${row.title} · fit re-queued` });
+    }
     return { ok: true, fit: { id: row.id, company: name, role: row.title, url: row.url ?? undefined, jd: row.jd ?? undefined } };
   }
   if (action === "tailor") {
-    // Enter the tailor queue; CoWork fills resumeDir + advances to `tailored` when the resume is ready.
+    // queueOnly: just enqueue the tailoring job — leave the stage alone. Otherwise also enter the
+    // tailor stage (CoWork fills resumeDir + advances to `tailored` when the resume is ready).
+    if (!queueOnly) {
+      db.update(postings).set({ state: "tailoring" }).where(eq(postings.id, id)).run();
+      logEvent({ entity: "company", entityId: row.companyId, action: "update", source: "discovery", summary: `${name} — ${row.title} · tailoring` });
+    } else {
+      logEvent({ entity: "company", entityId: row.companyId, action: "update", source: "discovery", summary: `${name} — ${row.title} · tailoring re-queued` });
+    }
     // Return a tailor payload so the route enqueues a tailoring job (the CoWork handoff).
-    db.update(postings).set({ state: "tailoring" }).where(eq(postings.id, id)).run();
-    logEvent({ entity: "company", entityId: row.companyId, action: "update", source: "discovery", summary: `${name} — ${row.title} · tailoring` });
     return { ok: true, tailor: { id: row.id, company: name, role: row.title, url: row.url ?? undefined, jd: row.jd ?? undefined } };
-  }
-  if (action === "apply-later") {
-    db.update(postings).set({ state: "apply_later" }).where(eq(postings.id, id)).run();
-    logEvent({ entity: "company", entityId: row.companyId, action: "update", source: "discovery", summary: `${name} — ${row.title} · saved to apply later` });
-    return { ok: true };
   }
   // apply → graduate into the tracker. One model now: just advance this posting's stage in place
   // (no separate applications row), stamping the apply metadata.
   db.update(postings)
-    .set({ state: "applied", source: row.source ?? "scan", appliedDate: today(), discoveredAt: row.discoveredAt ?? row.scannedAt.slice(0, 10) })
+    .set({ state: "applied", source: row.source ?? "scan", appliedDate: opts?.appliedDate ?? today(), discoveredAt: row.discoveredAt ?? row.scannedAt.slice(0, 10) })
     .where(eq(postings.id, id))
     .run();
   logEvent({ entityId: id, action: "update", source: "discovery", summary: `${name} — ${row.title} · applied → tracker` });

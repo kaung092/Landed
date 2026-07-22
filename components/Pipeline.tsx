@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { ArrowRight, Bold, Bot, Check, ChevronDown, ChevronRight, Coins, ExternalLink, GitCompareArrows, List, Loader2, Mail, MessageSquare, MoreHorizontal, Pencil, Pin, RefreshCw, Trash2, X } from "lucide-react";
+import { ArrowRight, Bold, Bot, Check, ChevronDown, ChevronRight, Coins, ExternalLink, GitCompareArrows, Info, List, Loader2, Mail, MessageSquare, MoreHorizontal, Pencil, Pin, RefreshCw, Trash2, X } from "lucide-react";
 import PopoverPanel, { anchorFrom } from "@/components/Popover";
 import { columnOf, fitColor, statusesForColumn, STATUS_CHIP, STATUS_LABEL, trackerDate, type ColumnId } from "@/lib/pipeline";
 import TrackerTag from "@/components/TrackerTag";
@@ -10,6 +10,7 @@ import { LevelChip } from "@/components/LevelLadder";
 import { DEFAULT_LEVELING_REF, hasLadder, type Leveling, type LevelingRef } from "@/lib/leveling";
 import { useApplications } from "@/hooks/useApplications";
 import { useCoWorkQueue } from "@/components/CoWorkQueueProvider";
+import { JOB_ADDED_EVENT } from "@/components/AddFitModal";
 import CompanyDrawer from "@/components/board/CompanyDrawer";
 import ResumeDiffModal from "@/components/ResumeDiff";
 import PeerCompModal from "@/components/PeerCompModal";
@@ -42,7 +43,7 @@ const COL_CLASS: Record<string, string> = {
 // matched + review + fit_queue + assessed; Tailor Resume = tailoring + tailored; Apply Later = apply_later); the last
 // three are TRACKER steps that read `postings` (the applications table) filtered by lib/pipeline columnOf, and
 // a row click opens the company drawer to manage it.
-type ActionKey = "queue-fit" | "discard" | "tailor" | "apply" | "apply-later";
+type ActionKey = "queue-fit" | "discard" | "tailor" | "apply";
 // Tracker steps map a spine key → the pipeline column its postings live in (lib/pipeline columnOf).
 const STEP_COLUMN: Record<string, ColumnId> = { applied: "applied", interview: "interviewing", closed: "closed" };
 const isTrackerStep = (key: string) => key in STEP_COLUMN;
@@ -86,13 +87,24 @@ const ACTIONS_BY_STATE: Record<string, ActionKey[]> = {
   matched: ["queue-fit", "discard"], // freshly scraped, awaiting glance — same triage as `review`
   review: ["queue-fit", "discard"],
   fit_queue: ["discard"],
-  assessed: ["tailor", "apply", "apply-later", "discard"],
-  apply_later: ["tailor", "apply", "discard"],
+  assessed: ["tailor", "apply", "discard"],
+  apply_later: ["apply", "tailor", "discard"], // held for later → the quick action is to mark it applied
   tailoring: ["apply", "discard"],
-  tailored: ["apply", "apply-later", "discard"],
+  tailored: ["apply", "discard"],
   dismissed: ["queue-fit"],
   filtered: ["queue-fit", "discard"],
 };
+
+// The CoWork hand-off ("queue") actions — grouped into their own menu section (see ActionCell) so
+// you can kick off fit assessment or resume tailoring from any pre-apply row, out of sequence.
+const QUEUE_KEYS: ActionKey[] = ["queue-fit", "tailor"];
+const QUEUE_ACTIONS: { key: ActionKey; label: string }[] = [
+  { key: "queue-fit", label: "Fit assessment" },
+  { key: "tailor", label: "Resume tailoring" },
+];
+// Candidate (pre-tracker) states — the rows for which queueing fit/tailoring is meaningful. Tracker
+// rows (applied/interviewing/closed) have graduated past this, so they get no Queue section.
+const CANDIDATE_STATES = new Set(["matched", "review", "fit_queue", "assessed", "tailoring", "tailored", "apply_later", "dismissed", "filtered"]);
 // Where each quick action lands a scan-stage row (mirrors scannedAction server-side). Lets the table
 // update in place: if the new state still belongs to the open step (queue-fit: review → fit_queue,
 // both Fit Assessment) the row just changes state; otherwise it drops out. Either way we skip the full
@@ -102,7 +114,6 @@ const ACTION_RESULT_STATE: Record<ActionKey, string> = {
   discard: "dismissed",
   tailor: "tailoring",
   apply: "applied",
-  "apply-later": "apply_later",
 };
 
 // Text color per tone — for the ⋯ menu items (the inline Btn uses its own fuller styling).
@@ -116,7 +127,6 @@ const TONE_TEXT: Record<string, string> = {
 const ACTION_META: Record<ActionKey, { label: string; tone: "emerald" | "rose" | "sky" | "amber"; title: string; icon?: typeof Bot; arrow?: boolean }> = {
   "queue-fit": { label: "Assess fit", tone: "sky", title: "Hand off to CoWork — assess fit → next stage", icon: Bot, arrow: true },
   tailor: { label: "Tailor", tone: "sky", title: "Hand off to CoWork — tailor a resume → next stage", icon: Bot, arrow: true },
-  "apply-later": { label: "Apply later", tone: "amber", title: "Save to the Apply Later list" },
   apply: { label: "Mark applied", tone: "emerald", title: "Mark applied → moves to the tracker", arrow: true },
   discard: { label: "Discard", tone: "rose", title: "Discard — won't resurface" },
 };
@@ -306,13 +316,41 @@ export default function Pipeline() {
     postings, loading, reload, setStatus, setInterviewed, setCompanyTier,
     setWatchlist, setField, renameCompany, moveJob, deleteJob,
   } = useApplications();
-  const { jobs, add, bump, redoNoteFor, isWorking } = useCoWorkQueue();
+  const { jobs, add, bump, redoNoteFor, isWorking, isQueued } = useCoWorkQueue();
   // Moving a posting into "Applied" opens a small prompt to capture (or update) the real applied
   // date — kept distinct from the status change itself. `askAppliedDate` resolves with the chosen
   // date, or null if the user cancels (which aborts the whole move).
   const [appliedAsk, setAppliedAsk] = useState<{ existing?: string; resolve: (d: string | null) => void } | null>(null);
   const askAppliedDate = (existing?: string) => new Promise<string | null>((resolve) => setAppliedAsk({ existing, resolve }));
   const resolveApplied = (d: string | null) => { setAppliedAsk((cur) => { cur?.resolve(d); return null; }); };
+  // Transient toast (bottom-center), e.g. "fit already queued — skipped". Not a modal — it never
+  // blocks. Auto-dismisses; a new message replaces the old one.
+  const [toast, setToast] = useState<string | null>(null);
+  const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const notify = useCallback((msg: string) => {
+    setToast(msg);
+    if (toastTimer.current) clearTimeout(toastTimer.current);
+    toastTimer.current = setTimeout(() => setToast(null), 4500);
+  }, []);
+  useEffect(() => () => { if (toastTimer.current) clearTimeout(toastTimer.current); }, []);
+  // Moving a posting whose queued tailoring job would be dropped opens a 3-way confirm (Drop / Keep /
+  // Cancel). `askDropTailoring` resolves with the choice; guardTailoringDrop (below) turns it into the
+  // extra PATCH body, or null to abort the move.
+  const [dropAsk, setDropAsk] = useState<{ company: string; role: string; target: string; resolve: (v: "drop" | "keep" | "cancel") => void } | null>(null);
+  const askDropTailoring = (info: { company: string; role: string; target: string }) =>
+    new Promise<"drop" | "keep" | "cancel">((resolve) => setDropAsk({ ...info, resolve }));
+  const resolveDrop = (v: "drop" | "keep" | "cancel") => { setDropAsk((cur) => { cur?.resolve(v); return null; }); };
+  // A queued (not-yet-claimed) tailoring job is what a status move would silently drop; an in-progress
+  // one survives. Moving INTO the tailor stage keeps/enqueues, so only guard exits. Returns the extra
+  // PATCH body ({} normally, { keepTailoringJob:true } to spare it), or null to abort.
+  const guardTailoringDrop = useCallback(async (id: string, company: string, role: string, targetState: string): Promise<Record<string, unknown> | null> => {
+    const willDrop = targetState !== "tailoring" && isQueued(id, "tailor") && !isWorking(id, "tailor");
+    if (!willDrop) return {};
+    const label = MOVE_TARGETS.find((t) => t.state === targetState)?.label ?? targetState;
+    const choice = await askDropTailoring({ company, role, target: label });
+    if (choice === "cancel") return null;
+    return choice === "keep" ? { keepTailoringJob: true } : {};
+  }, [isQueued, isWorking]);
   // Whether an inbox-sync job is already outstanding (queued or claimed) — one at a time is enough.
   // `syncing` covers the gap between clicking and the queue re-fetch so a fast double-click can't
   // stack two jobs; it clears once the queued job actually shows up.
@@ -469,8 +507,8 @@ export default function Pipeline() {
   // in fit_queue, so refresh the tracker postings and the active step's rows to surface it at once.
   useEffect(() => {
     const onAdded = () => { reload(); loadRows(); };
-    window.addEventListener("landed:job-added", onAdded);
-    return () => window.removeEventListener("landed:job-added", onAdded);
+    window.addEventListener(JOB_ADDED_EVENT, onAdded);
+    return () => window.removeEventListener(JOB_ADDED_EVENT, onAdded);
   }, [reload, loadRows]);
   // `jobKey` change (a queued fit/tailoring job was claimed/deleted — e.g. delete un-queues its
   // candidate server-side: fit_queue → review, tailoring → assessed) re-reads the active step's rows
@@ -550,30 +588,48 @@ export default function Pipeline() {
     </>
   );
 
-  const act = async (id: number, action: ActionKey) => {
+  // `queueOnly` (the ⋯ "Queue" section) hands fit/tailor work to CoWork WITHOUT moving the posting's
+  // stage — actions are decoupled from status tracking. The default (inline quick buttons) still
+  // advances the stage.
+  const act = async (id: number, action: ActionKey, queueOnly = false) => {
     // Graceful in-place update — no full re-fetch. A row that stays in the open step (queue-fit:
-    // review → fit_queue) just changes state; one that leaves (discard, tailor, apply, apply-later)
-    // drops out. The other rows keep their position instead of flashing/re-sorting.
+    // review → fit_queue) just changes state; one that leaves (discard, tailor, apply) drops out.
+    // The other rows keep their position instead of flashing/re-sorting. queueOnly never moves a row.
     const next = ACTION_RESULT_STATE[action];
-    const stays = stepStates(tab).includes(next);
+    const stays = queueOnly || stepStates(tab).includes(next);
     const row = scanRows?.find((r) => r.id === id);
+    // "Mark applied" is a move into Applied → capture the real applied date first (cancel aborts).
+    // Scan-stage rows have never been applied, so this is always the fresh prompt (default today).
+    let appliedDate: string | undefined;
+    if (action === "apply") {
+      const date = await askAppliedDate();
+      if (date === null) return;
+      appliedDate = date;
+    }
     pendo.track("candidate_action_taken", {
       posting_id: id,
       company: row?.company,
       title: row?.title,
       action,
+      queue_only: queueOnly,
       from_state: row?.state,
-      to_state: next,
+      to_state: queueOnly ? row?.state : next,
       pipeline_step: tab,
       fit_score: row?.fitScore,
     });
-    setScanRows((rs) =>
-      rs == null ? rs
-        : stays ? rs.map((r) => (r.id === id ? { ...r, state: next } : r))
-        : rs.filter((r) => r.id !== id)
-    );
-    const r = await fetch(`/api/scanned/${id}`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action }) }).catch(() => null);
+    // Skip the optimistic stage move for a queue-only hand-off — only the queued chip changes, and
+    // that rides on the live queue (bump refreshes it below).
+    if (!queueOnly) {
+      setScanRows((rs) =>
+        rs == null ? rs
+          : stays ? rs.map((r) => (r.id === id ? { ...r, state: next } : r))
+          : rs.filter((r) => r.id !== id)
+      );
+    }
+    const r = await fetch(`/api/scanned/${id}`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action, queueOnly, ...(appliedDate ? { appliedDate } : {}) }) }).catch(() => null);
     if (!r || !r.ok) { loadRows(); return; } // failed — reconcile the table from the server
+    const d = await r.json().catch(() => ({}));
+    if (d.fitAlreadyQueued) notify(`Fit assessment is already queued for ${row?.company ?? "this posting"} — skipped the duplicate.`);
     loadCounts(terms); // keep the spine badges accurate
     if (action === "queue-fit" || action === "tailor") bump(); // handed work to CoWork — pulse the queue
   };
@@ -595,6 +651,10 @@ export default function Pipeline() {
     } else if (state === "interview") {
       extra = { interviewed: true };
     }
+    // If a queued tailoring job would be dropped by this move, confirm (Drop / Keep / Cancel).
+    const guard = await guardTailoringDrop(String(p.id), p.company, p.title, state);
+    if (guard === null) return; // cancelled
+    extra = { ...extra, ...guard };
     pendo.track("candidate_moved_to_stage", {
       posting_id: p.id,
       company: p.company,
@@ -617,12 +677,20 @@ export default function Pipeline() {
   // stamped to today.
   const setStatusGuarded = async (p: Posting, to: Status) => {
     if (p.status === to) return;
+    const guard = await guardTailoringDrop(String(p.id), p.company, p.role, to);
+    if (guard === null) return; // cancelled
+    let extra: Record<string, unknown> = {};
     if (to === "applied") {
       const date = await askAppliedDate(p.appliedDate);
       if (date === null) return;
-      setStatus(p, to, { appliedDate: date });
+      extra = { appliedDate: date };
+    }
+    if (guard.keepTailoringJob) {
+      // The hook's setStatus can't carry a control flag, so PATCH directly to spare the job, then reconcile.
+      await fetch(`/api/applications/${p.id}`, { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ status: to, ...extra, keepTailoringJob: true }) }).catch(() => null);
+      reload();
     } else {
-      setStatus(p, to);
+      setStatus(p, to, extra.appliedDate ? { appliedDate: extra.appliedDate as string } : undefined);
     }
   };
 
@@ -642,14 +710,17 @@ export default function Pipeline() {
   // applied by the row map below, so this just returns what goes inside the cell.
   // Standard work-status for a row's fit/tailor phase: in-progress (an agent claimed the job) wins,
   // then a queued redo, then the state-based queued status. Drives the unified JobStatusChip below.
+  // An outstanding fit/tailor job wins even when the posting's stage doesn't say so — a fit/tailor can
+  // be queued out of sequence (a re-assess or re-tailor from a later stage), which no longer moves the
+  // stage. So read "queued" off the live queue (isQueued), falling back to the stage as a backstop.
   const fitStatusOf = (p: FRow): WorkStatus | null =>
     isWorking(String(p.id), "fit") ? "in_progress"
       : redoNoteFor(String(p.id), "fit") !== null ? "queued_redo"
-      : p.state === "fit_queue" ? "queued_fit" : null;
+      : (isQueued(String(p.id), "fit") || p.state === "fit_queue") ? "queued_fit" : null;
   const tailorStatusOf = (p: FRow): WorkStatus | null =>
     isWorking(String(p.id), "tailor") ? "in_progress"
       : redoNoteFor(String(p.id), "tailor") !== null ? "queued_redo"
-      : (p.state === "tailoring" && !p.resumeDir) ? "queued_tailor" : null;
+      : (isQueued(String(p.id), "tailor") || (p.state === "tailoring" && !p.resumeDir)) ? "queued_tailor" : null;
 
   // Inline-edit input for an editing row's company/title/location cells. Enter saves, Escape cancels;
   // clicks are kept off the row (which would open the drawer).
@@ -763,7 +834,7 @@ export default function Pipeline() {
             <button onClick={cancelEdit} title="Cancel (Esc)" className="rounded-md p-1 text-zinc-400 ring-1 ring-inset ring-zinc-700 transition hover:bg-zinc-800"><X size={14} /></button>
           </span>
         );
-        return <ActionCell actions={ACTIONS_BY_STATE[p.state] ?? []} state={p.state} onAct={(a) => act(p.id, a)} onMove={(s) => moveTo(p, s)} onEdit={() => startEdit(p)} />;
+        return <ActionCell actions={ACTIONS_BY_STATE[p.state] ?? []} state={p.state} fitDone={p.fitScore != null || !!p.fit} resumeDone={!!p.resumeDir} onAct={(a, queueOnly) => act(p.id, a, queueOnly)} onMove={(s) => moveTo(p, s)} onEdit={() => startEdit(p)} />;
       default: return null;
     }
   };
@@ -1045,12 +1116,14 @@ export default function Pipeline() {
           focusId={scanPosting.id}
           onClose={() => setScanPosting(null)}
           onSetStatus={async (p, status) => {
+            const guard = await guardTailoringDrop(String(p.id), p.company, p.role, status);
+            if (guard === null) return; // cancelled
             if (status === "applied") {
               const date = await askAppliedDate(p.appliedDate);
               if (date === null) return;
-              scanEdit(p.id, { status, appliedDate: date });
+              scanEdit(p.id, { status, appliedDate: date, ...guard });
             } else {
-              scanEdit(p.id, { status, ...(status === "interview" && !p.interviewed ? { interviewed: true } : {}) });
+              scanEdit(p.id, { status, ...(status === "interview" && !p.interviewed ? { interviewed: true } : {}), ...guard });
             }
           }}
           onSetInterviewed={(p, on) => scanEdit(p.id, { interviewed: on })}
@@ -1067,6 +1140,47 @@ export default function Pipeline() {
       {diffSlug && <ResumeDiffModal key={diffSlug} slug={diffSlug} postingId={diffPostingId ?? undefined} redoNote={diffPostingId ? redoNoteFor(diffPostingId, "tailor") : null} annotated={diffAnnotated} title={diffSlug} onClose={() => { setDiffSlug(null); setDiffPostingId(null); setDiffAnnotated(undefined); }} />}
       {peerOpen && <PeerCompModal onClose={() => setPeerOpen(false)} />}
       {appliedAsk && <AppliedDateModal existing={appliedAsk.existing} onResolve={resolveApplied} />}
+      {dropAsk && <DropTailoringModal company={dropAsk.company} role={dropAsk.role} target={dropAsk.target} onResolve={resolveDrop} />}
+      {toast && (
+        <div className="pointer-events-none fixed inset-x-0 bottom-6 z-50 flex justify-center px-4">
+          <div className="pointer-events-auto flex items-center gap-2 rounded-full border border-zinc-700 bg-zinc-900/95 px-4 py-2 text-[13px] text-zinc-200 shadow-xl backdrop-blur">
+            <Info size={14} className="shrink-0 text-sky-300" />
+            {toast}
+            <button onClick={() => setToast(null)} className="ml-1 shrink-0 text-zinc-500 transition hover:text-zinc-200"><X size={13} /></button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// The 3-way confirm shown when a status move would drop a posting's still-queued résumé-tailoring
+// job. Drop (default) removes it; Keep spares it (it outlives the move, but running it later re-marks
+// the posting "tailored"); Cancel aborts. Modeled on AppliedDateModal.
+function DropTailoringModal({ company, role, target, onResolve }: { company: string; role: string; target: string; onResolve: (v: "drop" | "keep" | "cancel") => void }) {
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onResolve("cancel"); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onResolve]);
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4" onClick={() => onResolve("cancel")}>
+      <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" />
+      <div className="relative w-full max-w-md rounded-2xl border border-zinc-800 bg-zinc-950 p-5 shadow-2xl" onClick={(e) => e.stopPropagation()}>
+        <h3 className="text-[15px] font-semibold text-zinc-100">Drop the queued tailoring job?</h3>
+        <p className="mt-1.5 text-[13px] leading-relaxed text-zinc-400">
+          <span className="text-zinc-200">{company}</span>{role ? <> — {role}</> : null} has a résumé-tailoring job still
+          queued (CoWork hasn&apos;t run it). Moving it to <span className="text-zinc-200">{target}</span> can drop that job.
+        </p>
+        <p className="mt-2 text-[12px] leading-relaxed text-zinc-600">
+          Keep it and the job outlives the move — but when CoWork runs it, the posting moves back to <span className="text-zinc-400">Tailored</span>.
+        </p>
+        <div className="mt-4 flex flex-wrap justify-end gap-2">
+          <button onClick={() => onResolve("cancel")} className="rounded-lg px-3 py-1.5 text-[13px] text-zinc-400 transition hover:text-zinc-200">Cancel</button>
+          <button onClick={() => onResolve("keep")} className="rounded-lg bg-zinc-800 px-3 py-1.5 text-[13px] font-medium text-zinc-200 ring-1 ring-inset ring-zinc-700 transition hover:bg-zinc-700">Keep job &amp; move</button>
+          <button onClick={() => onResolve("drop")} className="rounded-lg bg-rose-600 px-3 py-1.5 text-[13px] font-medium text-white transition hover:bg-rose-500">Drop &amp; move</button>
+        </div>
+      </div>
     </div>
   );
 }
@@ -1547,7 +1661,7 @@ function CommentCell({ id, comments, onChanged }: { id: number; comments: Commen
   );
 }
 
-function ActionCell({ actions, state, onAct, onMove, onEdit }: { actions: ActionKey[]; state: string; onAct: (a: ActionKey) => void; onMove: (state: string) => void; onEdit: () => void }) {
+function ActionCell({ actions, state, fitDone, resumeDone, onAct, onMove, onEdit }: { actions: ActionKey[]; state: string; fitDone?: boolean; resumeDone?: boolean; onAct: (a: ActionKey, queueOnly?: boolean) => void; onMove: (state: string) => void; onEdit: () => void }) {
   const [pos, setPos] = useState<{ x: number; y: number } | null>(null);
   // Just the PRIMARY action as a quick button; every secondary action folds into the ⋯ menu, which
   // also carries "Move to" (jump to any stage out of sequence). The ⋯ shows on every row — even
@@ -1560,7 +1674,10 @@ function ActionCell({ actions, state, onAct, onMove, onEdit }: { actions: Action
   const inline = isFit && actions.includes("discard")
     ? [...actions.slice(0, 1).filter((a) => a !== "discard"), "discard"] as ActionKey[]
     : actions.slice(0, 1);
-  const more = actions.filter((a) => !inline.includes(a));
+  // Queue hand-offs get their own section, so keep them out of the generic secondary list.
+  const more = actions.filter((a) => !inline.includes(a) && !QUEUE_KEYS.includes(a));
+  // On candidate rows, offer both queue hand-offs — minus whichever is already the inline quick button.
+  const queueItems = CANDIDATE_STATES.has(state) ? QUEUE_ACTIONS.filter((q) => !inline.includes(q.key)) : [];
   const moves = MOVE_TARGETS.filter((t) => t.stage !== STATE_STAGE[state]);
   // The ⋯ menu always shows now: it carries Edit at minimum (plus any secondary actions / Move to).
   const hasMenu = true;
@@ -1592,7 +1709,7 @@ function ActionCell({ actions, state, onAct, onMove, onEdit }: { actions: Action
             >
               <Pencil size={13} className="text-zinc-500" />Edit
             </button>
-            {(more.length > 0 || moves.length > 0) && <div className="my-0.5 border-t border-zinc-800" />}
+            {(more.length > 0 || queueItems.length > 0 || moves.length > 0) && <div className="my-0.5 border-t border-zinc-800" />}
             {more.map((a) => {
               const m = ACTION_META[a];
               const I = m.icon;
@@ -1607,7 +1724,26 @@ function ActionCell({ actions, state, onAct, onMove, onEdit }: { actions: Action
                 </button>
               );
             })}
-            {more.length > 0 && moves.length > 0 && <div className="my-0.5 border-t border-zinc-800" />}
+            {more.length > 0 && queueItems.length > 0 && <div className="my-0.5 border-t border-zinc-800" />}
+            {queueItems.length > 0 && (
+              <div className="px-2.5 pb-0.5 pt-1 text-[11px] font-semibold uppercase tracking-wider text-zinc-600">Queue</div>
+            )}
+            {queueItems.map((q) => {
+              // Already have the artifact? It's a re-run, so label it "Redo …".
+              const done = q.key === "queue-fit" ? fitDone : resumeDone;
+              const label = done ? `Redo ${q.label.toLowerCase()}` : q.label;
+              return (
+                <button
+                  key={q.key}
+                  onClick={() => { onAct(q.key, true); setPos(null); }}
+                  title={`Hand off to CoWork — ${label.toLowerCase()} (doesn't change the stage)`}
+                  className="flex items-center gap-1.5 whitespace-nowrap rounded-md px-2.5 py-1.5 text-left text-[13px] font-medium text-sky-300 transition hover:bg-zinc-800"
+                >
+                  <Bot size={13} />{label}<ArrowRight size={13} className="ml-auto text-zinc-500" />
+                </button>
+              );
+            })}
+            {(more.length > 0 || queueItems.length > 0) && moves.length > 0 && <div className="my-0.5 border-t border-zinc-800" />}
             {moves.length > 0 && (
               <div className="px-2.5 pb-0.5 pt-1 text-[11px] font-semibold uppercase tracking-wider text-zinc-600">Move to</div>
             )}

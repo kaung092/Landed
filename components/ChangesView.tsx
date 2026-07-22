@@ -60,6 +60,19 @@ const ACTION_LABEL: Record<string, string> = {
   insert: "added", delete: "removed", update: "updated", flag: "flagged", merge: "merged", preserve: "kept",
 };
 
+// Event type categories for the feed tabs. An "application status update" is an inbox-sync event
+// (the automated status/date sync) or any direct change to a posting's `status` field (a manual
+// stage move); everything else is "other".
+type TypeFilter = "all" | "status" | "other";
+const isStatusUpdate = (e: EventView): boolean => e.source === "inbox-sync" || e.field === "status";
+const matchesType = (e: EventView, t: TypeFilter): boolean =>
+  t === "all" ? true : t === "status" ? isStatusUpdate(e) : !isStatusUpdate(e);
+const TYPE_TABS: { id: TypeFilter; label: string }[] = [
+  { id: "all", label: "All" },
+  { id: "status", label: "Application status" },
+  { id: "other", label: "Other" },
+];
+
 // Turn a raw event into a scannable shape: a colored verb, the company/role it touched,
 // and a plain-English description of what actually changed. Summaries follow the shape
 // `Company — Role · detail`, so we split on those separators and humanize known jargon
@@ -374,6 +387,7 @@ export default function ChangesView() {
   const [review, setReview] = useState<Posting[]>([]);
   const [matches, setMatches] = useState<PendingMatch[]>([]);
   const [filter, setFilter] = useState<Actor | "all">("all");
+  const [typeFilter, setTypeFilter] = useState<TypeFilter>("all");
   const [query, setQuery] = useState("");
   const [openBatches, setOpenBatches] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
@@ -415,7 +429,9 @@ export default function ChangesView() {
     setBusy(null);
   }
 
-  const filtered = useMemo(() => {
+  // Events narrowed by actor + search (but NOT type) — the base for both the type-tab counts and the
+  // type-filtered feed, so each tab's count reflects the current actor/search context.
+  const scoped = useMemo(() => {
     const q = query.trim().toLowerCase();
     return events.filter(
       (e) =>
@@ -423,6 +439,11 @@ export default function ChangesView() {
         (!q || `${e.summary ?? ""} ${e.source} ${e.actor} ${e.entity}`.toLowerCase().includes(q))
     );
   }, [events, filter, query]);
+  const typeCounts = useMemo(() => {
+    const status = scoped.filter(isStatusUpdate).length;
+    return { all: scoped.length, status, other: scoped.length - status };
+  }, [scoped]);
+  const filtered = useMemo(() => scoped.filter((e) => matchesType(e, typeFilter)), [scoped, typeFilter]);
   const groups = useMemo(() => groupByDay(filtered), [filtered]);
   // Everything awaiting your decision — pinned at the top until resolved.
   const actionCount = matches.length + review.length;
@@ -577,7 +598,23 @@ export default function ChangesView() {
           {/* Feed */}
           <section>
             <div className="mb-3 flex flex-wrap items-center gap-2">
-              <h2 className="text-[13px] font-semibold uppercase tracking-wider text-zinc-400">Feed</h2>
+              {/* Type tabs — categorize the feed by event kind (app status updates vs everything else). */}
+              <div className="flex items-center gap-1 rounded-lg bg-zinc-900 p-0.5 ring-1 ring-inset ring-zinc-800">
+                {TYPE_TABS.map((t) => (
+                  <button
+                    key={t.id}
+                    onClick={() => setTypeFilter(t.id)}
+                    className={`inline-flex items-center gap-1.5 rounded-md px-2.5 py-1 text-[13px] transition ${
+                      typeFilter === t.id ? "bg-sky-500/15 font-medium text-sky-200 ring-1 ring-inset ring-sky-500/30" : "text-zinc-400 hover:text-zinc-200"
+                    }`}
+                  >
+                    {t.label}
+                    <span className={`rounded px-1 text-[11px] tabular-nums ${typeFilter === t.id ? "bg-sky-500/20 text-sky-200" : "bg-zinc-800 text-zinc-500"}`}>
+                      {typeCounts[t.id]}
+                    </span>
+                  </button>
+                ))}
+              </div>
               <div className="relative ml-auto">
                 <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-zinc-500" />
                 <input

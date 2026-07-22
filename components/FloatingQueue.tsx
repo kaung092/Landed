@@ -1,8 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { Bot, X, ArrowRight, Play, Square } from "lucide-react";
+import { Bot, X, ArrowRight, Play, Square, CheckCircle2 } from "lucide-react";
 import { useCoWorkQueue } from "@/components/CoWorkQueueProvider";
 import { useAgentChats } from "@/components/AgentChatsProvider";
 import { loadTone, loadHint, hasWip, wipBlink, agentColor } from "@/components/jobMeta";
@@ -26,6 +26,33 @@ export default function FloatingQueue() {
   // Any job an agent has claimed (wip) → an agent is actively working; the Bot icon spins to show it.
   const working = jobs.some((j) => j.status === "wip");
 
+  // "Queue cleared" toasts: when a job type's outstanding count falls from >0 to 0 (an agent drained
+  // it), pop a little notification saying how many completed. `peak` tracks the most it held since it
+  // was last empty, so a queue drained across several polls still reports the full count.
+  const prevCounts = useRef<Record<string, number>>({});
+  const peak = useRef<Record<string, number>>({});
+  const toastId = useRef(0);
+  const [toasts, setToasts] = useState<{ id: number; type: string; n: number }[]>([]);
+  const dismiss = useCallback((id: number) => setToasts((ts) => ts.filter((t) => t.id !== id)), []);
+  useEffect(() => {
+    const cur: Record<string, number> = {};
+    for (const j of jobs) cur[j.type] = (cur[j.type] ?? 0) + 1;
+    for (const t of new Set([...Object.keys(cur), ...Object.keys(prevCounts.current)])) {
+      const c = cur[t] ?? 0;
+      const p = prevCounts.current[t] ?? 0;
+      if (c > (peak.current[t] ?? 0)) peak.current[t] = c;
+      if (p > 0 && c === 0) {
+        const n = peak.current[t] || p;
+        const id = ++toastId.current;
+        // eslint-disable-next-line react-hooks/set-state-in-effect
+        setToasts((ts) => [...ts.slice(-3), { id, type: t, n }]); // keep at most 4 on screen
+        setTimeout(() => setToasts((ts) => ts.filter((x) => x.id !== id)), 6000); // auto-dismiss
+        peak.current[t] = 0;
+      }
+    }
+    prevCounts.current = cur;
+  }, [jobs]);
+
   // Idle, the icon tucks off the right edge showing only a ~25% sliver; it slides fully into view on
   // hover, while the panel is open, or briefly when a job is queued (pulse). The wrapper reaches the
   // screen edge (right-0 + pr-6) so its hover area covers both the sliver and the revealed button —
@@ -34,6 +61,12 @@ export default function FloatingQueue() {
 
   return (
     <div className="group fixed bottom-6 right-0 z-50 flex flex-col items-end gap-3 pr-6">
+      {/* Queue-cleared notifications, stacked above the panel + icon. */}
+      {toasts.length > 0 && (
+        <div className="flex flex-col items-end gap-2">
+          {toasts.map((t) => <QueueToast key={t.id} type={t.type} n={t.n} onDismiss={() => dismiss(t.id)} />)}
+        </div>
+      )}
       {open && <Panel onClose={() => setOpen(false)} jobs={jobs} count={count} />}
 
       <button
@@ -51,6 +84,30 @@ export default function FloatingQueue() {
           </span>
         )}
       </button>
+    </div>
+  );
+}
+
+// A "queue cleared" chat bubble — a violet gradient (matching the robot) with a springy pop-in.
+// Click (or the 6s timer) dismisses it.
+function QueueToast({ type, n, onDismiss }: { type: string; n: number; onDismiss: () => void }) {
+  return (
+    <div
+      onClick={onDismiss}
+      title="Dismiss"
+      className="cowork-toast-in flex w-80 cursor-pointer items-center gap-3 rounded-2xl border border-violet-500/30 bg-gradient-to-br from-violet-500/25 via-zinc-900 to-zinc-900 px-3.5 py-2.5 shadow-2xl shadow-violet-900/40 ring-1 ring-inset ring-violet-400/20 transition hover:from-violet-500/35"
+    >
+      <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-violet-500/20">
+        <CheckCircle2 size={18} className="text-violet-300" />
+      </span>
+      <span className="min-w-0 flex-1">
+        <span className="block truncate text-[13px] font-semibold text-zinc-50">{personaFor(type)}</span>
+        <span className="block text-[12px]">
+          <span className="font-medium text-violet-300">Queue cleared!</span>
+          <span className="text-zinc-400"> {n} job{n === 1 ? "" : "s"} completed</span>
+        </span>
+      </span>
+      <X size={14} className="shrink-0 text-zinc-500" />
     </div>
   );
 }
