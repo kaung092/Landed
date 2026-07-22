@@ -2,17 +2,17 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { ArrowRight, Bold, Bot, Check, ChevronRight, ExternalLink, GitCompareArrows, List, Loader2, Mail, MessageSquare, MoreHorizontal, Pencil, Pin, Trash2, X } from "lucide-react";
+import { ArrowRight, Bold, Bot, Check, ChevronDown, ChevronRight, Coins, ExternalLink, GitCompareArrows, List, Loader2, Mail, MessageSquare, MoreHorizontal, Pencil, Pin, RefreshCw, Trash2, X } from "lucide-react";
 import PopoverPanel, { anchorFrom } from "@/components/Popover";
-import { columnOf, fitColor, statusesForColumn, STATUS_CHIP, STATUS_LABEL, type ColumnId } from "@/lib/pipeline";
+import { columnOf, fitColor, statusesForColumn, STATUS_CHIP, STATUS_LABEL, trackerDate, type ColumnId } from "@/lib/pipeline";
 import TrackerTag from "@/components/TrackerTag";
 import { LevelChip } from "@/components/LevelLadder";
 import { DEFAULT_LEVELING_REF, hasLadder, type Leveling, type LevelingRef } from "@/lib/leveling";
 import { useApplications } from "@/hooks/useApplications";
 import { useCoWorkQueue } from "@/components/CoWorkQueueProvider";
-import TargetsTable, { type TargetCounts } from "@/components/board/TargetsTable";
 import CompanyDrawer from "@/components/board/CompanyDrawer";
 import ResumeDiffModal from "@/components/ResumeDiff";
+import PeerCompModal from "@/components/PeerCompModal";
 import { tailorDiffFor, lastTailoredAt } from "@/lib/jobs/redolog";
 import { aggregateCompanies, type CompanyAgg } from "@/lib/board";
 import { ResTh } from "@/components/ResizableTable";
@@ -20,11 +20,6 @@ import { DISCOVERY_SPINE as SPINE, DISCOVERY_ARCHIVE as ARCHIVE, stepCount, type
 import type { Comment, Posting, FitAssessment, RedoTurn, Status } from "@/lib/types";
 import { JobStatusChip, type WorkStatus } from "@/components/JobStatus";
 import { ago } from "@/lib/format";
-
-// Display date for a tracked job — prefer the application date, else last-updated/discovered.
-function trackerDate(p: { appliedDate?: string; updatedAt?: string; discoveredAt?: string }): string | undefined {
-  return p.appliedDate ?? p.updatedAt ?? p.discoveredAt;
-}
 
 const FUNNEL_LABEL: Record<string, string> = { company: "Company", title: "Title", location: "Location", fit: "Fit", lvl: "Lvl", comment: "Note", gaps: "Gaps", resume: "Resume", status: "Status", applied: "Applied", updated: "Last updated", act: "Action" };
 // The table is `table-layout: fixed` (frozen columns need their declared widths to be authoritative,
@@ -316,6 +311,27 @@ export default function Pipeline() {
   // `syncing` covers the gap between clicking and the queue re-fetch so a fast double-click can't
   // stack two jobs; it clears once the queued job actually shows up.
   const [syncing, setSyncing] = useState(false);
+  // One-click "Update interview status" fan-out — POST the orchestrator, then refresh queue + board.
+  const [updating, setUpdating] = useState(false);
+  const [updateNote, setUpdateNote] = useState<string | null>(null);
+  const runInterviewUpdate = async () => {
+    if (updating) return;
+    setUpdating(true);
+    setUpdateNote(null);
+    try {
+      const r = await fetch("/api/interview-status-update", { method: "POST" }).then((x) => x.json()).catch(() => null);
+      bump();
+      reload();
+      if (r && typeof r.companies === "number") {
+        const bits = [`${r.companies} ${r.companies === 1 ? "company" : "companies"}`];
+        if (r.researchQueued) bits.push(`${r.researchQueued} new research`);
+        if (r.inboxSync) bits.push("inbox sync");
+        setUpdateNote(`Queued: ${bits.join(" · ")}`);
+      }
+    } finally {
+      setUpdating(false);
+    }
+  };
   const inboxSyncQueued = jobs.some((j) => j.type === "inbox-sync");
   // Clear the optimistic pending flag once the queued job actually appears; a one-shot reconcile with
   // the polled queue, not a render-driving loop.
@@ -328,7 +344,7 @@ export default function Pipeline() {
 
   // Active spine step + its table state. Persisted so a refresh keeps you on the same step (start
   // from the default for a clean SSR/first render, then restore the saved step after mount).
-  const [tab, setTab] = useState("review");
+  const [tab, setTab] = useState("fit");
   // Restore the persisted active step on mount. Start from the default for a clean SSR/first render,
   // then restore after mount (avoids a hydration mismatch). The filter chips restore similarly,
   // just below — after their state is declared.
@@ -357,6 +373,14 @@ export default function Pipeline() {
   const addTag = (t: string) => { const v = t.trim(); if (v && !tags.includes(v)) saveTags([...tags, v]); setDraft(""); };
   const removeTag = (t: string) => saveTags(tags.filter((x) => x !== t));
   const clearFilter = () => { saveTags([]); setDraft(""); };
+  // Company picker — the same chips, chosen from a list instead of typed. A company counts as picked
+  // when a chip names it exactly (case-insensitively); toggling off drops every chip that does.
+  const [pickerAt, setPickerAt] = useState<{ x: number; y: number } | null>(null);
+  const isPicked = (c: string) => tags.some((t) => t.toLowerCase() === c.toLowerCase());
+  const togglePicked = (c: string) => {
+    if (isPicked(c)) saveTags(tags.filter((t) => t.toLowerCase() !== c.toLowerCase()));
+    else saveTags([...tags, c]);
+  };
   // Restore the committed filter chips on mount (same SSR-safe pattern as the step above).
   useEffect(() => {
     try {
@@ -395,6 +419,7 @@ export default function Pipeline() {
   const [editDraft, setEditDraft] = useState<{ company: string; title: string; location: string }>({ company: "", title: "", location: "" });
   // Resume diff modal — opened from the Tailor step's resume cell (and the drawer's resume row).
   // Track the row's posting id alongside the slug so the modal can offer "redo with a note".
+  const [peerOpen, setPeerOpen] = useState(false);
   const [diffSlug, setDiffSlug] = useState<string | null>(null);
   const [diffPostingId, setDiffPostingId] = useState<string | null>(null);
   const [diffAnnotated, setDiffAnnotated] = useState<RedoTurn["diff"]>(undefined);
@@ -426,7 +451,7 @@ export default function Pipeline() {
 
   const loadRows = useCallback(() => {
     // Tracker steps read `postings`; the Scan Watchlist step shows watchlist + settings (no table).
-    if (isTrackerStep(tab) || tab === "review") { setScanRows([]); return; }
+    if (isTrackerStep(tab)) { setScanRows([]); return; }
     fetch(`/api/scanned?state=${stepStates(tab).join(",")}`).then((r) => r.json()).then((d) => setScanRows(d.postings ?? [])).catch(() => setScanRows([]));
   }, [tab]);
   // Tab switch (and first mount): a fresh data set, so clear to the loading placeholder, then load.
@@ -434,6 +459,13 @@ export default function Pipeline() {
   // tab change, not a render loop.
   // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => { setScanRows(null); loadRows(); }, [loadRows]);
+  // A JD was pasted via the global "Add job" modal (nav rail or this page) — the new candidate lands
+  // in fit_queue, so refresh the tracker postings and the active step's rows to surface it at once.
+  useEffect(() => {
+    const onAdded = () => { reload(); loadRows(); };
+    window.addEventListener("landed:job-added", onAdded);
+    return () => window.removeEventListener("landed:job-added", onAdded);
+  }, [reload, loadRows]);
   // `jobKey` change (a queued fit/tailoring job was claimed/deleted — e.g. delete un-queues its
   // candidate server-side: fit_queue → review, tailoring → assessed) re-reads the active step's rows
   // so it drops/updates without a manual tab switch. Do it SILENTLY — load in place WITHOUT clearing to
@@ -450,19 +482,17 @@ export default function Pipeline() {
   // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => setSort(null), [tab]);
 
-  // Watchlist rollup (discovered/applied/total per company) — derived from the loaded postings.
-  const counts = useMemo(() => {
-    const m = new Map<string, TargetCounts>();
-    for (const p of postings) {
-      const c = m.get(p.company) ?? { discovered: 0, applied: 0, total: 0, items: [] };
-      c.total++;
-      if (p.status === "discovered") c.discovered++;
-      if (p.status === "applied") c.applied++;
-      c.items.push({ role: p.role, status: p.status, date: trackerDate(p), appliedDate: p.appliedDate, interviewed: p.interviewed });
-      m.set(p.company, c);
+  // Every company the filter can reach, for the picker: the tracker spans all stages, `scanRows` adds
+  // the loaded scan step's rows (whose companies may not be tracked yet). Deduped case-insensitively
+  // on first-seen spelling, A→Z.
+  const companyOptions = useMemo(() => {
+    const seen = new Map<string, string>();
+    for (const c of [...postings.map((p) => p.company), ...(scanRows ?? []).map((r) => r.company)]) {
+      const k = c?.trim().toLowerCase();
+      if (k && !seen.has(k)) seen.set(k, c.trim());
     }
-    return m;
-  }, [postings]);
+    return [...seen.values()].sort((a, b) => a.localeCompare(b));
+  }, [postings, scanRows]);
 
   // The "filter by company…" box matches on COMPANY ONLY (callers pass just p.company), so a term
   // like "senior" or a location never surfaces unrelated companies.
@@ -716,11 +746,10 @@ export default function Pipeline() {
   // (tracker steps filter the client-side `postings`; pre-apply steps read `bucketCounts`, which the
   // server already filtered by the same terms) — so the spine reads as a "where is this company?" map.
   const count = (s: SpineStep): number | undefined =>
-    s.key === "review" ? undefined // Scan Watchlist = config, no posting count badge
-      : isTrackerStep(s.key)
+    isTrackerStep(s.key)
       ? postings.filter((p) => columnOf(p) === STEP_COLUMN[s.key] && matches(p.company)).length
       : bucketCounts ? stepCount(s, bucketCounts) : undefined;
-  const tableLoading = isTracker ? loading : tab === "review" ? false : scanRows === null;
+  const tableLoading = isTracker ? loading : scanRows === null;
   const empty = (!rows || rows.length === 0) && !tableLoading;
 
   // Drawer wiring — reuse the board aggregate so the drawer gets the whole company group.
@@ -781,7 +810,7 @@ export default function Pipeline() {
               return (
                 <ArrowStep
                   key={s.key} step={s} first={i === 0} count={n} active={tab === s.key}
-                  muted={filtering && s.key !== "review" && (n ?? 0) === 0}
+                  muted={filtering && (n ?? 0) === 0}
                   hit={filtering && (n ?? 0) > 0}
                   onClick={() => pickStep(s.key)}
                 />
@@ -789,7 +818,7 @@ export default function Pipeline() {
             })}
           </div>
           {filtering && (() => {
-            const total = SPINE.reduce((sum, s) => sum + (isTrackerStep(s.key) || s.key !== "review" ? (count(s) ?? 0) : 0), 0);
+            const total = SPINE.reduce((sum, s) => sum + (count(s) ?? 0), 0);
             const stages = SPINE.filter((s) => (count(s) ?? 0) > 0).length;
             return (
               <p className="mt-1 px-0.5 text-[12px] text-zinc-500">
@@ -806,6 +835,31 @@ export default function Pipeline() {
             </button>
             {showArchive && ARCHIVE.map((s) => <StepBtn key={s.key} step={s} count={count(s)} active={tab === s.key} onClick={() => pickStep(s.key)} />)}
             <div className="ml-auto flex items-center gap-2">
+              {/* Compare comp across every active interviewing role — opens a popup with the raw
+                  tracker data + an "Enrich with research" action. Scoped to the Interviewing view. */}
+              {tab === "interview" && (
+                <>
+                  {updateNote && <span className="text-[12px] text-zinc-500">{updateNote}</span>}
+                  {/* One-click: inbox-sync + per-company refresh folder / pull emails / research-if-new. */}
+                  <button
+                    onClick={runInterviewUpdate}
+                    disabled={updating}
+                    title="Update every interviewing company: sync inbox, refresh prep folders, pull interview emails, and research any not yet done"
+                    className="flex shrink-0 items-center gap-1.5 rounded-md px-2.5 py-1.5 text-[13px] font-medium text-zinc-300 ring-1 ring-inset ring-zinc-800 transition hover:text-zinc-100 hover:ring-zinc-700 disabled:cursor-default disabled:text-zinc-600 disabled:ring-zinc-800/60"
+                  >
+                    {updating ? <Loader2 size={13} className="animate-spin text-sky-300" /> : <RefreshCw size={13} className="text-sky-300" />}
+                    {updating ? "Updating…" : "Update interview status"}
+                  </button>
+                  <button
+                    onClick={() => setPeerOpen(true)}
+                    title="Compare comp across every role you're actively interviewing for"
+                    className="flex shrink-0 items-center gap-1.5 rounded-md px-2.5 py-1.5 text-[13px] font-medium text-zinc-300 ring-1 ring-inset ring-zinc-800 transition hover:text-zinc-100 hover:ring-zinc-700"
+                  >
+                    <Coins size={13} className="text-violet-300" />
+                    Compare comp
+                  </button>
+                </>
+              )}
               {/* Queue an inbox-sync job for CoWork (read Gmail → update statuses/interviews/dates).
                   Disabled while one is already outstanding so clicks don't stack duplicates. */}
               {(() => { const queued = inboxSyncQueued || syncing; return (
@@ -840,7 +894,35 @@ export default function Pipeline() {
                   placeholder={tags.length ? "" : "filter by company…"}
                   className="min-w-[7rem] flex-1 bg-transparent px-1 py-0.5 text-[13px] text-zinc-300 outline-none placeholder:text-zinc-600"
                 />
+                {/* Pick companies from a list instead of typing them — same chips either way. */}
+                <button
+                  onClick={(e) => setPickerAt(pickerAt ? null : anchorFrom(e))}
+                  disabled={!companyOptions.length}
+                  title={companyOptions.length ? "Pick companies" : "No companies yet"}
+                  className="shrink-0 rounded p-0.5 text-zinc-500 transition hover:text-zinc-300 disabled:cursor-default disabled:text-zinc-700 disabled:hover:text-zinc-700"
+                >
+                  <ChevronDown size={13} />
+                </button>
               </div>
+              {pickerAt && (
+                <PopoverPanel at={pickerAt} onClose={() => setPickerAt(null)} className="max-h-72 w-56 overflow-y-auto p-1">
+                  {companyOptions.map((c) => {
+                    const on = isPicked(c);
+                    return (
+                      <button
+                        key={c}
+                        onClick={() => togglePicked(c)}
+                        className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-[13px] text-zinc-300 transition hover:bg-zinc-800"
+                      >
+                        <span className={`flex size-3.5 shrink-0 items-center justify-center rounded-[3px] ring-1 ring-inset ${on ? "bg-amber-500/80 ring-amber-400" : "ring-zinc-600"}`}>
+                          {on && <Check size={10} className="text-zinc-950" />}
+                        </span>
+                        <span className="truncate">{c}</span>
+                      </button>
+                    );
+                  })}
+                </PopoverPanel>
+              )}
               {filtering && (
                 <button onClick={clearFilter} title="Clear filter" className="ml-1 text-zinc-500 hover:text-zinc-300">
                   <X size={12} />
@@ -850,18 +932,10 @@ export default function Pipeline() {
           </div>
         </div>
 
-        {/* Scan Watchlist step = the watchlist itself (no postings table; matches now live in Fit). */}
-        {tab === "review" && (
-          <div className="flex min-h-0 flex-1 flex-col">
-            <TargetsTable counts={counts} />
-          </div>
-        )}
-
         {/* The rows scroll here (both axes). The spine above is fixed chrome and the table header is
             sticky-top, so only the body moves. px-6 lives on THIS scroll container so the frozen
             sticky-left columns line up with the table; the top gutter is an inner pad (container
             padding-top would leave a strip above the pinned header). */}
-        {tab !== "review" && (
         <div className="flex-1 overflow-auto px-6 pb-8">
           <div className="pt-4">
             {/* Closed collapses several outcomes — offer a per-status sub-filter. */}
@@ -909,7 +983,6 @@ export default function Pipeline() {
             )}
           </div>
         </div>
-        )}
 
       {companyGroup && (
         <CompanyDrawer
@@ -962,6 +1035,7 @@ export default function Pipeline() {
       )}
 
       {diffSlug && <ResumeDiffModal key={diffSlug} slug={diffSlug} postingId={diffPostingId ?? undefined} redoNote={diffPostingId ? redoNoteFor(diffPostingId, "tailor") : null} annotated={diffAnnotated} title={diffSlug} onClose={() => { setDiffSlug(null); setDiffPostingId(null); setDiffAnnotated(undefined); }} />}
+      {peerOpen && <PeerCompModal onClose={() => setPeerOpen(false)} />}
     </div>
   );
 }

@@ -14,6 +14,12 @@ import Playbook from "@/components/agents/Playbook";
 type JobTypeMeta = { type: string; title: string; description: string; playbook: string };
 type JobView = { type: string; status: string };
 
+// The everyday loop — paste a JD → fit → tailor, plus the inbox reconcile that keeps stages honest.
+// These three are the agents you drive daily, so they stay expanded up top. Every other job type is
+// a supporting/occasional agent tucked under "Advanced" — collapsed, but never hidden (each keeps its
+// own "Work queue" drain button, so a rarely-used queue can still be run).
+const CORE_TYPES = new Set(["fit", "tailoring", "inbox-sync"]);
+
 // The Claude-Code-backed Agents section: one agent per job type, each a live streaming conversation.
 // All chat state lives in AgentChatsProvider (root layout), so conversations + in-flight runs survive
 // navigating between pages; this component is just the view + the backlog counts.
@@ -21,6 +27,8 @@ export default function AgentsLive() {
   const { open, setOpen } = useAgentChats();
   const [types, setTypes] = useState<JobTypeMeta[]>([]);
   const [backlog, setBacklog] = useState<Record<string, number>>({});
+  // Advanced (supporting) agents are collapsed by default so the page reads as the 3 core agents.
+  const [showAdvanced, setShowAdvanced] = useState(false);
   // The agent whose instructions (playbook) are open in the side drawer, or null.
   const [instr, setInstr] = useState<{ title: string; type: string; playbook: string } | null>(null);
 
@@ -49,8 +57,11 @@ export default function AgentsLive() {
       </div>
       <p className="mb-2 text-[12px] text-zinc-500">One agent per task, each a live Claude Code conversation — watch every step, or steer it.</p>
 
-      <div className="space-y-2">
-        {types.map((t) => (
+      {(() => {
+        const core = types.filter((t) => CORE_TYPES.has(t.type));
+        const advanced = types.filter((t) => !CORE_TYPES.has(t.type));
+        const advQueued = advanced.reduce((n, t) => n + (backlog[t.type] ?? 0), 0);
+        const card = (t: JobTypeMeta) => (
           <AgentCard
             key={t.type}
             meta={t}
@@ -59,11 +70,32 @@ export default function AgentsLive() {
             onToggle={() => setOpen(open === t.type ? null : t.type)}
             onInstructions={() => setInstr({ title: personaFor(t.type), type: t.type, playbook: t.playbook })}
           />
-        ))}
-        {types.length === 0 && (
-          <div className="rounded-2xl border border-dashed border-zinc-700 px-4 py-6 text-center text-[13px] text-zinc-400">loading agents…</div>
-        )}
-      </div>
+        );
+        if (types.length === 0)
+          return <div className="rounded-2xl border border-dashed border-zinc-700 px-4 py-6 text-center text-[13px] text-zinc-400">loading agents…</div>;
+        return (
+          <div className="space-y-2">
+            {core.map(card)}
+            {advanced.length > 0 && (
+              <div className="pt-1">
+                <button
+                  onClick={() => setShowAdvanced((v) => !v)}
+                  className="flex w-full items-center gap-2 rounded-lg px-1 py-1.5 text-left text-[12px] font-semibold uppercase tracking-wider text-zinc-500 transition hover:text-zinc-300"
+                >
+                  <ChevronRight size={13} className={`transition-transform duration-200 ${showAdvanced ? "rotate-90" : ""}`} />
+                  Advanced agents
+                  <span className="rounded-full bg-zinc-800 px-1.5 py-0.5 text-[10px] font-medium tabular-nums text-zinc-400">{advanced.length}</span>
+                  {/* Surface queued work even while collapsed, so a rarely-run agent's backlog isn't missed. */}
+                  {advQueued > 0 && (
+                    <span className="rounded-full bg-amber-500/20 px-1.5 py-0.5 text-[10px] font-bold tabular-nums text-amber-200">{advQueued} queued</span>
+                  )}
+                </button>
+                {showAdvanced && <div className="mt-2 space-y-2">{advanced.map(card)}</div>}
+              </div>
+            )}
+          </div>
+        );
+      })()}
 
       {/* Instructions drawer — the selected agent's playbook (its operating manual), editable. */}
       {instr && (

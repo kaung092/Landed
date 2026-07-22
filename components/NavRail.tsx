@@ -3,7 +3,8 @@
 import { Fragment, useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Home, Briefcase, History, Bot, GraduationCap, FlaskConical, LayoutDashboard, Settings, UserCircle } from "lucide-react";
+import { Home, Briefcase, History, Bot, GraduationCap, FlaskConical, LayoutDashboard, Settings, UserCircle, Plus, Radar } from "lucide-react";
+import { useAddJob } from "@/components/AddJobProvider";
 
 // The rail is grouped into clusters (rendered with a divider between each); each item's optional
 // `badge` carries its color and the live count is looked up by href from the `counts` map below.
@@ -11,6 +12,7 @@ import { Home, Briefcase, History, Bot, GraduationCap, FlaskConical, LayoutDashb
 const GROUPS = [
   [
     { href: "/", label: "Home", icon: Home },
+    { href: "/watchlist", label: "Watchlist", icon: Radar },
     { href: "/prep", label: "Prep", icon: GraduationCap },
     { href: "/fit-lab", label: "Fit Lab", icon: FlaskConical },
   ],
@@ -30,6 +32,7 @@ const ALL_ITEMS: NavItem[] = GROUPS.flat();
 
 export default function NavRail() {
   const pathname = usePathname();
+  const { openAddJob } = useAddJob();
   const [counts, setCounts] = useState<Record<string, number>>({});
   // Last path visited within each section (keyed by base href) — so clicking a nav item returns you
   // to exactly where you were (e.g. the company you were viewing), not the section's landing.
@@ -94,6 +97,17 @@ export default function NavRail() {
       <div className="mb-4 flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-emerald-400 to-sky-500 text-zinc-950 shadow-lg shadow-emerald-500/20">
         <Briefcase size={18} strokeWidth={2.5} />
       </div>
+      {/* Primary action: pasting a JD is the main way jobs enter Landed, so it's the top, always-on
+          affordance — reachable from any page, not just the pipeline. */}
+      <button
+        onClick={openAddJob}
+        title="Add a job by pasting its description"
+        className="group relative mb-1 flex h-11 w-11 flex-col items-center justify-center rounded-xl bg-emerald-500/90 text-emerald-950 transition hover:bg-emerald-400"
+      >
+        <Plus size={19} strokeWidth={2.5} />
+        <span className="mt-0.5 text-[11px] font-medium">Add</span>
+      </button>
+      <div aria-hidden className="my-1.5 h-px w-7 rounded-full bg-zinc-800/80" />
       {GROUPS.map((group, gi) => (
         <Fragment key={gi}>
           {gi > 0 && <div aria-hidden className="my-1.5 h-px w-7 rounded-full bg-zinc-800/80" />}

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { HelpCircle, Info, Briefcase, Loader2, Plus, Radar, RefreshCw, Sparkles, Trash2, Undo2, X } from "lucide-react";
+import { HelpCircle, Info, Loader2, Plus, Radar, RefreshCw, Sparkles, Trash2, Undo2, X } from "lucide-react";
 import { ago } from "@/lib/format";
-import { TIER_META, TIERS } from "@/lib/pipeline";
+import { TIER_META, TIERS, type TargetCounts } from "@/lib/pipeline";
 import TrackerTag from "@/components/TrackerTag";
 import { useResizableColumns, ResTh } from "@/components/ResizableTable";
 import { useCoWorkQueue } from "@/components/CoWorkQueueProvider";
@@ -57,9 +57,6 @@ type Target = {
   lastScrapedAt: string | null;
 };
 
-// Pipeline rollup for a company (discovered/applied/total), keyed by company name.
-export type TargetCounts = { discovered: number; applied: number; total: number; items: { role: string; status: string; date?: string; appliedDate?: string; interviewed?: boolean }[] };
-
 type SortDir = "asc" | "desc";
 const WL_UNSORTABLE = new Set(["actions"]);
 
@@ -102,9 +99,6 @@ export default function TargetsTable({
   // separately/lazily from the fit view's Lvl column — it's the slow part, off this critical path.
   const [addInput, setAddInput] = useState("");
   const [adding, setAdding] = useState(false);
-  // The single add bar does double duty: "company" queues watchlist-add research; "linkedin"
-  // hands a feed URL to the LinkedIn Scout. Each mode keeps its own input text (addInput / liUrl).
-  const [mode, setMode] = useState<"company" | "linkedin">("company");
   const [queuedMsg, setQueuedMsg] = useState<{ queued: string[]; skipped: string[] } | null>(null);
   const queuedTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   // "Scrape watchlist" — mechanical board fetch for stale companies (POST /api/scan { staleDays }).
@@ -188,23 +182,6 @@ export default function TargetsTable({
       scrapeTimer.current = setTimeout(() => setScrapeMsg(null), 12000);
     }
   }, [load, bump]);
-
-  // Import from LinkedIn — queue a `linkedin-import` job for the LinkedIn Scout to fetch the full JDs
-  // from a recommended/collection feed (or single posting) and land them in the fit queue. Needs the
-  // Chrome browser tools at run time (see linkedin-import.md) — the headless runner can't fetch LinkedIn.
-  const [liUrl, setLiUrl] = useState("");
-  const [importing, setImporting] = useState(false);
-  const queueLinkedin = useCallback(async () => {
-    const url = liUrl.trim();
-    if (!url) return;
-    setImporting(true);
-    try {
-      await add({ type: "linkedin-import", params: { url, count: 5 } });
-      pendo.track("linkedin_import_queued", { url });
-      setLiUrl("");
-    }
-    finally { setImporting(false); }
-  }, [liUrl, add]);
 
   // Queue a watchlist-add CoWork job per company in the box. Accepts a comma- or newline-separated
   // list, dedups, and skips anything already watchlisted or already queued (so re-pasting is safe).
@@ -327,54 +304,30 @@ export default function TargetsTable({
       </div>
 
       <div className="flex min-h-0 flex-1 flex-col px-6 pb-6 pt-4">
-      {/* One action bar: a mode toggle picks what the input does — queue watchlist-add research
-          for a company, or hand a LinkedIn feed URL to the Scout — with the filter at the far end. */}
+      {/* Action bar: add companies — CoWork researches & configures each — with the filter at the far end. */}
       <div className="mb-3 flex flex-wrap items-center gap-2">
-        <div className="inline-flex shrink-0 rounded-md p-0.5 ring-1 ring-inset ring-zinc-800">
-          {(["company", "linkedin"] as const).map((m) => (
-            <button
-              key={m}
-              type="button"
-              onClick={() => setMode(m)}
-              className={`rounded px-2.5 py-1 text-[12px] font-medium transition ${
-                mode === m ? "bg-zinc-800 text-zinc-200" : "text-zinc-500 hover:text-zinc-300"
-              }`}
-            >
-              {m === "company" ? "Company" : "LinkedIn"}
-            </button>
-          ))}
-        </div>
-
         <form
-          onSubmit={(e) => { e.preventDefault(); if (mode === "company") queueAdd(); else queueLinkedin(); }}
+          onSubmit={(e) => { e.preventDefault(); queueAdd(); }}
           className="flex min-w-0 flex-1 items-center gap-2"
         >
           <div className="relative min-w-0 flex-1">
-            {mode === "company" ? (
-              <Plus size={13} className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-zinc-600" />
-            ) : (
-              <Briefcase size={13} className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-sky-500/70" />
-            )}
+            <Plus size={13} className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-zinc-600" />
             <input
               type="text"
-              value={mode === "company" ? addInput : liUrl}
-              onChange={(e) => (mode === "company" ? setAddInput(e.target.value) : setLiUrl(e.target.value))}
-              placeholder={mode === "company" ? "Add companies — CoWork researches & configures each" : "Import a LinkedIn jobs / recommended URL"}
-              title={mode === "company"
-                ? "Comma-separated for several. CoWork finds the ATS/board and target titles, then adds it to the watchlist. (Leveling is fetched later from the fit view.)"
-                : "Paste a LinkedIn recommended/collection feed or a /jobs/view/ URL. Queues a LinkedIn Scout job that fetches the full JDs (needs the Chrome browser tools) and lands them in the fit queue."}
+              value={addInput}
+              onChange={(e) => setAddInput(e.target.value)}
+              placeholder="Add companies — CoWork researches & configures each"
+              title="Comma-separated for several. CoWork finds the ATS/board and target titles, then adds it to the watchlist. (Leveling is fetched later from the fit view.)"
               className="w-full rounded-md bg-zinc-900 py-1.5 pl-8 pr-2.5 text-[13px] text-zinc-200 outline-none ring-1 ring-inset ring-zinc-800 transition placeholder:text-zinc-600 hover:ring-zinc-700 focus:ring-zinc-600"
             />
           </div>
           <button
             type="submit"
-            disabled={mode === "company" ? adding || !addInput.trim() : importing || !liUrl.trim()}
+            disabled={adding || !addInput.trim()}
             className="inline-flex shrink-0 items-center gap-1.5 rounded-md bg-sky-500/15 px-3 py-1.5 text-[13px] font-medium text-sky-300 ring-1 ring-inset ring-sky-500/30 transition hover:bg-sky-500/25 disabled:cursor-not-allowed disabled:opacity-40"
           >
-            {mode === "company"
-              ? (adding ? <Loader2 size={13} className="animate-spin" /> : <Sparkles size={13} />)
-              : (importing ? <Loader2 size={13} className="animate-spin" /> : <Briefcase size={13} />)}
-            {mode === "company" ? "Queue research" : "Import jobs"}
+            {adding ? <Loader2 size={13} className="animate-spin" /> : <Sparkles size={13} />}
+            Queue research
           </button>
         </form>
 

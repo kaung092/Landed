@@ -1,10 +1,12 @@
 import { and, eq, ne, inArray, or, lt, isNull, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { jobs, postings, companies, prepCompany, threads } from "@/lib/db/schema";
+import type { PostingRow } from "@/lib/db/schema";
 import { getConfig, setConfig, deleteConfig } from "@/lib/db/config-store";
 import { logEvent, getPosting } from "@/lib/db/queries";
 import { norm, canonical } from "@/lib/agents/canonical";
 import { slugFor } from "@/lib/config";
+import { exportPrepContextFor, exportQuestionsFor } from "@/lib/prep/export-context";
 import { TRACKER_STAGES } from "@/lib/pipeline";
 import { jobDef } from "./registry";
 import { parseRedoLog, nextVersion, renderThread, hasPendingRedo, pendingRedoNote, pendingUserIndex } from "./redolog";
@@ -503,6 +505,72 @@ export function enqueueInterviewEmails(appId: number): { jobId: string; slug: st
   return { jobId, slug };
 }
 
+// Queue the GLOBAL peer-comp job — CoWork compares comp across every actively-interviewing role and
+// submits ONE { markdown } artifact (stored latest-only). Fixed id "peer-comp" so a re-run always
+// supersedes the outstanding one (createJob upserts). No appId — the roster is derived at build time.
+export function enqueuePeerComp(): { jobId: string } {
+  const jobId = createJob({ id: "peer-comp", type: "peer-comp", createdBy: "You" });
+  return { jobId };
+}
+
+// One-click "Update interview status": bring every actively-interviewing company up to date in a
+// single fan-out. Queues a global inbox-sync (moves tracker status/rounds/dates — unless one is
+// already outstanding), then for each company with an interview/offer posting (deduped to one
+// representative posting): refreshes its on-disk context.md/questions.md NOW, (re)queues the
+// interview-emails job EVERY time, and queues prep-research ONLY if it's never been done (same guard
+// as maybeQueuePrepResearch). Pure orchestration over the existing enqueue helpers. Returns counts.
+export function updateInterviewStatus(): {
+  inboxSync: boolean;
+  companies: number;
+  foldersRefreshed: number;
+  emailsQueued: number;
+  researchQueued: number;
+} {
+  // 0. Global inbox-sync — once. Skip if one is already queued/wip so clicks don't stack duplicates.
+  const inboxOutstanding = !!db
+    .select()
+    .from(jobs)
+    .where(and(eq(jobs.type, "inbox-sync"), inArray(jobs.status, ["queued", "wip"])))
+    .get();
+  let inboxSync = false;
+  if (!inboxOutstanding) {
+    createJob({ type: "inbox-sync", createdBy: "You" });
+    inboxSync = true;
+  }
+
+  // Active interview/offer postings, deduped to one representative posting per company.
+  const byCompany = new Map<number, PostingRow>();
+  for (const row of db.select().from(postings).where(inArray(postings.state, ["interview", "offer"])).all()) {
+    if (!byCompany.has(row.companyId)) byCompany.set(row.companyId, row);
+  }
+
+  let foldersRefreshed = 0;
+  let emailsQueued = 0;
+  let researchQueued = 0;
+  for (const [companyId, row] of byCompany) {
+    const co = db.select().from(companies).where(eq(companies.id, companyId)).get();
+    const slug = co ? canonical(co.name)?.key ?? null : null;
+    // 1. Refresh the asset folder now (best-effort — must never break the rest of the fan-out).
+    if (slug) {
+      try {
+        exportPrepContextFor(slug);
+        exportQuestionsFor(slug);
+        foldersRefreshed++;
+      } catch {
+        // a bad dump for one company shouldn't abort the others
+      }
+    }
+    // 2. Pull interview emails — every time.
+    if (enqueueInterviewEmails(row.id)) emailsQueued++;
+    // 3. Question research — only if never done (no profile AND no prior prep-research job).
+    const researched = !!(slug && db.select().from(prepCompany).where(eq(prepCompany.slug, slug)).get());
+    const jobExists = !!db.select().from(jobs).where(eq(jobs.id, `prep-research-${companyId}`)).get();
+    if (!researched && !jobExists && queuePrepResearch(row.id)) researchQueued++;
+  }
+
+  return { inboxSync, companies: byCompany.size, foldersRefreshed, emailsQueued, researchQueued };
+}
+
 // --- fit queue (postings sent for fit assessment) ----------------------------------------
 type FitPosting = { company?: string; role?: string; jd?: string; url?: string };
 
@@ -538,26 +606,28 @@ export function listFitQueue(): FitQueueItem[] {
 // (1) ensure a CANDIDATE exists in fit_queue (so the eventual fit result matches it, and it
 // shows in the Discovery funnel — discovery is postings, not applications), and
 // (2) queue a fit job with the pasted JD for CoWork to score.
-function ensureFitQueueCandidate(company: string, role?: string, url?: string): number {
+function ensureFitQueueCandidate(company: string, role?: string, url?: string, jd?: string): number {
   const key = canonical(company)?.key;
   let co = key ? db.select().from(companies).all().find((c) => canonical(c.name)?.key === key) : undefined;
   if (!co) { const ts = new Date().toISOString(); co = db.insert(companies).values({ name: company, tier: "tier3", createdAt: ts, updatedAt: ts }).returning().get(); }
   const list = db.select().from(postings).where(eq(postings.companyId, co.id)).all();
   const existing = (url ? list.find((c) => c.url === url) : undefined)
     ?? (role ? list.find((c) => norm(c.title) === norm(role)) : undefined);
+  // Persist the pasted JD onto the posting immediately so it's not blank in the UI until CoWork
+  // scores it. Only overwrite an existing row's JD when a new one is supplied.
   if (existing) {
-    db.update(postings).set({ state: "fit_queue" }).where(eq(postings.id, existing.id)).run();
+    db.update(postings).set({ state: "fit_queue", ...(jd ? { jd } : {}) }).where(eq(postings.id, existing.id)).run();
     return existing.id;
   }
   return db.insert(postings)
-    .values({ companyId: co.id, title: role ?? "(untitled)", url: url ?? null, verdict: "kept", reason: null, state: "fit_queue", scannedAt: now() })
+    .values({ companyId: co.id, title: role ?? "(untitled)", url: url ?? null, jd: jd ?? null, verdict: "kept", reason: null, state: "fit_queue", scannedAt: now() })
     .returning({ id: postings.id })
     .get().id;
 }
 
 export function enqueueFit(input: FitInput): FitQueueItem {
   const { company, role, url, jd } = normalizeFitInput(input);
-  const candId = ensureFitQueueCandidate(company, role, url);
+  const candId = ensureFitQueueCandidate(company, role, url, jd);
   const id = `fit-app-${Date.now().toString(36)}`;
   createJob({
     id, type: "fit", createdBy: "You",

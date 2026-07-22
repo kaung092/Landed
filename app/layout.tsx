@@ -6,6 +6,7 @@ import NavRail from "@/components/NavRail";
 import PageFrame from "@/components/PageFrame";
 import CoWorkQueueProvider from "@/components/CoWorkQueueProvider";
 import AgentChatsProvider from "@/components/AgentChatsProvider";
+import AddJobProvider from "@/components/AddJobProvider";
 import FloatingQueue from "@/components/FloatingQueue";
 import PendoInitializer from "@/components/PendoInitializer";
 
@@ -50,9 +51,11 @@ export default function RootLayout({
         <PendoInitializer />
         <CoWorkQueueProvider>
           <AgentChatsProvider>
-            <NavRail />
-            <div className="flex-1 overflow-hidden"><PageFrame>{children}</PageFrame></div>
-            <FloatingQueue />
+            <AddJobProvider>
+              <NavRail />
+              <div className="flex-1 overflow-hidden"><PageFrame>{children}</PageFrame></div>
+              <FloatingQueue />
+            </AddJobProvider>
           </AgentChatsProvider>
         </CoWorkQueueProvider>
       </body>

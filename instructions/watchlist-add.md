@@ -55,7 +55,7 @@ but a tight title list keeps the shortlist clean.
 ## 3. Location + tier
 - `location` (target_location) — the company-appropriate filter, default to my profile locations
   (e.g. `"NYC|remote"`). The scan is US-only by default; only name a non-US place if intended.
-- `tier` — `top_target | target | practice` (a tag; ask me if unsure).
+- `tier` — `tier1 | tier2 | tier3` (tier1 = top target, tier3 = broadest/practice; ask me if unsure).
 
 ---
 
@@ -63,7 +63,7 @@ but a tight title list keeps the shortlist clean.
 1. **`upsertCompanies`** with everything you found:
    ```json
    { "companies": [{
-     "name": "Stripe", "tier": "target",
+     "name": "Stripe", "tier": "tier1",
      "ats": "greenhouse", "slug": "stripe", "fetchMethod": "api",
      "careersUrl": "https://stripe.com/jobs/search",
      "titles": ["Senior","Staff"], "location": "NYC|remote",

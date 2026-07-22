@@ -68,6 +68,33 @@ export const TIER_META: Record<
 // Tier order (best → broadest), for filters/columns/selectors.
 export const TIERS: Tier[] = ["tier1", "tier2", "tier3"];
 
+// Display date for a tracked job — prefer the application date, else last-updated/discovered.
+export function trackerDate(p: { appliedDate?: string; updatedAt?: string; discoveredAt?: string }): string | undefined {
+  return p.appliedDate ?? p.updatedAt ?? p.discoveredAt;
+}
+
+// Pipeline rollup for a company (discovered/applied/total + per-role items), keyed by company name.
+// Drives the watchlist's "Pipeline" column — where each watched company's postings currently sit.
+export type TargetCounts = {
+  discovered: number;
+  applied: number;
+  total: number;
+  items: { role: string; status: string; date?: string; appliedDate?: string; interviewed?: boolean }[];
+};
+
+export function buildTargetCounts(postings: Posting[]): Map<string, TargetCounts> {
+  const m = new Map<string, TargetCounts>();
+  for (const p of postings) {
+    const c = m.get(p.company) ?? { discovered: 0, applied: 0, total: 0, items: [] };
+    c.total++;
+    if (p.status === "discovered") c.discovered++;
+    if (p.status === "applied") c.applied++;
+    c.items.push({ role: p.role, status: p.status, date: trackerDate(p), appliedDate: p.appliedDate, interviewed: p.interviewed });
+    m.set(p.company, c);
+  }
+  return m;
+}
+
 // Color for a fit score badge.
 export function fitColor(score: number): string {
   if (score >= 80) return "text-emerald-300 border-emerald-400/40 bg-emerald-500/10";
