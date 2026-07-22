@@ -1,11 +1,10 @@
 {
   "permissions": {
     "allow": [
-      "Read(//Users/kaunghtet/Workspace/Personal-Apps/interview-assist-desktop-app/electron/**)",
-      "Read(//Users/kaunghtet/Workspace/Personal-Apps/interview-assist-desktop-app/src/screens/**)",
-      "Read(//Users/kaunghtet/Workspace/Personal-Apps/interview-assist-mobile-app/src/lib/**)",
-      "Read(//Users/kaunghtet/Workspace/Personal-Apps/interview-assist-desktop-app/src/**)",
-      "Read(//Users/kaunghtet/Workspace/Personal-Apps/interview-assist-desktop-app/src/components/**)"
+      "Bash(npm run check)",
+      "Bash(npm run test)",
+      "Bash(npm run lint)",
+      "Bash(npm run build)"
     ]
   }
 }
