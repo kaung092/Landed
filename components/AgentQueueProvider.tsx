@@ -25,6 +25,7 @@ type QueueCtx = {
   pulse: boolean; // transient — drives the "job added" animation on the floating icon
   add: (spec: AddJobSpec) => Promise<void>;
   remove: (id: string) => Promise<void>;
+  clearQueued: () => Promise<void>; // drop every queued job at once (leaves in-flight wip jobs)
   requeue: (id: string) => Promise<void>; // return a stuck/failed wip job to the queue (manual recovery)
   refresh: () => void; // re-read the queue (after an external add, or to catch the agent draining it)
   bump: () => void; // pulse + refresh — for adds made through other endpoints (e.g. discovery actions)
@@ -100,6 +101,20 @@ export default function AgentQueueProvider({ children }: { children: React.React
     }
   }, [refresh]);
 
+  // Clear the whole work queue: drop every QUEUED job at once. Leaves in-flight `wip` jobs alone
+  // (only queued jobs can be deleted). Optimistic; the refresh reconciles.
+  const clearQueued = useCallback(async () => {
+    const ids = jobs.filter((j) => j.status === "queued").map((j) => j.id);
+    if (!ids.length) return;
+    pendo.track("cowork_queue_cleared", { count: ids.length });
+    setJobs((js) => js.filter((j) => j.status !== "queued")); // optimistic
+    try {
+      await Promise.all(ids.map((id) => fetch(`/api/jobs/${encodeURIComponent(id)}`, { method: "DELETE" })));
+    } finally {
+      refresh();
+    }
+  }, [jobs, refresh]);
+
   // Manual recovery: an agent claimed a job (wip) but never finished. Return it to `queued` so
   // another agent can pick it up. Optimistic flip; the poll/refresh reconciles.
   const requeue = useCallback(async (id: string) => {
@@ -133,7 +148,7 @@ export default function AgentQueueProvider({ children }: { children: React.React
   const isQueued = useCallback((postingId: string, phase: "fit" | "tailor"): boolean => !!jobFor(postingId, phase), [jobFor]);
 
   return (
-    <Ctx.Provider value={{ jobs, count: jobs.length, inboxLastSynced, pulse, add, remove, requeue, refresh, bump, redoNoteFor, isWorking, isQueued }}>
+    <Ctx.Provider value={{ jobs, count: jobs.length, inboxLastSynced, pulse, add, remove, clearQueued, requeue, refresh, bump, redoNoteFor, isWorking, isQueued }}>
       {children}
     </Ctx.Provider>
   );
