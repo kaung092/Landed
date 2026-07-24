@@ -12,10 +12,10 @@ export type SpineStep = { key: string; label: string; turn: Turn; states: string
 // applications table). A tracker step's `states` are the Posting statuses that roll into it (same
 // grouping as lib/pipeline columnOf), so the funnel can filter postings by status per step.
 export const DISCOVERY_SPINE: SpineStep[] = [
-  // Note: the watchlist/scan-setup ("Scan Watchlist") is no longer a funnel step — it lives on its
-  // own /watchlist route as optional auto-discovery. Fit Assessment is the funnel's first step; its
-  // `review` here is a candidate STATE (a scanned posting awaiting triage), not the old step.
-  { key: "fit", label: "Fit Assessment", turn: "cowork", states: ["matched", "review", "fit_queue", "assessed"], hint: "Triage new matches (queue or discard), the agent scores them, then tailor / apply / save" },
+  // Note: the watchlist/scan-setup + the scan-results TRIAGE (states `matched`/`review`) live on the
+  // /watchlist route now — you add scan results to Fit from the Watchlist page's "Scan results" tab.
+  // So Fit Assessment shows only what's actually queued/scored (fit_queue → assessed).
+  { key: "fit", label: "Fit Assessment", turn: "cowork", states: ["fit_queue", "assessed"], hint: "The agent scores queued postings; then tailor / apply / save" },
   { key: "tailor", label: "Tailor Resume", turn: "cowork", states: ["tailoring", "tailored"], hint: "The agent tailors a resume — then apply" },
   { key: "later", label: "Apply Later", turn: "you", states: ["apply_later"], hint: "Ready to submit — parked here until you apply" },
   { key: "applied", label: "Applied", turn: "done", states: ["applied"], hint: "Submitted — awaiting a response" },

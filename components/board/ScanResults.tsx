@@ -1,11 +1,12 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { Sparkles, X, Loader2, Radar } from "lucide-react";
+import { useState } from "react";
+import { Sparkles, X, Loader2 } from "lucide-react";
+import { ago } from "@/lib/format";
 import { useAgentQueue } from "@/components/AgentQueueProvider";
 
 // A posting the watchlist scan surfaced and that's awaiting your triage (glance → review/matched).
-type Scanned = { id: number; company: string; title: string; location: string | null };
+export type Scanned = { id: number; company: string; title: string; location: string | null; scannedAt: string };
 
 // Pre-fit postings have no computed level, so infer a seniority from the title — a rough signal for
 // deciding what's worth assessing. "—" when the title gives nothing away.
@@ -18,26 +19,14 @@ function levelFromTitle(title: string): string {
   return "—";
 }
 
-// The scan-results triage table at the top of the Watchlist page: new postings the scan found, which
-// you add to Fit Assessment (single or multi-select) or discard. Add → POST queue-fit (moves the row
-// to the fit queue + enqueues a fit job); Discard → the discard pile. Renders nothing when the scan
-// has surfaced nothing new, so an established watchlist just shows the config table below.
-export default function ScanResults() {
+// The Watchlist page's "Scan results" tab: new postings the scan found, which you add to Fit
+// Assessment (single or multi-select) or discard. Add → POST queue-fit (moves the row to the fit
+// queue + enqueues a fit job); Discard → the discard pile. Data + reload are owned by WatchlistView
+// (so the tab can badge the count).
+export default function ScanResults({ rows, reload }: { rows: Scanned[] | null; reload: () => void }) {
   const { bump } = useAgentQueue();
-  const [rows, setRows] = useState<Scanned[] | null>(null);
   const [sel, setSel] = useState<Set<number>>(new Set());
   const [busy, setBusy] = useState(false);
-
-  const load = useCallback(() => {
-    fetch("/api/scanned?state=review,matched")
-      .then((r) => r.json())
-      .then((d) => setRows((d.postings ?? []).map((p: Scanned) => ({ id: p.id, company: p.company, title: p.title, location: p.location }))))
-      .catch(() => setRows([]));
-  }, []);
-  useEffect(() => { load(); }, [load]);
-
-  const ids = useMemo(() => (rows ?? []).map((r) => r.id), [rows]);
-  const allSelected = ids.length > 0 && sel.size === ids.length;
 
   const act = async (targetIds: number[], action: "queue-fit" | "discard") => {
     if (!targetIds.length || busy) return;
@@ -48,21 +37,28 @@ export default function ScanResults() {
       if (action === "queue-fit") bump(); // handed work to the fit agent — pulse the queue
     } finally {
       setSel(new Set());
-      load();
+      reload();
       setBusy(false);
     }
   };
 
-  if (!rows || rows.length === 0) return null; // nothing new to triage
+  if (rows === null)
+    return <div className="flex items-center gap-2 px-6 py-8 text-[13px] text-zinc-500"><Loader2 size={14} className="animate-spin" /> loading…</div>;
+  if (rows.length === 0)
+    return (
+      <div className="px-6 py-16 text-center text-[13px] text-zinc-500">
+        No new scan results. Postings your watchlist scan surfaces show up here to triage into Fit Assessment.
+      </div>
+    );
 
+  const ids = rows.map((r) => r.id);
+  const allSelected = sel.size === ids.length;
   const toggle = (id: number) => setSel((s) => { const n = new Set(s); if (n.has(id)) n.delete(id); else n.add(id); return n; });
   const selIds = [...sel];
 
   return (
-    <section className="shrink-0 border-b border-zinc-800/80">
-      <div className="flex items-center gap-3 px-6 pt-4">
-        <Radar size={15} className="shrink-0 text-emerald-300" />
-        <h2 className="shrink-0 text-[15px] font-semibold tracking-tight text-zinc-100">Scan results</h2>
+    <div className="flex h-full min-h-0 flex-col">
+      <div className="flex shrink-0 items-center gap-3 px-6 py-3">
         <span className="truncate text-[13px] text-zinc-500">{rows.length} new posting{rows.length === 1 ? "" : "s"} — add to Fit Assessment or discard</span>
         {selIds.length > 0 && (
           <div className="ml-auto flex shrink-0 items-center gap-2">
@@ -85,7 +81,7 @@ export default function ScanResults() {
         )}
       </div>
 
-      <div className="max-h-64 overflow-y-auto px-6 pb-4 pt-3">
+      <div className="min-h-0 flex-1 overflow-y-auto px-6 pb-6">
         <table className="w-full border-separate border-spacing-0 text-left text-[13px]">
           <thead>
             <tr className="text-[11px] font-medium uppercase tracking-wider text-zinc-500">
@@ -102,6 +98,7 @@ export default function ScanResults() {
               <th className="pb-2 pr-4">Title</th>
               <th className="pb-2 pr-4">Location</th>
               <th className="pb-2 pr-4">Level</th>
+              <th className="pb-2 pr-4">Scanned</th>
               <th className="pb-2 text-right">Action</th>
             </tr>
           </thead>
@@ -115,6 +112,7 @@ export default function ScanResults() {
                 <td className="py-2 pr-4 align-middle text-zinc-300">{r.title}</td>
                 <td className="py-2 pr-4 align-middle text-zinc-400">{r.location ?? "—"}</td>
                 <td className="py-2 pr-4 align-middle text-zinc-400">{levelFromTitle(r.title)}</td>
+                <td className="py-2 pr-4 align-middle text-zinc-500" title={r.scannedAt}>{ago(r.scannedAt)}</td>
                 <td className="py-2 align-middle text-right">
                   <div className="inline-flex items-center gap-1">
                     <button
@@ -140,6 +138,6 @@ export default function ScanResults() {
           </tbody>
         </table>
       </div>
-    </section>
+    </div>
   );
 }
