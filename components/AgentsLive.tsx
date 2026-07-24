@@ -4,7 +4,7 @@ import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { Bot, ChevronRight, Loader2, Play, Square, Send, Wrench, CheckCircle2, AlertCircle, Eraser, BookOpen, X, Trash2 } from "lucide-react";
-import { useAgentQueue } from "@/components/AgentQueueProvider";
+import { useAgentQueue, QUEUE_CLEARED_EVENT } from "@/components/AgentQueueProvider";
 import { agentColor } from "@/components/jobMeta";
 import { ago } from "@/lib/format";
 import { personaFor } from "@/lib/agents/personas";
@@ -24,7 +24,10 @@ export default function AgentsLive() {
   const { open, setOpen } = useAgentChats();
   const [types, setTypes] = useState<JobTypeMeta[]>([]);
   const [backlog, setBacklog] = useState<Record<string, number>>({});
-  // Only agents with queued work show by default; the rest hide behind "See all agents".
+  // Which agents count as "in progress" (queued OR in-flight). Poll-derived so it only changes on a
+  // refresh — clearing a queue empties the badge now but doesn't re-partition until the next poll.
+  const [activeSet, setActiveSet] = useState<Set<string>>(new Set());
+  // Only in-progress agents show by default; the rest hide behind "See all agents".
   const [showAll, setShowAll] = useState(false);
   // The agent whose instructions (playbook) are open in the side drawer, or null.
   const [instr, setInstr] = useState<{ title: string; type: string; playbook: string } | null>(null);
@@ -41,8 +44,13 @@ export default function AgentsLive() {
   const apply = useCallback((d: { types?: JobTypeMeta[]; jobs?: JobView[] }) => {
     setTypes(d.types ?? []);
     const counts: Record<string, number> = {};
-    for (const j of d.jobs ?? []) if (j.status === "queued") counts[j.type] = (counts[j.type] ?? 0) + 1;
+    const active = new Set<string>();
+    for (const j of d.jobs ?? []) {
+      if (j.status === "queued") { counts[j.type] = (counts[j.type] ?? 0) + 1; active.add(j.type); }
+      else if (j.status === "wip") active.add(j.type); // in-flight keeps the agent "in progress"
+    }
     setBacklog(counts);
+    setActiveSet(active);
   }, []);
   // Initial load + a light refresh so the "N queued" badges shrink as agents drain.
   useEffect(() => {
@@ -53,12 +61,23 @@ export default function AgentsLive() {
     return () => { alive = false; clearInterval(iv); };
   }, [apply]);
 
-  // Surface the agents that have work in progress (a queued backlog); the idle rest hide behind
-  // "See all agents". Recompute only when the data changes, not on unrelated re-renders.
+  // Clear pressed → zero that agent's badge immediately, but DON'T touch activeSet: the agent stays
+  // under "Work in progress" until the next poll (and an in-flight job keeps it there for good).
+  useEffect(() => {
+    const onCleared = (e: Event) => {
+      const t = (e as CustomEvent).detail?.type;
+      setBacklog((b) => (t ? (t in b ? { ...b, [t]: 0 } : b) : {}));
+    };
+    window.addEventListener(QUEUE_CLEARED_EVENT, onCleared);
+    return () => window.removeEventListener(QUEUE_CLEARED_EVENT, onCleared);
+  }, []);
+
+  // Agents with work in progress (queued OR in-flight, poll-derived) show up top; the idle rest hide
+  // behind "See all agents".
   const { active, rest } = useMemo(() => ({
-    active: types.filter((t) => (backlog[t.type] ?? 0) > 0),
-    rest: types.filter((t) => (backlog[t.type] ?? 0) === 0),
-  }), [types, backlog]);
+    active: types.filter((t) => activeSet.has(t.type)),
+    rest: types.filter((t) => !activeSet.has(t.type)),
+  }), [types, activeSet]);
 
   const card = (t: JobTypeMeta) => {
     const blocked = t.type === "inbox-sync" && !gmailReady;

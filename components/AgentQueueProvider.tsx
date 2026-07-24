@@ -2,7 +2,11 @@
 
 import { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
 
-// A live the agent job, as the floating queue + Agents page see it — `queued` (up for grabs) or `wip`
+// Dispatched on `window` when the queue is cleared (detail.type = one agent, or undefined = all), so
+// the separately-polled queue panel + card badge can empty immediately instead of waiting for a poll.
+export const QUEUE_CLEARED_EVENT = "landed:queue-cleared";
+
+// A live agent job, as the floating queue + Agents page see it — `queued` (up for grabs) or `wip`
 // (an agent claimed it; has claimedAt). Ingested/history rows are excluded.
 export type QueueJob = {
   id: string;
@@ -102,13 +106,15 @@ export default function AgentQueueProvider({ children }: { children: React.React
   }, [refresh]);
 
   // Clear the work queue: drop every QUEUED job at once (optionally just one agent's, by type).
-  // Leaves in-flight `wip` jobs alone (only queued jobs can be deleted). Optimistic; refresh reconciles.
+  // Leaves in-flight `wip` jobs alone (only queued jobs can be deleted). Optimistic — plus a
+  // `queue-cleared` event so the separately-polled queue panel + card badge empty immediately
+  // (they don't share this state); the server delete + refresh reconcile behind it.
   const clearQueued = useCallback(async (type?: string) => {
-    const drop = jobs.filter((j) => j.status === "queued" && (!type || j.type === type));
-    const ids = drop.map((j) => j.id);
+    const ids = jobs.filter((j) => j.status === "queued" && (!type || j.type === type)).map((j) => j.id);
     if (!ids.length) return;
     pendo.track("cowork_queue_cleared", { count: ids.length, type: type ?? "all" });
-    setJobs((js) => js.filter((j) => !ids.includes(j.id))); // optimistic
+    setJobs((js) => js.filter((j) => !ids.includes(j.id))); // optimistic (floating queue)
+    window.dispatchEvent(new CustomEvent(QUEUE_CLEARED_EVENT, { detail: { type } }));
     try {
       await Promise.all(ids.map((id) => fetch(`/api/jobs/${encodeURIComponent(id)}`, { method: "DELETE" })));
     } finally {

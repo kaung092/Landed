@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { RotateCcw, X, Loader2, Check, Clock } from "lucide-react";
 import { jobSubject, KILL_CONFIRM, actorLabel } from "@/components/jobMeta";
+import { QUEUE_CLEARED_EVENT } from "@/components/AgentQueueProvider";
 import { ago } from "@/lib/format";
 
 type Job = {
@@ -49,8 +50,15 @@ export default function AgentQueue({ type }: { type: string }) {
     const pull = () => fetch("/api/jobs?status=queued,wip,ingested").then((r) => r.json()).then((d) => { if (alive) apply(d); }).catch(() => {});
     pull();
     const iv = setInterval(pull, 10_000);
-    return () => { alive = false; clearInterval(iv); };
-  }, [apply]);
+    // Clear pressed → drop this agent's queued rows right now (keep in-flight wip + done); the poll reconciles.
+    const onCleared = (e: Event) => {
+      const t = (e as CustomEvent).detail?.type;
+      if (t && t !== type) return;
+      setJobs((js) => js.filter((j) => j.status !== "queued"));
+    };
+    window.addEventListener(QUEUE_CLEARED_EVENT, onCleared);
+    return () => { alive = false; clearInterval(iv); window.removeEventListener(QUEUE_CLEARED_EVENT, onCleared); };
+  }, [apply, type]);
 
   // Keep the newest (top) in view: snap to the top whenever a new job appears at the head.
   useEffect(() => {
