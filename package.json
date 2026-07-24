@@ -12,6 +12,7 @@
     "lint": "eslint",
     "typecheck": "tsc --noEmit",
     "seed:prep": "tsx scripts/seed-prep.ts",
+    "seed:demo": "tsx scripts/seed-demo.ts",
     "prep:export": "node --env-file-if-exists=.env --import tsx scripts/export-prep-context.ts",
     "import:prep": "tsx scripts/import-prep-progress.ts",
     "diagram:arch": "tsx scripts/gen-architecture-diagram.ts",

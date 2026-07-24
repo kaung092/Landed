@@ -38,8 +38,16 @@ cp .env.example .env      # then edit as needed
 npm run dev               # http://localhost:3000
 ```
 
-The database is created on first use at `data/jobhunt.db` (gitignored). To populate the
-interview-prep catalog:
+The database is created on first use at `data/jobhunt.db` (gitignored) — so a fresh clone starts
+with an **empty** pipeline. To see the app populated with realistic fake data (companies and
+postings across every stage — discovery → fit → tailor → apply → interview → closed), no agent or
+Claude subscription required:
+
+```bash
+npm run seed:demo    # fake data for demos / screenshots / UI dev — safe & idempotent, refreshes only its own rows
+```
+
+To populate the interview-prep catalog:
 
 ```bash
 npm run seed:prep
@@ -126,6 +134,7 @@ Because launchd owns port 3000, don't also run `npm run dev` by hand while it's 
 | `npm run dev` / `build` / `start` | Next.js dev / production build / serve |
 | `npm run lint` | ESLint |
 | `npm run test` | Node test runner (`tests/*.test.ts`) |
+| `npm run seed:demo` | Populate the DB with realistic fake data (every pipeline stage) — for demos / UI dev |
 | `npm run seed:prep` | Seed the interview-prep catalog |
 | `npm run import:prep` | Import coding-prep progress |
 | `npm run backup` | Snapshot the SQLite DB |
