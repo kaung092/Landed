@@ -17,8 +17,8 @@ import type { ChangeDetail } from "@/lib/agents/types";
 export const INBOX_SYNCED_KEY = "inbox_last_synced";
 export const inboxLastSynced = () => getConfig(INBOX_SYNCED_KEY);
 
-// The read-context CoWork works against — for the "What it sees" panel.
-export function coworkContext() {
+// The read-context the agent works against — for the "What it sees" panel.
+export function agentContext() {
   const cos = db.select().from(companies).all();
   return {
     // discovery auto-scans the watchlist only (independent of tier)
@@ -59,7 +59,7 @@ export function normCreatedBy(v?: string | null): "You" | "CoWork" {
 }
 
 // Derive an ISO timestamp from an id like "inbox-sync-20260620T2033" so a synthesized
-// job's age in the ledger reflects when CoWork ran it, not when we ingested.
+// job's age in the ledger reflects when the agent ran it, not when we ingested.
 function createdAtFromId(id: string): string | null {
   const m = id.match(/(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})/);
   if (!m) return null;
@@ -95,7 +95,7 @@ export type JobView = {
 };
 
 // The full job ledger + live queue (one table now). Newest first. `queued` rows are pending work
-// (app→CoWork handoffs + CoWork self-queued); `wip` rows are claimed/in-flight; `ingested` is history.
+// (app→agent handoffs + the agent self-queued); `wip` rows are claimed/in-flight; `ingested` is history.
 export function listJobs(): JobView[] {
   return db
     .select()
@@ -145,7 +145,7 @@ export function reapStuckJobs(): number {
   return actioned;
 }
 
-// Queue a job (app→CoWork handoff, or CoWork self-queue via the createJob MCP tool).
+// Queue a job (app→agent handoff, or the agent self-queue via the createJob MCP tool).
 // Idempotent on id: re-queuing refreshes the task/params (e.g. discovery re-queues a fit job).
 export function createJob(spec: {
   id?: string;
@@ -182,7 +182,7 @@ export function createJob(spec: {
 // Queue a `watchlist-scan` job per watchlisted company not scraped in the last `staleDays` (or
 // never), skipping any that already have an outstanding (queued/wip) scan job. Deterministic id per
 // company → idempotent: re-clicking "Scrape watchlist" won't duplicate or disturb in-flight scans.
-// This is the ONLY way watchlist scans enter the queue (CoWork no longer self-initiates them).
+// This is the ONLY way watchlist scans enter the queue (the agent no longer self-initiates them).
 export function queueStaleWatchlistScans(staleDays = 3): { queued: number; skipped: number; total: number } {
   const cutoff = Date.now() - staleDays * 86_400_000;
   const stale = db.select().from(companies).where(eq(companies.watchlist, true)).all()
@@ -214,7 +214,7 @@ export function queueWatchlistScan(name: string): { status: "queued" | "in-fligh
   return { status: "queued", company: co.name };
 }
 
-// Remove a job from the queue (the floating CoWork queue / CoWork page). Only `queued` rows are
+// Remove a job from the queue (the floating the agent queue / Agents page). Only `queued` rows are
 // removable — ingested rows are history and must survive. Returns whether a row was deleted.
 //
 // Removing a queued item just cancels that action — it does NOT discard the posting.
@@ -240,7 +240,7 @@ export function deleteQueuedJob(id: string): boolean {
       if (cand?.state === "fit_queue") {
         db.update(postings).set({ state: "review" }).where(eq(postings.id, cand.id)).run();
         const co = db.select().from(companies).where(eq(companies.id, cand.companyId)).get();
-        logEvent({ entity: "company", entityId: cand.companyId, action: "update", source: "discovery", summary: `${co?.name ?? "?"} — ${cand.title} · un-queued from fit (removed from CoWork queue)` });
+        logEvent({ entity: "company", entityId: cand.companyId, action: "update", source: "discovery", summary: `${co?.name ?? "?"} — ${cand.title} · un-queued from fit (removed from the agent queue)` });
       }
     }
   }
@@ -256,7 +256,7 @@ export function deleteQueuedJob(id: string): boolean {
       if (cand?.state === "tailoring" && !cand.resumeDir) {
         db.update(postings).set({ state: "assessed" }).where(eq(postings.id, cand.id)).run();
         const co = db.select().from(companies).where(eq(companies.id, cand.companyId)).get();
-        logEvent({ entity: "company", entityId: cand.companyId, action: "update", source: "tailoring", summary: `${co?.name ?? "?"} — ${cand.title} · un-queued from tailoring (removed from CoWork queue)` });
+        logEvent({ entity: "company", entityId: cand.companyId, action: "update", source: "tailoring", summary: `${co?.name ?? "?"} — ${cand.title} · un-queued from tailoring (removed from the agent queue)` });
       }
     }
   }
@@ -277,7 +277,7 @@ export function deleteQueuedJob(id: string): boolean {
   return true;
 }
 
-// "One type at a time" is PER RUN, not global: a single CoWork run drains one type without interleaving,
+// "One type at a time" is PER RUN, not global: a single the agent run drains one type without interleaving,
 // but DIFFERENT types may run in parallel across threads (thread A on tailoring while thread B does
 // inbox-sync). So enforcement is soft — an explicit `type` is always honored; only a no-type call
 // defers to the active type below, so a plain "clear my queue" run won't start a competing type mid-pass.
@@ -318,7 +318,7 @@ function tryClaim(id: string, by?: string | null, threadId?: string | null): Job
   const claimedBy = by?.trim() || "CoWork";
   const tid = threadId?.trim() || null;
   const res = db.update(jobs)
-    // Stamp the CoWork chat (thread) that won the claim so the job groups under it in the CoWork
+    // Stamp the agent chat (thread) that won the claim so the job groups under it in the agent
     // page. Server-derived from the per-chat MCP process's header — the agent passes nothing.
     // Bump `attempts` on EVERY claim (incl. lease-expiry reclaims) — this is the mechanical,
     // agent-independent count reapStuckJobs() uses to dead-letter a job that never produces a result.
@@ -378,11 +378,11 @@ export function claimNext(by?: string | null, type?: string | null, threadId?: s
   return null;
 }
 
-// ── App → CoWork wake signal ──
-// A pinned CoWork chat loops on the `waitForWork` MCP tool (→ /api/jobs/wait), which blocks until
+// ── App → the agent wake signal ──
+// A pinned the agent chat loops on the `waitForWork` MCP tool (→ /api/jobs/wait), which blocks until
 // there's claimable work of its type OR the user clicks "Drain" in the app. That click sets this
 // one-shot trigger; the next wait poll consumes it and the agent wakes. This is what lets the app
-// drive a waiting chat without you switching to CoWork to prompt.
+// drive a waiting chat without you switching to the agent to prompt.
 const TRIGGER_KEY = (type: string) => `cowork_trigger:${type}`;
 export function setDrainTrigger(type: string): void {
   setConfig(TRIGGER_KEY(type), now());
@@ -466,7 +466,7 @@ export function queuePrepResearch(appId: number): { jobId: string; slug: string 
   return { jobId, slug: canonical(p.company)?.key ?? null };
 }
 
-// (Re)queue an interview-brief job for one posting — CoWork reads that company's interview-prep
+// (Re)queue an interview-brief job for one posting — The agent reads that company's interview-prep
 // asset folder (context.md + dropped transcripts + fetched emails) and returns a versioned brief.
 // Deterministic id `interview-brief-<postingId>` so the drawer's "Generate" button re-runs cleanly
 // (createJob supersedes the prior run). Params carry the posting id (the ID-only ingest key), the
@@ -485,7 +485,7 @@ export function enqueueInterviewBrief(appId: number): { jobId: string; slug: str
   return { jobId, slug };
 }
 
-// (Re)queue a "pull interview emails" job for a posting's COMPANY — CoWork sweeps that company's
+// (Re)queue a "pull interview emails" job for a posting's COMPANY — The agent sweeps that company's
 // interviewing emails (last ~3 months) into interview-prep/<slug>/ (emails.md + attachments/). Keyed
 // by companyId (the folder is per-company) so re-runs supersede. Asset-only; never touches tracker
 // status. `since` is a Gmail-style YYYY/MM/DD date 3 months back so the query is deterministic (the
@@ -505,7 +505,7 @@ export function enqueueInterviewEmails(appId: number): { jobId: string; slug: st
   return { jobId, slug };
 }
 
-// Queue the GLOBAL peer-comp job — CoWork compares comp across every actively-interviewing role and
+// Queue the GLOBAL peer-comp job — The agent compares comp across every actively-interviewing role and
 // submits ONE { markdown } artifact (stored latest-only). Fixed id "peer-comp" so a re-run always
 // supersedes the outstanding one (createJob upserts). No appId — the roster is derived at build time.
 export function enqueuePeerComp(): { jobId: string } {
@@ -602,10 +602,10 @@ export function listFitQueue(): FitQueueItem[] {
   return out.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
 }
 
-// You add a posting to the fit queue from the app. Mirrors CoWork's discovery:
+// You add a posting to the fit queue from the app. Mirrors the agent's discovery:
 // (1) ensure a CANDIDATE exists in fit_queue (so the eventual fit result matches it, and it
 // shows in the Discovery funnel — discovery is postings, not applications), and
-// (2) queue a fit job with the pasted JD for CoWork to score.
+// (2) queue a fit job with the pasted JD for the agent to score.
 function ensureFitQueueCandidate(company: string, role?: string, url?: string, jd?: string): number {
   const key = canonical(company)?.key;
   let co = key ? db.select().from(companies).all().find((c) => canonical(c.name)?.key === key) : undefined;
@@ -613,7 +613,7 @@ function ensureFitQueueCandidate(company: string, role?: string, url?: string, j
   const list = db.select().from(postings).where(eq(postings.companyId, co.id)).all();
   const existing = (url ? list.find((c) => c.url === url) : undefined)
     ?? (role ? list.find((c) => norm(c.title) === norm(role)) : undefined);
-  // Persist the pasted JD onto the posting immediately so it's not blank in the UI until CoWork
+  // Persist the pasted JD onto the posting immediately so it's not blank in the UI until the agent
   // scores it. Only overwrite an existing row's JD when a new one is supplied.
   if (existing) {
     db.update(postings).set({ state: "fit_queue", ...(jd ? { jd } : {}) }).where(eq(postings.id, existing.id)).run();
@@ -639,11 +639,11 @@ export function enqueueFit(input: FitInput): FitQueueItem {
 }
 
 // Self-heal the fit queue. Every candidate parked in `fit_queue` must have a QUEUED fit job for
-// CoWork to pick up — but the two can drift: a candidate enters fit_queue without a job (the
+// The agent to pick up — but the two can drift: a candidate enters fit_queue without a job (the
 // legacy watchlist-scan ingest), or a fit result fails to match its candidate so the job ingests
-// while the candidate never advances. Either way the Discovery funnel shows work that CoWork
+// while the candidate never advances. Either way the Discovery funnel shows work that the agent
 // can't see. Enqueue a fit job for any fit_queue candidate not already covered by a queued one.
-// Idempotent: a candidate covered by a queued job is skipped, so repeat calls (e.g. every CoWork
+// Idempotent: a candidate covered by a queued job is skipped, so repeat calls (e.g. every the agent
 // poll) are cheap and won't duplicate.
 const fitKeys = (company?: string | null, role?: string | null, url?: string | null): string[] => {
   const ks = [`cr:${norm(company ?? "")}|${norm(role ?? "")}`];
@@ -692,7 +692,7 @@ export function outstandingFitJobId(postingId: number): string | null {
 }
 
 // The JD isn't stored on the posting — it lives in the fit job that assessed it. Pull it
-// forward so the tailoring job carries the JD instead of making CoWork re-fetch from the URL.
+// forward so the tailoring job carries the JD instead of making the agent re-fetch from the URL.
 // Match by canonical company (+ role when known) across all fit jobs (queued or ingested).
 function findFitJd(company: string, role?: string): string | undefined {
   const wantCo = norm(company);
@@ -754,7 +754,7 @@ export function enqueueTailoring(p: Posting, opts?: { bumpQueuedAt?: boolean }):
   const version = nextVersion(p.redoLog ?? [], "tailor");
   const targetSlug = `${baseSlugForPosting(p)}/v${version}`;
   // Carry the JD from the fit job if we have it; else fall back to the JD stored on the posting row
-  // (a funnel "Tailor" can skip fit). Empty → CoWork fetches from the URL per tailoring.md.
+  // (a funnel "Tailor" can skip fit). Empty → the agent fetches from the URL per tailoring.md.
   const jd = findFitJd(p.company, p.role)
     ?? db.select({ jd: postings.jd }).from(postings).where(eq(postings.id, Number(p.id))).get()?.jd
     ?? undefined;
@@ -773,7 +773,7 @@ export function enqueueTailoring(p: Posting, opts?: { bumpQueuedAt?: boolean }):
 
 // Self-heal the tailoring queue — the tailor-stage analogue of reconcileFitQueue. A candidate can be
 // parked in `tailoring` (no resume yet → the funnel shows "Queued for tailoring…") or `tailored` with
-// a pending redo, yet have NO live tailoring job for CoWork to pick up: the job row was deleted, a
+// a pending redo, yet have NO live tailoring job for the agent to pick up: the job row was deleted, a
 // result ingested without advancing the candidate, or an early funnel-tailor created a generated-id
 // job that the stable `tailoring-app-<id>` path never tracked. Re-enqueue a tailoring job for any such
 // candidate not already covered by a queued/wip one. Idempotent — enqueueTailoring keys on the stable
@@ -849,10 +849,10 @@ export function requeueRedo(appId: number, phase: RedoPhase, note: string): { ve
   return { version };
 }
 
-// --- MCP write path: CoWork submits a job's result directly (no result file) ------------
+// --- MCP write path: the agent submits a job's result directly (no result file) ------------
 // Runs the type's ingest() → reconcile (dedup + needsReview gate) inline, then marks the
 // job row ingested with its summary + result. Option B: a self-initiated run may omit jobId;
-// we synthesize a ledger row from the type. Returns the reconcile summary so CoWork sees it.
+// we synthesize a ledger row from the type. Returns the reconcile summary so the agent sees it.
 export function submitJobResult(input: {
   type: string;
   records: Record<string, unknown>[];

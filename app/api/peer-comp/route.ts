@@ -9,8 +9,8 @@ export async function GET() {
   return Response.json({ peerComp: getPeerComp() });
 }
 
-// POST /api/peer-comp — queue the GLOBAL peer-comp job for CoWork (all LLM work goes through the job
-// queue, never a direct API call). CoWork researches + synthesizes the comparison and submits ONE
+// POST /api/peer-comp — queue the GLOBAL peer-comp job for the agent (all LLM work goes through the job
+// queue, never a direct API call). The agent researches + synthesizes the comparison and submits ONE
 // { markdown } record, whose ingest stores it as the latest. Returns the queued job id.
 export async function POST() {
   return Response.json(enqueuePeerComp());

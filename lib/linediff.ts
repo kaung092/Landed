@@ -1,6 +1,6 @@
 // A minimal line-level diff (LCS backtrack) — enough for a git-style resume diff. Pure + sync, so
 // it's trivially testable and runs server-side over the textutil-extracted resume text.
-// `comment` is the optional per-line annotation — *why* the line changed — that CoWork supplies on a
+// `comment` is the optional per-line annotation — *why* the line changed — that the agent supplies on a
 // tailored-resume diff it produced itself (the computed textutil fallback leaves it undefined).
 export type DiffOp = { type: "eq" | "add" | "del"; text: string; comment?: string };
 
@@ -37,7 +37,7 @@ export function lineDiff(aText: string, bText: string): DiffOp[] {
   return ops;
 }
 
-// Validate an untrusted op array (CoWork's submitted annotated diff) into clean DiffOp[]. Drops
+// Validate an untrusted op array (the agent's submitted annotated diff) into clean DiffOp[]. Drops
 // malformed entries; returns undefined when nothing usable remains so callers fall back to the
 // computed textutil diff. Keeps only the known op types and coerces text/comment to strings.
 export function coerceDiff(raw: unknown): DiffOp[] | undefined {

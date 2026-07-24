@@ -7,7 +7,7 @@ import { canonical } from "@/lib/agents/canonical";
 import { PREP_ROOT } from "@/lib/prep/export-context";
 
 // The raw comp signal the app already holds for one interviewing role: stored comp notes + JD +
-// whatever recruiter emails inbox capture wrote to disk. The peer-comp CoWork job embeds this roster
+// whatever recruiter emails inbox capture wrote to disk. The peer-comp the agent job embeds this roster
 // into its task so the agent starts from ground truth, then researches externally to fill gaps.
 //
 // Comp jottings land in more than one place: the dedicated `comp` ("Comp structure") field, but also

@@ -17,8 +17,8 @@ export async function GET(request: Request) {
 // POST /api/fitlab/run
 //   { postingId: 123 }        → assess an existing posting (loads its JD)
 //   { company, role, jd }     → assess a pasted JD
-// QUEUES a `fitlab-assess` job for CoWork (Claude Code) — no direct LLM API. Returns { runId, jobId };
-// the page polls GET ?id=runId until CoWork submits the verdicts.
+// QUEUES a `fitlab-assess` job for the agent (Claude Code) — no direct LLM API. Returns { runId, jobId };
+// the page polls GET ?id=runId until the agent submits the verdicts.
 export async function POST(request: Request) {
   let body: { postingId?: number; company?: string; role?: string; jd?: string };
   try { body = await request.json(); } catch { body = {}; }

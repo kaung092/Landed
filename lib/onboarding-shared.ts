@@ -11,7 +11,7 @@ export type OnboardingStatus = {
   resume: boolean; // a base résumé .docx has been uploaded
   firstJob: boolean; // at least one posting exists (pasted a JD, scanned, or synced)
   gmail: boolean; // Gmail is wired (stored app password or env)
-  agent: boolean; // the CoWork agent has run at least once
+  agent: boolean; // the agent has run at least once
 };
 
 // The essentials — "is the app set up to work". (Optional power-ups: gmail, agent.)

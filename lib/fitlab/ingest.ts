@@ -4,7 +4,7 @@ import type { ResultRecord } from "@/lib/jobs/types";
 import type { ReconcileResult } from "@/lib/agents/types";
 import { num, str } from "@/lib/coerce";
 
-// Ingest a `fitlab-assess` result: CoWork submits one record per criterion (carrying the runId it was
+// Ingest a `fitlab-assess` result: the agent submits one record per criterion (carrying the runId it was
 // given). We fill the pending run's verdicts + derive the decision. Imports nothing from lib/jobs/store,
 // so the registry can import this without an import cycle. Mirrors the FitRecord contract in task.ts.
 export function ingestFitLabResult(records: ResultRecord[], dryRun?: boolean): ReconcileResult {

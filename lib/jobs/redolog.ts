@@ -18,9 +18,9 @@ export function parseRedoLog(raw: string | null | undefined): RedoTurn[] {
 export const phaseTurns = (log: RedoTurn[], phase: RedoPhase): RedoTurn[] =>
   log.filter((t) => t.phase === phase);
 
-// CoWork's annotated diff for a tailored version (the agent turn whose slug matches), or the latest
+// the agent's annotated diff for a tailored version (the agent turn whose slug matches), or the latest
 // tailor version's diff when no slug is given. Undefined when that version has no annotated diff
-// (legacy versions, or CoWork didn't supply one) — the UI then falls back to the computed diff.
+// (legacy versions, or the agent didn't supply one) — the UI then falls back to the computed diff.
 export const tailorDiffFor = (log: RedoTurn[], slug?: string): DiffOp[] | undefined => {
   const agents = phaseTurns(log, "tailor").filter((t) => t.role === "agent");
   const turn = slug ? agents.filter((t) => t.slug === slug).pop() : agents.pop();
@@ -53,7 +53,7 @@ export const pendingUserIndex = (log: RedoTurn[], phase: RedoPhase): number => {
 };
 
 // A phase has a redo in flight when its newest turn is an unanswered user request. Drives the
-// "Queued for redo" tag (server-side; the live UI reads the queue — see CoWorkQueueProvider).
+// "Queued for redo" tag (server-side; the live UI reads the queue — see AgentQueueProvider).
 export const hasPendingRedo = (log: RedoTurn[], phase: RedoPhase): boolean => pendingUserIndex(log, phase) >= 0;
 
 // The pending redo note for a phase (to carry into the job params / pre-fill the composer), or "".

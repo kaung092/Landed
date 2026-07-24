@@ -12,9 +12,9 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
   return Response.json({ jd: getPostingJd(n) });
 }
 
-// PUT /api/scanned/:id/jd  body: { jd } — persist the posting's JD (CoWork's savePostingJd tool,
+// PUT /api/scanned/:id/jd  body: { jd } — persist the posting's JD (the agent's savePostingJd tool,
 // called at the fit stage with the JD it fetched). Kept off submitJobResult so the (often large) JD
-// is a deliberate write, not a verbatim echo CoWork tends to drop.
+// is a deliberate write, not a verbatim echo the agent tends to drop.
 export async function PUT(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const n = Number(id);
@@ -33,7 +33,7 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
 
 // POST /api/scanned/:id  body: { action: "discard" | "queue-fit" | "tailor" | "apply" }
 //   Discovery-stage moves: discard → discard pile · queue-fit → fit queue (+ enqueue a fit job;
-//   JD fetched from the URL by CoWork) · tailor → tailoring · apply → graduate to the tracker
+//   JD fetched from the URL by the agent) · tailor → tailoring · apply → graduate to the tracker
 //   (creates an applications row). (The "apply later" hold is set via the drawer's "Move to" instead.)
 const ACTIONS = ["discard", "queue-fit", "tailor", "apply"] as const;
 export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }) {

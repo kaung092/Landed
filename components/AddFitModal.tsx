@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { FilePlus2, Loader2, Sparkles, X } from "lucide-react";
-import { useCoWorkQueue } from "@/components/CoWorkQueueProvider";
+import { useAgentQueue } from "@/components/AgentQueueProvider";
 
 // Fired on the window after a JD is queued, so any mounted list (the pipeline) can refresh. Shared
 // constant so the dispatch here and the listener in Pipeline can't drift apart on a typo.
@@ -11,10 +11,10 @@ export const JOB_ADDED_EVENT = "landed:job-added";
 
 // Add a job to Fit Assessment by pasting its JD — the manual entry point that mirrors discovery.
 // POSTs to /api/jobs/fit (enqueueFit): ensures a fit_queue candidate exists and queues a fit job
-// for CoWork to score. Company + JD are required; role/url are optional context. Opened from the
+// for the agent to score. Company + JD are required; role/url are optional context. Opened from the
 // Fit Assessment view's toolbar.
 export default function AddFitModal({ onClose }: { onClose: () => void }) {
-  const { bump } = useCoWorkQueue();
+  const { bump } = useAgentQueue();
   const [form, setForm] = useState({ company: "", role: "", url: "", jd: "" });
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -48,7 +48,7 @@ export default function AddFitModal({ onClose }: { onClose: () => void }) {
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data?.error || "Failed to queue fit assessment");
-      bump(); // handed work to CoWork — pulse the queue
+      bump(); // handed work to the agent — pulse the queue
       // Let any mounted view (e.g. the pipeline) refresh its list — the modal can now be opened
       // globally from the nav rail, decoupled from whoever renders the funnel.
       window.dispatchEvent(new CustomEvent(JOB_ADDED_EVENT));
@@ -71,7 +71,7 @@ export default function AddFitModal({ onClose }: { onClose: () => void }) {
           <FilePlus2 size={15} className="shrink-0 text-emerald-300" />
           <div className="min-w-0 flex-1">
             <div className="truncate text-[13px] font-medium text-zinc-200">Add a job to Fit Assessment</div>
-            <div className="truncate text-[11px] text-zinc-500">Paste a job description — CoWork scores it against your profile.</div>
+            <div className="truncate text-[11px] text-zinc-500">Paste a job description — the agent scores it against your profile.</div>
           </div>
           <button onClick={onClose} title="Close (Esc)" className="shrink-0 text-zinc-500 transition hover:text-zinc-200"><X size={16} /></button>
         </div>

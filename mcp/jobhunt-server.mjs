@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Zero-dependency stdio MCP server bridging CoWork ⇄ the job-hunt app.
+// Zero-dependency stdio MCP server bridging the agent ⇄ the job-hunt app.
 //
 // Transport: stdio JSON-RPC (newline-delimited). stdout is RESERVED for protocol frames;
 // all logging goes to stderr. Registered as an MCP server for the Claude Code runner (project
@@ -10,15 +10,15 @@
 // process remains the single owner of the SQLite file. Override the base URL with
 // JOBHUNT_URL.
 //
-// READ tools (the app→CoWork half of the old file bridge):
+// READ tools (the app→agent half of the old file bridge):
 //   listWatchlist     ← the companies discovery scans (watchlist=true)
 //   listCompanies     ← every tracked company (full universe; tier + watchlist + config)
 //   scanWatchlist / scanCompany ← mechanical ATS board fetch+filter (no LLM); returns shortlists
 //   listApplications  ← app-export/tracker-current.csv
 //   getContext        ← inbox sync watermark (inboxLastSynced)
-//   listJobs          ← agent-jobs/queue/<id>.json  (work CoWork should pick up)
+//   listJobs          ← agent-jobs/queue/<id>.json  (work the agent should pick up)
 //   getPlaybook       ← instructions/<playbook>.md
-// WRITE tools (the CoWork→app half):
+// WRITE tools (the agent→app half):
 //   submitJobResult   → replaces dropping agent-jobs/results/<id>.json (reconcile inline)
 //   createJob         → replaces writing agent-jobs/queue/<id>.json (self-queue work)
 //   upsertCompanies   → add/update company records (tier + scrape config)
@@ -31,10 +31,10 @@
 const BASE_URL = (process.env.JOBHUNT_URL || "http://localhost:3000").replace(/\/$/, "");
 const SERVER = { name: "jobhunt", version: "1.0.0" };
 
-// THREAD IDENTITY. The Claude Code runner spawns a fresh copy of this server per CoWork session, so
+// THREAD IDENTITY. The Claude Code runner spawns a fresh copy of this server per agent session, so
 // this process *is* one session ("thread"). Mint a stable id at boot and tag every call with it
 // (header below) — the app uses it to group the jobs this session claims and to record a per-call
-// trace, so the CoWork page can visualize what each session is doing. Correlation is server-side:
+// trace, so the Agents page can visualize what each session is doing. Correlation is server-side:
 // the agent never has to remember or pass the id.
 const THREAD_ID = process.env.JOBHUNT_THREAD || `th_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
 const THREAD_LABEL = process.env.JOBHUNT_THREAD_LABEL || "CoWork";
@@ -125,7 +125,7 @@ async function apiSend(method, pathWithQuery, payload) {
   try {
     res = await fetch(url, {
       method,
-      // Every MCP write is CoWork's — tag it so the app attributes the change-log event to CoWork,
+      // Every MCP write is the agent's — tag it so the app attributes the change-log event to the agent,
       // not the human default (You). Routes that don't read this header simply ignore it. The
       // thread headers let the app group claims under this chat (see THREAD_ID).
       headers: { "content-type": "application/json", accept: "application/json", "x-jobhunt-actor": "CoWork", ...threadHeaders() },
@@ -390,7 +390,7 @@ const TOOLS = [
   {
     name: "getPlaybook",
     description:
-      "Fetch a CoWork instruction playbook by path (e.g. 'watchlist-scan.md'). Call with no " +
+      "Fetch an agent instruction playbook by path (e.g. 'watchlist-scan.md'). Call with no " +
       "`path` to list every available playbook first.",
     inputSchema: {
       type: "object",
@@ -727,7 +727,7 @@ async function handle(msg) {
           id,
           result: { content: [{ type: "text", text: JSON.stringify(data, null, 2) }] },
         });
-        // Trace the call so the app's CoWork page can show this chat's live step timeline. For a
+        // Trace the call so the app's Agents page can show this chat's live step timeline. For a
         // claim, enrich the summary with the actual role grabbed (from the claimed job's params).
         let summary = stepSummary(tool.name, args);
         if ((tool.name === "claimNext" || tool.name === "claimJob") && data?.job) {

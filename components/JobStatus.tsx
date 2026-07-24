@@ -1,7 +1,7 @@
 import { Loader2, RefreshCw, RotateCw } from "lucide-react";
 
 // The four standard working states a job/posting can be in. ONE source of truth for the status
-// pill — used wherever a status is shown (funnel table cells, the floating queue, the CoWork page)
+// pill — used wherever a status is shown (funnel table cells, the floating queue, the Agents page)
 // so they never drift.
 export type WorkStatus = "in_progress" | "queued_redo" | "queued_tailor" | "queued_fit";
 

@@ -1,5 +1,5 @@
-import CoWorkView from "@/components/CoWorkView";
+import AgentsView from "@/components/AgentsView";
 
-export default function CoWorkPage() {
-  return <CoWorkView />;
+export default function AgentsPage() {
+  return <AgentsView />;
 }

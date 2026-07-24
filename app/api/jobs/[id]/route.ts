@@ -2,7 +2,7 @@ import { deleteQueuedJob, requeueJob } from "@/lib/jobs/store";
 
 export const dynamic = "force-dynamic";
 
-// DELETE /api/jobs/:id — drop a queued job from the CoWork queue. Only `queued` jobs can be
+// DELETE /api/jobs/:id — drop a queued job from the agent queue. Only `queued` jobs can be
 // removed (ingested rows are history); a no-op delete returns 404.
 export async function DELETE(_request: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;

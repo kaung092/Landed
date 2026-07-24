@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { Bot, X, ArrowRight, Play, Square, CheckCircle2 } from "lucide-react";
-import { useCoWorkQueue } from "@/components/CoWorkQueueProvider";
+import { useAgentQueue } from "@/components/AgentQueueProvider";
 import { useAgentChats } from "@/components/AgentChatsProvider";
 import { loadTone, loadHint, hasWip, wipBlink, agentColor } from "@/components/jobMeta";
 import { personaFor } from "@/lib/agents/personas";
@@ -16,12 +16,12 @@ function groupByType<T extends { type: string }>(items: T[]): [string, T[]][] {
   return [...g.entries()];
 }
 
-// Bottom-right floating CoWork queue: a count badge that pops when you hand off work (from the
+// Bottom-right floating the agent queue: a count badge that pops when you hand off work (from the
 // discovery funnel), a popover of the most recent queued jobs (removable), and a link to the full
-// CoWork page. Pure notification surface — jobs are added contextually, not here. Mounted once in
+// Agents page. Pure notification surface — jobs are added contextually, not here. Mounted once in
 // the layout, backed by the shared queue context.
 export default function FloatingQueue() {
-  const { jobs, count, pulse } = useCoWorkQueue();
+  const { jobs, count, pulse } = useAgentQueue();
   const [open, setOpen] = useState(false);
   // Any job an agent has claimed (wip) → an agent is actively working; the Bot icon spins to show it.
   const working = jobs.some((j) => j.status === "wip");
@@ -72,12 +72,12 @@ export default function FloatingQueue() {
       <button
         onClick={() => setOpen((o) => !o)}
         title={working ? "Agent queue — working…" : "Agent queue"}
-        className={`relative flex h-14 w-14 items-center justify-center rounded-2xl bg-violet-500 text-violet-50 shadow-lg shadow-violet-500/30 ring-1 ring-violet-400/40 transition duration-300 ease-out hover:bg-violet-400 ${pulse ? "scale-110" : "scale-100"} ${working ? "cowork-working-box" : ""} ${revealed ? "translate-x-0" : "translate-x-[66px] group-hover:translate-x-0"}`}
+        className={`relative flex h-14 w-14 items-center justify-center rounded-2xl bg-violet-500 text-violet-50 shadow-lg shadow-violet-500/30 ring-1 ring-violet-400/40 transition duration-300 ease-out hover:bg-violet-400 ${pulse ? "scale-110" : "scale-100"} ${working ? "agent-working-box" : ""} ${revealed ? "translate-x-0" : "translate-x-[66px] group-hover:translate-x-0"}`}
       >
         {pulse && <span className="absolute inset-0 animate-ping rounded-2xl bg-violet-400/60" />}
-        {/* "CoWork is working" indicator (any job in progress): the Bot icon spins slowly while the
+        {/* "the agent is working" indicator (any job in progress): the Bot icon spins slowly while the
             violet box breathes a glow (robot-lab variant 14). */}
-        <Bot size={22} strokeWidth={2.2} className={`relative ${working ? "cowork-working-icon" : ""}`} />
+        <Bot size={22} strokeWidth={2.2} className={`relative ${working ? "agent-working-icon" : ""}`} />
         {count > 0 && (
           <span className={`absolute -right-1.5 -top-1.5 flex h-6 min-w-6 items-center justify-center rounded-full border-2 border-[var(--background)] bg-amber-400 px-1 text-[12px] font-bold tabular-nums text-amber-950 transition-transform ${pulse ? "scale-125" : "scale-100"}`}>
             {count}
@@ -95,7 +95,7 @@ function QueueToast({ type, n, onDismiss }: { type: string; n: number; onDismiss
     <div
       onClick={onDismiss}
       title="Dismiss"
-      className="cowork-toast-in flex w-80 cursor-pointer items-center gap-3 rounded-2xl border border-violet-500/30 bg-gradient-to-br from-violet-500/25 via-zinc-900 to-zinc-900 px-3.5 py-2.5 shadow-2xl shadow-violet-900/40 ring-1 ring-inset ring-violet-400/20 transition hover:from-violet-500/35"
+      className="agent-toast-in flex w-80 cursor-pointer items-center gap-3 rounded-2xl border border-violet-500/30 bg-gradient-to-br from-violet-500/25 via-zinc-900 to-zinc-900 px-3.5 py-2.5 shadow-2xl shadow-violet-900/40 ring-1 ring-inset ring-violet-400/20 transition hover:from-violet-500/35"
     >
       <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-violet-500/20">
         <CheckCircle2 size={18} className="text-violet-300" />
@@ -112,7 +112,7 @@ function QueueToast({ type, n, onDismiss }: { type: string; n: number; onDismiss
   );
 }
 
-function Panel({ jobs, count, onClose }: { jobs: ReturnType<typeof useCoWorkQueue>["jobs"]; count: number; onClose: () => void }) {
+function Panel({ jobs, count, onClose }: { jobs: ReturnType<typeof useAgentQueue>["jobs"]; count: number; onClose: () => void }) {
   const groups = groupByType(jobs);
   const [tab, setTab] = useState<string | null>(null);
   // The SAME live agent the Agents page shows (shared provider) — so the floating "Run" and the

@@ -3,7 +3,7 @@ import { recordStep } from "@/lib/threads";
 export const dynamic = "force-dynamic";
 
 // POST /api/threads/step — the MCP server fires this (fire-and-forget) after every tool call, so the
-// app gets a live, per-chat trace of what CoWork is doing. Body: { threadId, tool, jobId?, ok?,
+// app gets a live, per-chat trace of what the agent is doing. Body: { threadId, tool, jobId?, ok?,
 // durationMs?, summary? }. Also bumps the thread heartbeat (lastSeenAt). Always 200 so a telemetry
 // failure never surfaces to the agent.
 export async function POST(request: Request) {

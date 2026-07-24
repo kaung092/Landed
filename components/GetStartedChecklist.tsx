@@ -15,7 +15,7 @@ const STEPS: Step[] = [
   { key: "resume", label: "Upload your base résumé", href: "/profile" },
   { key: "firstJob", label: "Add your first job — paste a JD", action: "add" },
   { key: "gmail", label: "Connect Gmail", href: "/settings", optional: true },
-  { key: "agent", label: "Run the CoWork agent", href: "/agents", optional: true },
+  { key: "agent", label: "Run the agent", href: "/agents", optional: true },
 ];
 
 // The first-run "Get started" card. Each step reflects real state (see /api/onboarding), so it ticks

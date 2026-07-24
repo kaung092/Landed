@@ -4,12 +4,12 @@ import { ago } from "@/lib/format";
 import { TIER_META, TIERS, type TargetCounts } from "@/lib/pipeline";
 import TrackerTag from "@/components/TrackerTag";
 import { useResizableColumns, ResTh } from "@/components/ResizableTable";
-import { useCoWorkQueue } from "@/components/CoWorkQueueProvider";
+import { useAgentQueue } from "@/components/AgentQueueProvider";
 import PopoverPanel, { anchorFrom } from "@/components/Popover";
 import type { Tier } from "@/lib/types";
 
 // Scan config (fetch method + ATS, plus the recipe as a hover tooltip and a link out) lives in the
-// "Fetch" column — CoWork-curated and read-only here.
+// "Fetch" column — The agent-curated and read-only here.
 const WL_COLS = ["company", "tier", "titles", "fetch", "scraped", "pipeline", "actions"];
 const WL_DEFAULTS = { company: 170, tier: 100, titles: 200, fetch: 230, scraped: 110, pipeline: 130, actions: 104 };
 
@@ -17,8 +17,8 @@ const WL_DEFAULTS = { company: 170, tier: 100, titles: 200, fetch: 230, scraped:
 // self-explanatory, so the Fetch column shows an explicit label + a tooltip describing each.
 const FETCH_META: Record<string, { label: string; desc: string }> = {
   api: { label: "API", desc: "Auto — the app fetches the ATS's JSON API (Greenhouse / Ashby). No manual step." },
-  "careers-get": { label: "HTTP GET", desc: "CoWork fetches the careers page with a plain HTTP GET (static HTML / JSON) — no browser needed." },
-  browser: { label: "Browser", desc: "CoWork reads the board with a headless browser (JS-rendered or bot-protected)." },
+  "careers-get": { label: "HTTP GET", desc: "The agent fetches the careers page with a plain HTTP GET (static HTML / JSON) — no browser needed." },
+  browser: { label: "Browser", desc: "The agent reads the board with a headless browser (JS-rendered or bot-protected)." },
 };
 
 // Host + path of a board URL, minus the protocol / "www." / query — for the Fetch column's
@@ -36,7 +36,7 @@ function shortUrl(u: string): string {
 const STALE_DAYS = 3;
 const SCRAPE_HELP =
   `Queues a watchlist-scan job for each watchlisted company last scraped more than ${STALE_DAYS} days ago (or never). ` +
-  `CoWork picks them up from the queue — fetches each board, glances new postings for fit, and updates “Last scraped”. Run your CoWork queue to process them.`;
+  `the agent picks them up from the queue — fetches each board, glances new postings for fit, and updates “Last scraped”. Run your the agent queue to process them.`;
 const isStale = (lastScrapedAt: string | null): boolean =>
   !lastScrapedAt || Date.now() - new Date(lastScrapedAt).getTime() > STALE_DAYS * 86_400_000;
 
@@ -85,7 +85,7 @@ export default function TargetsTable({
 }: {
   counts: Map<string, TargetCounts>;
 }) {
-  const { add, jobs, bump } = useCoWorkQueue();
+  const { add, jobs, bump } = useAgentQueue();
   const [targets, setTargets] = useState<Target[] | null>(null);
   const [filter, setFilter] = useState("");
   const [undoName, setUndoName] = useState<string | null>(null); // last removed → offer Undo
@@ -93,8 +93,8 @@ export default function TargetsTable({
   const [fetchPop, setFetchPop] = useState<{ id: number; at: { x: number; y: number } } | null>(null);
   const undoTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   // Add-to-watchlist box. We don't flip the flag here — adding a bare record makes the scan return
-  // `unsupported` (no fetch method). Instead we queue a `watchlist-add` CoWork job per company;
-  // CoWork researches fetch method + target titles and calls upsertCompanies → addToWatchlist
+  // `unsupported` (no fetch method). Instead we queue a `watchlist-add` the agent job per company;
+  // The agent researches fetch method + target titles and calls upsertCompanies → addToWatchlist
   // itself (see watchlist-add.md). The new rows appear here once that job lands. Leveling is fetched
   // separately/lazily from the fit view's Lvl column — it's the slow part, off this critical path.
   const [addInput, setAddInput] = useState("");
@@ -125,7 +125,7 @@ export default function TargetsTable({
     if (scrapeTimer.current) clearTimeout(scrapeTimer.current);
   }, []);
 
-  // "Scrape watchlist" — QUEUE a watchlist-scan job per stale company (>3 days) for CoWork to claim
+  // "Scrape watchlist" — QUEUE a watchlist-scan job per stale company (>3 days) for the agent to claim
   // and process through the normal queue (scanCompany + glance + close). No longer an inline app scan.
   const scrape = useCallback(async () => {
     setScraping(true);
@@ -143,9 +143,9 @@ export default function TargetsTable({
       setScrapeMsg(
         queued === 0
           ? skipped > 0
-            ? `Already queued — ${skipped} stale compan${skipped === 1 ? "y is" : "ies are"} waiting in the CoWork queue.`
+            ? `Already queued — ${skipped} stale compan${skipped === 1 ? "y is" : "ies are"} waiting in the agent queue.`
             : "Nothing stale — every watchlisted company was scraped within the last 3 days."
-          : `Queued ${queued} compan${queued === 1 ? "y" : "ies"} for CoWork to scan${skipped ? ` (${skipped} already queued)` : ""} — run your CoWork queue.`
+          : `Queued ${queued} compan${queued === 1 ? "y" : "ies"} for the agent to scan${skipped ? ` (${skipped} already queued)` : ""} — run your the agent queue.`
       );
       bump(); // refresh the floating queue so the new jobs show
     } catch {
@@ -159,7 +159,7 @@ export default function TargetsTable({
   }, [load, bump]);
 
   // Per-row "Scan now" — QUEUE a watchlist-scan job for just this one company (POST /api/scan/queue
-  // { company }), ignoring the 3-day staleness gate. Same CoWork-queue path as "Scrape watchlist".
+  // { company }), ignoring the 3-day staleness gate. Same the agent-queue path as "Scrape watchlist".
   const scanOne = useCallback(async (name: string) => {
     setScanningRows((s) => new Set(s).add(name));
     try {
@@ -169,8 +169,8 @@ export default function TargetsTable({
       pendo.track("single_company_scan_queued", { company_name: name });
       setScrapeMsg(
         d.status === "in-flight"
-          ? `${name} is already queued — it’s waiting in the CoWork queue.`
-          : `Queued ${name} for CoWork to scan — run your CoWork queue.`
+          ? `${name} is already queued — it’s waiting in the agent queue.`
+          : `Queued ${name} for the agent to scan — run your the agent queue.`
       );
       bump(); // refresh the floating queue so the new job shows
     } catch {
@@ -183,7 +183,7 @@ export default function TargetsTable({
     }
   }, [load, bump]);
 
-  // Queue a watchlist-add CoWork job per company in the box. Accepts a comma- or newline-separated
+  // Queue a watchlist-add the agent job per company in the box. Accepts a comma- or newline-separated
   // list, dedups, and skips anything already watchlisted or already queued (so re-pasting is safe).
   const queueAdd = useCallback(async () => {
     const names = addInput.split(/[,\n]+/).map((s) => s.trim()).filter(Boolean);
@@ -278,7 +278,7 @@ export default function TargetsTable({
       <button
         onClick={scrape}
         disabled={scraping || staleCount === 0}
-        title={staleCount === 0 ? `All watchlisted companies were scraped within the last ${STALE_DAYS} days` : `Queue ${staleCount} ${staleCount === 1 ? "company" : "companies"} not scraped in over ${STALE_DAYS} days for CoWork to scan`}
+        title={staleCount === 0 ? `All watchlisted companies were scraped within the last ${STALE_DAYS} days` : `Queue ${staleCount} ${staleCount === 1 ? "company" : "companies"} not scraped in over ${STALE_DAYS} days for the agent to scan`}
         className="inline-flex items-center gap-1.5 rounded-md bg-zinc-800 px-3 py-1.5 text-[13px] font-medium text-zinc-200 ring-1 ring-inset ring-zinc-700 transition hover:bg-zinc-700 disabled:cursor-not-allowed disabled:opacity-40"
       >
         {scraping ? <Loader2 size={13} className="animate-spin" /> : <RefreshCw size={13} />}
@@ -298,13 +298,13 @@ export default function TargetsTable({
         <Radar size={15} className="shrink-0 text-sky-300" />
         <h2 className="shrink-0 text-[15px] font-semibold tracking-tight text-zinc-100">Watchlist</h2>
         <span className="truncate text-[13px] font-normal text-zinc-500">
-          {`${targets?.length ?? ""}${targets ? " " : ""}companies CoWork auto-scans for new postings`}
+          {`${targets?.length ?? ""}${targets ? " " : ""}companies the agent auto-scans for new postings`}
         </span>
         {scrapeAction && <div className="ml-auto flex shrink-0 items-center gap-2">{scrapeAction}</div>}
       </div>
 
       <div className="flex min-h-0 flex-1 flex-col px-6 pb-6 pt-4">
-      {/* Action bar: add companies — CoWork researches & configures each — with the filter at the far end. */}
+      {/* Action bar: add companies — The agent researches & configures each — with the filter at the far end. */}
       <div className="mb-3 flex flex-wrap items-center gap-2">
         <form
           onSubmit={(e) => { e.preventDefault(); queueAdd(); }}
@@ -316,8 +316,8 @@ export default function TargetsTable({
               type="text"
               value={addInput}
               onChange={(e) => setAddInput(e.target.value)}
-              placeholder="Add companies — CoWork researches & configures each"
-              title="Comma-separated for several. CoWork finds the ATS/board and target titles, then adds it to the watchlist. (Leveling is fetched later from the fit view.)"
+              placeholder="Add companies — the agent researches & configures each"
+              title="Comma-separated for several. The agent finds the ATS/board and target titles, then adds it to the watchlist. (Leveling is fetched later from the fit view.)"
               className="w-full rounded-md bg-zinc-900 py-1.5 pl-8 pr-2.5 text-[13px] text-zinc-200 outline-none ring-1 ring-inset ring-zinc-800 transition placeholder:text-zinc-600 hover:ring-zinc-700 focus:ring-zinc-600"
             />
           </div>
@@ -356,7 +356,7 @@ export default function TargetsTable({
             <div className="rounded-lg bg-zinc-900 px-3 py-1.5 text-[13px] text-zinc-400 ring-1 ring-inset ring-zinc-800">
               {queuedMsg.queued.length > 0 && (
                 <span>
-                  Queued research for <span className="text-zinc-200">{queuedMsg.queued.join(", ")}</span> — CoWork will
+                  Queued research for <span className="text-zinc-200">{queuedMsg.queued.join(", ")}</span> — the agent will
                   configure and watchlist {queuedMsg.queued.length === 1 ? "it" : "them"}. Track it in the queue.
                 </span>
               )}
@@ -396,7 +396,7 @@ export default function TargetsTable({
           </div>
         ) : targets.length === 0 ? (
           <div className="rounded-xl border border-dashed border-zinc-800/80 py-6 text-center text-[13px] text-zinc-600">
-            nothing on the watchlist yet — add a company above and CoWork will research and configure it
+            nothing on the watchlist yet — add a company above and the agent will research and configure it
           </div>
         ) : shown.length === 0 ? (
           <div className="rounded-xl border border-dashed border-zinc-800/80 py-6 text-center text-[13px] text-zinc-600">
@@ -479,7 +479,7 @@ export default function TargetsTable({
                         <button
                           onClick={(e) => { e.stopPropagation(); scanOne(t.name); }}
                           disabled={scanningRows.has(t.name)}
-                          title={`Scan ${t.name}'s board now (queues a CoWork scan)`}
+                          title={`Scan ${t.name}'s board now (queues an agent scan)`}
                           className="inline-flex items-center rounded-md px-2.5 py-1 text-[12px] font-medium text-sky-300 ring-1 ring-inset ring-sky-500/30 transition hover:bg-sky-500/15 disabled:cursor-not-allowed disabled:opacity-40"
                         >
                           {scanningRows.has(t.name) ? "Scanning…" : "Scan"}

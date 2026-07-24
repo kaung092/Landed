@@ -22,7 +22,7 @@ export async function GET(request: Request) {
     if (count > 0) return Response.json({ ready: true, reason: "work", type, count });
     if (takeDrainTrigger(type)) return Response.json({ ready: true, reason: "trigger", type, count: 0 });
     if (Date.now() - start >= waitMs) return Response.json({ ready: false, type });
-    // Bail early if the client (the CoWork chat) hung up — don't keep looping for a dead poll.
+    // Bail early if the client (the agent chat) hung up — don't keep looping for a dead poll.
     if (request.signal.aborted) return Response.json({ ready: false, type, aborted: true });
     await sleep(1_000);
   }

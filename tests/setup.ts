@@ -8,7 +8,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
-const dir = fs.mkdtempSync(path.join(os.tmpdir(), "cowork-test-"));
+const dir = fs.mkdtempSync(path.join(os.tmpdir(), "agent-test-"));
 process.env.ASSET_ROOT = dir;
 process.env.JOBS_ROOT = path.join(dir, "agent-jobs");
 process.env.DB_PATH = path.join(dir, "test.db");

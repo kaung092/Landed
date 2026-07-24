@@ -183,28 +183,28 @@ body {
 .prose-instructions th { background: #18181b; font-weight: 600; }
 .prose-instructions hr { border: none; border-top: 1px solid #27272a; margin: 1.5em 0; }
 
-/* CoWork "is working" indicator (FloatingQueue robot): the icon spins slowly while the violet box
+/* The agent "is working" indicator (FloatingQueue robot): the icon spins slowly while the violet box
    breathes a glow — picked from the robot-lab showcase (variant 14). */
-@keyframes cowork-spin { to { transform: rotate(360deg); } }
-@keyframes cowork-glow {
+@keyframes agent-spin { to { transform: rotate(360deg); } }
+@keyframes agent-glow {
   0%, 100% { box-shadow: 0 0 0 0 rgba(139, 92, 246, 0.55), 0 8px 20px rgba(139, 92, 246, 0.3); }
   50% { box-shadow: 0 0 24px 7px rgba(139, 92, 246, 0.9), 0 8px 22px rgba(139, 92, 246, 0.5); }
 }
-.cowork-working-box { animation: cowork-glow 1.2s ease-in-out infinite; }
-.cowork-working-icon { animation: cowork-spin 2.2s linear infinite; }
+.agent-working-box { animation: agent-glow 1.2s ease-in-out infinite; }
+.agent-working-icon { animation: agent-spin 2.2s linear infinite; }
 
 /* A job-type tab blinks while it has a job in progress (live wip) — a hard on/off toggle (not a gentle
    fade) plus a sky "in-progress" glow, so active work is unmistakable. */
-@keyframes cowork-blink {
+@keyframes agent-blink {
   0%, 49.9% { opacity: 1; box-shadow: 0 0 10px 1px rgba(56, 189, 248, 0.85); }
   50%, 100% { opacity: 0.4; box-shadow: 0 0 0 0 rgba(56, 189, 248, 0); }
 }
-.cowork-blink { animation: cowork-blink 1s linear infinite; }
+.agent-blink { animation: agent-blink 1s linear infinite; }
 
 /* Queue-cleared toast: a springy pop-in, so a finished queue reads as a small win, not a dry line. */
-@keyframes cowork-toast-in {
+@keyframes agent-toast-in {
   0% { opacity: 0; transform: translateY(10px) scale(0.9); }
   60% { transform: translateY(-3px) scale(1.03); }
   100% { opacity: 1; transform: translateY(0) scale(1); }
 }
-.cowork-toast-in { animation: cowork-toast-in 0.38s cubic-bezier(0.22, 1, 0.36, 1); }
+.agent-toast-in { animation: agent-toast-in 0.38s cubic-bezier(0.22, 1, 0.36, 1); }

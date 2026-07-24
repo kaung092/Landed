@@ -6,7 +6,7 @@ import { Mail, Loader2, CheckCircle2, AlertCircle } from "lucide-react";
 type Status = { connected: boolean; user: string | null; source: "env" | "config" | null };
 
 // Connect-Gmail card: stores a Gmail app password so the app can read mail over IMAP, which is what
-// powers inbox-sync for EVERY client (CoWork + the headless Claude Code runner) via the jobhunt
+// powers inbox-sync for EVERY client (the agent + the headless Claude Code runner) via the jobhunt
 // searchGmail/getGmailThread MCP tools. Read-only access; the password lives in the local DB.
 export default function GmailConnect() {
   const [status, setStatus] = useState<Status | null>(null);

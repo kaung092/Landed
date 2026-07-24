@@ -15,14 +15,14 @@ export const companies = sqliteTable("companies", {
   careersUrl: text("careers_url"),
   ats: text("ats"), // backend system: greenhouse | ashby | custom | verify — drives the app's API scan
   // HOW to actually read the board, separate from the backend system. The app's scanCompany
-  // keys off `ats`; CoWork uses this to pick its own path when the API scan doesn't apply.
+  // keys off `ats`; the agent uses this to pick its own path when the API scan doesn't apply.
   fetchMethod: text("fetch_method"), // api | careers-get | browser
   // Short, human/agent-readable scan steps for browser/careers-get companies (no click
   // coords): which filters to set, what to exclude, and whether level comes from the title
   // or the JD. Only needed when fetchMethod isn't `api`. Distinct from freeform `notes`.
   fetchRecipe: text("fetch_recipe"),
   notes: text("notes"),
-  // Scrape config + search criteria for a target (CoWork curates these via upsertCompanies).
+  // Scrape config + search criteria for a target (the agent curates these via upsertCompanies).
   slug: text("slug"), // ATS board slug, e.g. "anthropic" for greenhouse/ashby
   endpoint: text("endpoint"), // scrape API endpoint (or a "(verify XHR)" hint)
   targetTitles: text("target_titles"), // JSON string[] of titles to target, e.g. ["Senior","Staff"]
@@ -78,9 +78,9 @@ export const appConfig = sqliteTable("app_config", {
   value: text("value"),
 });
 
-// CoWork job ledger. A job's live state lives in the asset-folder queue/done
+// The agent job ledger. A job's live state lives in the asset-folder queue/done
 // The job queue + ledger (DB-backed; replaces the agent-jobs/{queue,results,done} files).
-// A row IS the queued job: app→CoWork handoffs (fit/tailoring) and CoWork self-runs both
+// A row IS the queued job: app→agent handoffs (fit/tailoring) and the agent self-runs both
 // live here. Lifecycle: queued → wip (an agent claimed it) → ingested (result submitted) | failed.
 // An agent claims a job (queued → wip, stamping claimed_at) before working it so two agents never
 // run the same job; a stuck wip job is recovered by the user with a manual requeue (wip → queued).
@@ -94,8 +94,8 @@ export const jobs = sqliteTable("jobs", {
   claimedBy: text("claimed_by"), // the agent/session that claimed it (defaults to CoWork)
   ingestedAt: text("ingested_at"),
   summary: text("summary"),
-  playbook: text("playbook"), // instructions/<playbook> CoWork should follow
-  task: text("task"), // human/CoWork-readable instruction
+  playbook: text("playbook"), // instructions/<playbook> The agent should follow
+  task: text("task"), // human/the agent-readable instruction
   params: text("params"), // JSON job input (e.g. { postings: [{ company, role, jd, url }] })
   result: text("result"), // JSON of the submitted result records (history)
   // Stuck-job detection (mechanical, not agent-cooperative): `attempts` is bumped every time a job is
@@ -105,16 +105,16 @@ export const jobs = sqliteTable("jobs", {
   // itself with a reason (faster, but best-effort — never relied on; the cap is the safety net).
   attempts: integer("attempts").notNull().default(0),
   error: text("error"), // why it failed (auto: "stuck after N attempts"; or an agent-reported reason)
-  // The CoWork session (thread) that claimed this job. Each session runs its own `jobhunt` MCP server
+  // The agent session (thread) that claimed this job. Each session runs its own `jobhunt` MCP server
   // process, which stamps this on claim via the x-jobhunt-thread header — so jobs group under the
   // session that's running them, without the agent having to pass anything. See `threads` below.
   threadId: text("thread_id"),
 });
 
-// ── CoWork threads ──
-// One row per CoWork SESSION. The Claude Code runner spawns a separate `jobhunt` MCP server process
+// ── the agent threads ──
+// One row per agent SESSION. The Claude Code runner spawns a separate `jobhunt` MCP server process
 // per session; that process mints a `threadId` at boot and tags every call with it. A session can
-// claim and run many jobs (jobs.thread_id), so this is the parent the CoWork page groups jobs + steps
+// claim and run many jobs (jobs.thread_id), so this is the parent the Agents page groups jobs + steps
 // under. We can't observe the session directly — only what it does over MCP — so `lastSeenAt` (bumped
 // on every call) is the liveness signal; there's no reliable process-exit event over HTTP.
 export const threads = sqliteTable("threads", {
@@ -130,7 +130,7 @@ export const threads = sqliteTable("threads", {
 });
 
 // Append-only per-call trace: one row per MCP tool call a thread makes. This is the "thread
-// timeline" the app renders — the only window into what a CoWork session is doing, since the work
+// timeline" the app renders — the only window into what an agent session is doing, since the work
 // itself happens inside the Claude Code runner between these calls.
 export const threadSteps = sqliteTable("thread_steps", {
   id: integer("id").primaryKey({ autoIncrement: true }),
@@ -162,7 +162,7 @@ export const agentRuns = sqliteTable("agent_runs", {
 export const pendingMatches = sqliteTable("pending_matches", {
   id: integer("id").primaryKey({ autoIncrement: true }),
   createdAt: text("created_at").notNull(),
-  actor: text("actor").notNull(), // who produced the incoming record (CoWork)
+  actor: text("actor").notNull(), // who produced the incoming record (the agent)
   source: text("source").notNull(), // inbox-sync, ...
   companyId: integer("company_id")
     .notNull()
@@ -219,7 +219,7 @@ export const prepQuestions = sqliteTable("prep_questions", {
   sortOrder: integer("sort_order"),
 });
 
-// One row per company you're prepping for — the research output CoWork writes (see the
+// One row per company you're prepping for — the research output the agent writes (see the
 // prep-research job). The catalog of questions stays in prep_questions; this holds the
 // company-specific narrative + the ordered category list its view is built from. Keyed by
 // the same slug used in prepQuestions.companies / companyMeta (canonical company key).
@@ -231,11 +231,11 @@ export const prepCompany = sqliteTable("prep_company", {
   rounds: text("rounds"), // JSON [{ key, name, format, focus }] — key links questions to a round
   categories: text("categories"), // JSON [{ key, label, description, kind }] — ordered; drives the view's sections
   sources: text("sources"), // JSON [{ label, url }] — where the intel came from
-  researchedAt: text("researched_at"), // ISO; last time CoWork refreshed this profile
+  researchedAt: text("researched_at"), // ISO; last time the agent refreshed this profile
 });
 
 // Per-(company, round) feedback you leave on the prep — appended to a thread and dispatched to
-// CoWork as a prep-research refinement job. `status` tracks the loop: queued → applied once CoWork
+// The agent as a prep-research refinement job. `status` tracks the loop: queued → applied once the agent
 // re-researches that round. Like the rest of prep, a personal scratchpad (no events log).
 export const prepFeedback = sqliteTable("prep_feedback", {
   id: integer("id").primaryKey({ autoIncrement: true }),
@@ -245,7 +245,7 @@ export const prepFeedback = sqliteTable("prep_feedback", {
   status: text("status", { enum: ["queued", "applied"] }).notNull().default("queued"),
   jobId: text("job_id"), // the prep-research job this feedback dispatched
   createdAt: text("created_at").notNull(), // ISO
-  appliedAt: text("applied_at"), // ISO; stamped when CoWork's refresh lands
+  appliedAt: text("applied_at"), // ISO; stamped when the agent's refresh lands
 });
 
 // Append-only practice log. Powers "how many times" (count) and "time record" (min duration).
@@ -310,7 +310,7 @@ export const postings = sqliteTable("postings", {
   // next versioned result… Each agent turn IS a version; the live fit_detail/resume_dir project the
   // latest. Powers "redo with a note" — the agent replays the whole thread on its next run.
   redoLog: text("redo_log"), // JSON RedoTurn[]
-  // Versioned interview briefs (CoWork-generated from the interview-prep asset folder). JSON
+  // Versioned interview briefs (the agent-generated from the interview-prep asset folder). JSON
   // InterviewBrief[] oldest→newest; each generation appends a version. See lib/jobs/briefs.ts.
   interviewBriefs: text("interview_briefs"), // JSON InterviewBrief[]
   comments: text("comments"), // JSON Comment[] — your personal comment thread on this posting

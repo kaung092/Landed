@@ -1,4 +1,4 @@
-// A company's IC SWE seniority ladder, collected from levels.fyi by CoWork during add-watchlist
+// A company's IC SWE seniority ladder, collected from levels.fyi by the agent during add-watchlist
 // (see watchlist-add.md) and normalized to a shared 1–10 scale. The reference ladder it's drawn
 // against — and which rung counts as the target "straddle" band — is configurable per install
 // (see LevelingRef / getLevelingRef). `source: "none"` = the company has no ladder.

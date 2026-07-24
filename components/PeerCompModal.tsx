@@ -5,16 +5,16 @@ import { createPortal } from "react-dom";
 import { Coins, Loader2, RefreshCw, X } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { useCoWorkQueue } from "@/components/CoWorkQueueProvider";
+import { useAgentQueue } from "@/components/AgentQueueProvider";
 import type { PeerComp } from "@/lib/types";
 
 // Peer comp comparison — a popup showing the six-column table (Role · Base · Bonus · Equity ·
 // Company stage · Upside character) across every role you're actively interviewing for. Generation
-// runs through the CoWork job queue (type "peer-comp") — NOT a direct API call — so clicking
-// "Generate" queues a job; the popup shows a working state, then renders the markdown once CoWork
+// runs through the agent job queue (type "peer-comp") — NOT a direct API call — so clicking
+// "Generate" queues a job; the popup shows a working state, then renders the markdown once the agent
 // submits it and the artifact lands in app_config. Opens instantly if a prior run is stored.
 export default function PeerCompModal({ onClose }: { onClose: () => void }) {
-  const { jobs, bump, refresh } = useCoWorkQueue();
+  const { jobs, bump, refresh } = useAgentQueue();
   const [data, setData] = useState<PeerComp | null | undefined>(undefined); // undefined = loading GET
   const [queuing, setQueuing] = useState(false); // optimistic: clicked → job not yet in the polled queue
   const [error, setError] = useState<string | null>(null);
@@ -50,7 +50,7 @@ export default function PeerCompModal({ onClose }: { onClose: () => void }) {
         setQueuing(false);
         return;
       }
-      bump(); // handed work to CoWork — pulse + re-read the queue so the job shows up
+      bump(); // handed work to the agent — pulse + re-read the queue so the job shows up
     } catch (e) {
       setError(String(e instanceof Error ? e.message : e));
       setQueuing(false);
@@ -58,7 +58,7 @@ export default function PeerCompModal({ onClose }: { onClose: () => void }) {
   }, [bump]);
 
   // Initial load: show the last stored comparison. Don't auto-generate — generating is now an async
-  // CoWork job the user opts into with the button.
+  // The agent job the user opts into with the button.
   const started = useRef(false);
   useEffect(() => {
     if (started.current) return;
@@ -85,7 +85,7 @@ export default function PeerCompModal({ onClose }: { onClose: () => void }) {
     }
     if (wasPending.current) {
       wasPending.current = false;
-      loadStored(); // CoWork drained the job — pull the freshly-stored comparison
+      loadStored(); // The agent drained the job — pull the freshly-stored comparison
     }
   }, [pending, refresh, loadStored]);
 
@@ -105,7 +105,7 @@ export default function PeerCompModal({ onClose }: { onClose: () => void }) {
           <button
             onClick={generate}
             disabled={pending}
-            title="Queue CoWork to (re)build the comparison from your latest notes, JD, and emails"
+            title="Queue the agent to (re)build the comparison from your latest notes, JD, and emails"
             className="inline-flex shrink-0 items-center gap-1 rounded-md bg-violet-500/90 px-2.5 py-1 text-[13px] font-medium text-violet-950 transition hover:bg-violet-400 disabled:opacity-50"
           >
             {pending ? <Loader2 size={12} className="animate-spin" /> : <RefreshCw size={12} />}
@@ -125,8 +125,8 @@ export default function PeerCompModal({ onClose }: { onClose: () => void }) {
             <div className="mb-3 flex items-center gap-2 text-[13px] text-zinc-400">
               <Loader2 size={14} className="animate-spin text-violet-300" />
               {working
-                ? "CoWork is reading your notes, JDs, and recruiter emails and researching comp…"
-                : "Queued in CoWork — it will build the comparison from your notes, JDs, and emails."}
+                ? "the agent is reading your notes, JDs, and recruiter emails and researching comp…"
+                : "Queued in the agent — it will build the comparison from your notes, JDs, and emails."}
             </div>
           )}
           {data === undefined ? (
@@ -139,7 +139,7 @@ export default function PeerCompModal({ onClose }: { onClose: () => void }) {
               <p className="mt-3 text-[11px] text-zinc-600">generated {data.generatedAt.slice(0, 16).replace("T", " ")}</p>
             </>
           ) : (
-            !pending && <p className="text-[13px] text-zinc-500">No comparison yet — click <span className="text-zinc-300">Generate</span> to have CoWork build one across your active interviewing roles.</p>
+            !pending && <p className="text-[13px] text-zinc-500">No comparison yet — click <span className="text-zinc-300">Generate</span> to have the agent build one across your active interviewing roles.</p>
           )}
         </div>
       </div>

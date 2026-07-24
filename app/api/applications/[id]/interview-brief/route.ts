@@ -3,7 +3,7 @@ import { enqueueInterviewBrief } from "@/lib/jobs/store";
 export const dynamic = "force-dynamic";
 
 // POST /api/applications/:id/interview-brief — (re)queue the interview-brief job for this posting.
-// CoWork reads the company's interview-prep asset folder (context.md + dropped transcripts + fetched
+// The agent reads the company's interview-prep asset folder (context.md + dropped transcripts + fetched
 // emails) and returns a versioned brief. The drawer's "Generate interview brief" button. Idempotent
 // on interview-brief-<postingId> — supersedes any prior run. Returns { jobId, slug } (or 404).
 export async function POST(_request: Request, { params }: { params: Promise<{ id: string }> }) {

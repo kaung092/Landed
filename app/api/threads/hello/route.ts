@@ -2,7 +2,7 @@ import { registerThread } from "@/lib/threads";
 
 export const dynamic = "force-dynamic";
 
-// POST /api/threads/hello — the MCP server fires this on `initialize` so a CoWork chat shows up the
+// POST /api/threads/hello — the MCP server fires this on `initialize` so an agent chat shows up the
 // moment it connects, before it claims any work. Body: { threadId, label?, pid? }. Idempotent.
 export async function POST(request: Request) {
   try {

@@ -5,7 +5,7 @@ import { Building2, X, ExternalLink, Link2, Trash2, Radar, GitCompareArrows, Che
 import type { BriefGap, InterviewBrief, InterviewRound, Posting, RedoTurn, SourcedText, Status, Tier } from "@/lib/types";
 import { reapplyInfo, STATUS_LABEL, STATUS_CHIP, TIER_META, TIERS } from "@/lib/pipeline";
 import { type CompanyAgg } from "@/lib/board";
-import { useCoWorkQueue } from "@/components/CoWorkQueueProvider";
+import { useAgentQueue } from "@/components/AgentQueueProvider";
 import { tailorDiffFor } from "@/lib/jobs/redolog";
 import { FitBadge, GapList } from "./Badges";
 import ResumeDiffModal from "@/components/ResumeDiff";
@@ -20,7 +20,7 @@ function RedoChip() {
   );
 }
 
-// The review decision on an assessed posting → a stage move. The option matching CoWork's
+// The review decision on an assessed posting → a stage move. The option matching the agent's
 // recommendation is highlighted.
 function DecisionButtons({ p, onSetStatus }: { p: Posting; onSetStatus: (p: Posting, s: Status) => void }) {
   const rec = p.fit?.recommendation?.toLowerCase();
@@ -35,7 +35,7 @@ function DecisionButtons({ p, onSetStatus }: { p: Posting; onSetStatus: (p: Post
         <button
           key={o.to}
           onClick={() => onSetStatus(p, o.to)}
-          title={o.on ? "CoWork's recommendation" : undefined}
+          title={o.on ? "the agent's recommendation" : undefined}
           className={`inline-flex items-center gap-1 rounded-md px-2.5 py-1 text-[13px] font-medium transition ${
             o.on ? o.onCls : "bg-zinc-800 text-zinc-300 ring-1 ring-inset ring-zinc-700 hover:bg-zinc-700"
           }`}
@@ -171,7 +171,7 @@ type PrepAssets = {
 // add transcript — each with a dumped-vs-missing status, plus a link into the asset folder. Reads
 // one status endpoint; each action (re)queues its job or writes a transcript, then refreshes.
 function PrepMaterials({ p, onChanged }: { p: Posting; onChanged?: () => void }) {
-  const { bump } = useCoWorkQueue();
+  const { bump } = useAgentQueue();
   const [assets, setAssets] = useState<PrepAssets | null>(null);
   const [emailState, setEmailState] = useState<"idle" | "queuing" | "queued">("idle");
   const [prepState, setPrepState] = useState<"idle" | "queuing" | "queued">("idle");
@@ -372,12 +372,12 @@ function TranscriptDrop({ postingId, onSaved }: { postingId: string; onSaved?: (
   );
 }
 
-// The interview brief — a versioned overview CoWork generates from this company's interview-prep
+// The interview brief — a versioned overview the agent generates from this company's interview-prep
 // asset folder (context.md + dropped transcripts + fetched emails). Shows the latest version's
 // role · TC · next step · gaps-to-prep, a version switcher, and a Generate button that (re)queues
 // the interview-brief job. Live off the shared queue for the queued/working state.
 function InterviewBriefCard({ p, onChanged }: { p: Posting; onChanged?: () => void }) {
-  const { jobs, bump } = useCoWorkQueue();
+  const { jobs, bump } = useAgentQueue();
   const briefs = p.interviewBriefs ?? [];
   const [selVersion, setSelVersion] = useState<number | null>(null);
   const [queuing, setQueuing] = useState(false);
@@ -464,7 +464,7 @@ function InterviewBriefCard({ p, onChanged }: { p: Posting; onChanged?: () => vo
       ) : (
         <p className="mt-3 border-t border-violet-500/15 pt-3 text-[12px] text-zinc-500">
           {working || queued
-            ? "Queued in CoWork — reading your dumped materials to build the brief."
+            ? "Queued in the agent — reading your dumped materials to build the brief."
             : "No brief yet. Feed the inputs below (emails · questions · transcripts), then generate one."}
         </p>
       )}
@@ -476,7 +476,7 @@ function InterviewBriefCard({ p, onChanged }: { p: Posting; onChanged?: () => vo
 // modal (level call, strengths, detailed gaps, history) where the redo composer lives. Decision
 // buttons stay here for one-click triage of an assessed posting.
 function FitSection({ p, onSetStatus, onOpenDetail }: { p: Posting; onSetStatus?: (p: Posting, s: Status) => void; onOpenDetail: () => void }) {
-  const { redoNoteFor } = useCoWorkQueue();
+  const { redoNoteFor } = useAgentQueue();
   if (!p.fit && p.fitScore == null) return null;
   return (
     <div>
@@ -559,7 +559,7 @@ function TailorVersion({ t, active, edited, onDiff, onChoose, onToggleEdited }: 
       {t.slug && (
         <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1.5">
           <UsedForApp checked={active} onToggle={() => onChoose(active ? null : t.slug!)} />
-          {/* Flag a version you've tweaked by hand after CoWork produced it — the diff may no longer match the file. */}
+          {/* Flag a version you've tweaked by hand after the agent produced it — the diff may no longer match the file. */}
           <label className="inline-flex cursor-pointer items-center gap-1.5 text-[12px] text-zinc-400 transition hover:text-zinc-200">
             <input type="checkbox" checked={edited} onChange={() => onToggleEdited(t.slug!)} className="h-3.5 w-3.5 rounded border-zinc-700 bg-zinc-800 accent-violet-500" />
             manually edited
@@ -584,7 +584,7 @@ function RedoNote({ text }: { text: string }) {
 // interleaved). Each version carries the "used for application" + "manually edited" checkboxes. Falls
 // back to a single flat row for résumés tailored before versioning. (Base lives in its own section.)
 function ResumeSection({ p, onDiff, onChoose, onToggleEdited }: { p: Posting; onDiff: (slug: string) => void; onChoose: (v: string | null) => void; onToggleEdited: (slug: string) => void }) {
-  const { redoNoteFor } = useCoWorkQueue();
+  const { redoNoteFor } = useAgentQueue();
   const turns = (p.redoLog ?? []).filter((t) => t.phase === "tailor");
   const versions = turns.filter((t) => t.role === "agent").length;
   if (!p.resumeDir && !turns.length) return null;
@@ -793,7 +793,7 @@ export default function CompanyDrawer({
   const [selectedStage, setSelectedStage] = useState(currentStage);
   const [diffSlug, setDiffSlug] = useState<string | null>(null);
   const [fitOpen, setFitOpen] = useState(false);
-  const { redoNoteFor } = useCoWorkQueue();
+  const { redoNoteFor } = useAgentQueue();
   if (!p) return null;
   const reapply = reapplyInfo(p);
   const rounds = p.interviews ?? [];

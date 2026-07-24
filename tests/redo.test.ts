@@ -15,7 +15,7 @@ const rawLog = (id: number) => parseRedoLog(db.select().from(postings).where(eq(
 test("reconcileTailoringQueue re-queues a tailoring candidate stranded without a live job", () => {
   const id = seedCandidate({ company: "Anthropic", title: "Staff Engineer", state: "tailoring" });
   // Candidate is in `tailoring` with no resume and NO tailoring job (the "Queued for tailoring…"
-  // strand): nothing exists for CoWork to pick up.
+  // strand): nothing exists for the agent to pick up.
   assert.equal(db.select().from(jobs).where(eq(jobs.id, `tailoring-app-${id}`)).get(), undefined);
 
   const created = reconcileTailoringQueue();
@@ -104,7 +104,7 @@ test("tailoring redo accrues versions: v1 → redo note → v2, resumeDir tracks
   assert.equal(hasPendingRedo(log, "tailor"), false, "tag clears once the new version lands");
 });
 
-test("tailoring result carries CoWork's annotated diff onto the version turn (malformed ops dropped)", () => {
+test("tailoring result carries the agent's annotated diff onto the version turn (malformed ops dropped)", () => {
   const id = seedCandidate({ company: "Stripe", title: "Staff Engineer", state: "tailoring" });
   enqueueTailoring(getPosting(id)!);
   const slug = jobParams(`tailoring-app-${id}`).postings[0].slug;

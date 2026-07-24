@@ -46,7 +46,7 @@ export default function PrepChat({
     if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
   }, [msgs, busy]);
   // The research files the coach reads from this company's folder — shown so the context is visible,
-  // like a CoWork project's file list. Refetched after each turn (a turn can dump/refresh them).
+  // like an agent project's file list. Refetched after each turn (a turn can dump/refresh them).
   useEffect(() => {
     let alive = true;
     fetch(`/api/prep/company/${slug}/files`)
@@ -138,7 +138,7 @@ export default function PrepChat({
       </div>
 
       {/* Context files — the research .md outputs the coach reads from this company's folder. Shown
-          so it's transparent what the assistant is working from, like a CoWork project's file list. */}
+          so it's transparent what the assistant is working from, like an agent project's file list. */}
       {ctxFiles.length > 0 && (
         <div className="shrink-0 border-b border-zinc-800/60 bg-zinc-950/60 px-4 py-2">
           <p className="mb-1 text-[10px] font-medium uppercase tracking-wider text-zinc-600">Context · reading from this folder</p>
@@ -179,7 +179,7 @@ export default function PrepChat({
             );
 
           // Assistant turns render as full-width markdown prose (headings, lists, code, tables), the
-          // way a Claude/CoWork reply reads — not a cramped bubble. Errors stay plain text.
+          // way a Claude/the agent reply reads — not a cramped bubble. Errors stay plain text.
           return (
             <div key={i} className="flex items-start gap-2">
               <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-sky-500/15 ring-1 ring-sky-500/30">

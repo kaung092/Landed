@@ -48,7 +48,7 @@ export default function PopoverPanel({
   if (typeof document === "undefined") return null;
   return createPortal(
     <>
-      {/* Above the floating CoWork button (z-50) so it can't overlap the panel or eat its clicks. */}
+      {/* Above the floating the agent button (z-50) so it can't overlap the panel or eat its clicks. */}
       <div className="fixed inset-0 z-[55]" onClick={(e) => { e.stopPropagation(); onClose(); }} />
       <div
         ref={ref}

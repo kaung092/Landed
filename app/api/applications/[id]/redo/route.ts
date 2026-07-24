@@ -5,7 +5,7 @@ export const dynamic = "force-dynamic";
 
 // POST /api/applications/:id/redo  body: { phase: "fit" | "tailor", note }
 // Append a user redo note to the posting's conversation and re-queue that phase's job at the next
-// version. CoWork picks it up the next time the queue is drained.
+// version. The agent picks it up the next time the queue is drained.
 export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const appId = Number(id);

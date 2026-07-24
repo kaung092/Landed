@@ -1,5 +1,5 @@
 // Mechanical board scan — NO LLM, zero API cost. The app fetches ATS job boards (clean JSON
-// APIs, unlike JS-rendered career pages) and returns a filtered shortlist. CoWork keeps all
+// APIs, unlike JS-rendered career pages) and returns a filtered shortlist. The agent keeps all
 // judgment (glance/fit); this just hands it postings instead of a 498-job haystack.
 //
 // Covered now: greenhouse (boards-api) + ashby (posting-api) — the slug-templated boards.
@@ -27,13 +27,13 @@ export type ScannedJob = {
 export type ScanResult = {
   company: string;
   ats: string | null;
-  // ok = app scanned it (fetchMethod api). manual = CoWork fetches it itself (careers-get/
+  // ok = app scanned it (fetchMethod api). manual = the agent fetches it itself (careers-get/
   // browser) — fetchMethod/careersUrl/fetchRecipe tell it how. unsupported = needs research.
   status: "ok" | "manual" | "unsupported" | "error";
   fetched: number; // total jobs on the board (api only)
   matched: ScannedJob[]; // after filter + dedup (api only)
   duplicates: number; // matched the filter but already tracked
-  // present on status:"manual" — the instructions for CoWork's own fetch
+  // present on status:"manual" — the instructions for the agent's own fetch
   fetchMethod?: string | null;
   careersUrl?: string | null;
   fetchRecipe?: string | null;
@@ -94,7 +94,7 @@ const safeArr = (raw?: string | null): string[] => {
   }
 };
 
-// --- lenient mechanical filter (coarse pre-filter; CoWork's glance is the real one) -------
+// --- lenient mechanical filter (coarse pre-filter; the agent's glance is the real one) -------
 const TITLE_SYNONYMS: Record<string, string[]> = {
   senior: ["senior", "sr."],
   staff: ["staff"],
@@ -324,7 +324,7 @@ export async function scanCompany(name: string, withJd = true): Promise<ScanResu
   // exists (unresearched ATS companies still get app-scanned); otherwise it's unresolved.
   const method = (co.fetchMethod ?? "").toLowerCase() || (hasAtsApi ? "api" : "");
 
-  // careers-get / browser → CoWork fetches it itself; the app returns the recipe, not a scan.
+  // careers-get / browser → the agent fetches it itself; the app returns the recipe, not a scan.
   if (method === "careers-get" || method === "browser") {
     return {
       company: co.name, ats: co.ats ?? null, status: "manual", fetched: 0, matched: [], duplicates: 0,

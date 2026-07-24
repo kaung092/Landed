@@ -5,9 +5,9 @@ import { createJob } from "@/lib/jobs/store";
 import { createPendingRun, listCriteria, getProfile } from "./store";
 import { buildFitTask } from "./task";
 
-// Queue a fit assessment as a CoWork (Claude Code) job — the cost-saving route, NO direct LLM API.
+// Queue a fit assessment as an agent (Claude Code) job — the cost-saving route, NO direct LLM API.
 // Creates the pending run row, then a `fitlab-assess` job whose task embeds the rubric + profile + JD.
-// CoWork claims it, reasons through Extract+Detect, and submits verdicts → ingestFitLabResult fills the run.
+// The agent claims it, reasons through Extract+Detect, and submits verdicts → ingestFitLabResult fills the run.
 // This is the ONLY Fit Lab module that imports lib/jobs/store (keeps the registry's ingest cycle-free).
 export function queueRun(input: { postingId?: number; company?: string; role?: string; jd?: string }): { runId: number; jobId: string } {
   let resolved: { postingId: number | null; company: string; role: string; jd: string };

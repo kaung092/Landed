@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { RotateCcw, X, Loader2, Check, Clock } from "lucide-react";
-import { jobSubject, KILL_CONFIRM } from "@/components/jobMeta";
+import { jobSubject, KILL_CONFIRM, actorLabel } from "@/components/jobMeta";
 import { ago } from "@/lib/format";
 
 type Job = {
@@ -86,9 +86,9 @@ export default function AgentQueue({ type }: { type: string }) {
 
 function QueueRow({ j, remove, requeue }: { j: Job; remove: (id: string) => void; requeue: (id: string) => void }) {
   const meta =
-    j.status === "wip" ? `claimed ${ago(j.claimedAt ?? j.createdAt)} by ${j.claimedBy ?? "agent"}`
+    j.status === "wip" ? `claimed ${ago(j.claimedAt ?? j.createdAt)} by ${j.claimedBy ? actorLabel(j.claimedBy) : "agent"}`
     : j.status === "ingested" ? `done ${ago(j.ingestedAt ?? j.createdAt)}${j.summary ? ` · ${j.summary}` : ""}`
-    : `queued ${ago(j.createdAt)} by ${j.createdBy}`;
+    : `queued ${ago(j.createdAt)} by ${actorLabel(j.createdBy)}`;
   return (
     <div className="group flex items-center gap-2.5 px-4 py-2.5 hover:bg-zinc-800/40">
       <div className="min-w-0 flex-1">

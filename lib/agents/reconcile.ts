@@ -91,7 +91,7 @@ function applyIncoming(
   Object.assign(match, changes); // reflect in the pool so later records match the new values
   // Reaching the interview stage via sync auto-queues prep research (one-shot per company).
   if (changes.state === "interview") maybeQueuePrepResearch(match.companyId, prevStage, "interview");
-  // One event per field changed — the actor (CoWork for inbox-sync) wrote these.
+  // One event per field changed — the actor (the agent for inbox-sync) wrote these.
   const subject = `${opts.companyName} — ${match.title ?? rec.role ?? "?"}`;
   for (const d of fieldDiffs) {
     logEvent({ actor: opts.actor, source: opts.source, entityId: match.id, action: "update", field: d.field, oldValue: d.old, newValue: d.new, summary: subject });

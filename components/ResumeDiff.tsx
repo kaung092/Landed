@@ -8,7 +8,7 @@ import type { DiffOp } from "@/lib/linediff";
 
 type DiffResult = { ok: true; slug: string; base: string; added: number; removed: number; ops: DiffOp[] } | { error: string };
 
-// A git-style diff of a tailored resume against the base, as a modal. Prefers CoWork's own
+// A git-style diff of a tailored resume against the base, as a modal. Prefers the agent's own
 // **annotated** diff (each changed line carries *why* it changed) when the version supplies one;
 // otherwise falls back to a *text* diff the app computes by extracting both .docx via textutil
 // (wording/content changes, not formatting). When a `postingId` is supplied, a prominent "redo with
@@ -24,7 +24,7 @@ export default function ResumeDiffModal({ slug, title, postingId, redoNote, anno
   }, [onClose]);
 
   useEffect(() => {
-    // CoWork already shipped the annotated diff with this version — render it directly, no fetch.
+    // The agent already shipped the annotated diff with this version — render it directly, no fetch.
     if (annotated) return;
     // The modal is keyed by slug at the call site, so each slug gets a fresh mount (data starts
     // null) — no need to reset state here, which keeps this effect a pure external-sync.
@@ -103,7 +103,7 @@ function DiffLine({ op }: { op: DiffOp }) {
         <span className="whitespace-pre-wrap break-words">{op.text}</span>
       </div>
       {op.comment && (
-        // CoWork's rationale for this line — *why* it changed. Indented under the text, set apart in
+        // the agent's rationale for this line — *why* it changed. Indented under the text, set apart in
         // sans + violet so it reads as annotation, not résumé content.
         <div className="flex gap-3">
           <span className="w-3 shrink-0 select-none" />

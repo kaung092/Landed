@@ -4,10 +4,10 @@ import type { Tier } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
 
-// Who's making this write? The MCP bridge (CoWork) tags its requests with x-jobhunt-actor; the
+// Who's making this write? The MCP bridge (the agent) tags its requests with x-jobhunt-actor; the
 // app's own UI sends nothing, so its edits stay attributed to the human (You) by default. This
-// keeps the change log honest — e.g. CoWork's inbox-sync corrections via the `updateApplication`
-// MCP tool show up as CoWork, not You.
+// keeps the change log honest — e.g. the agent's inbox-sync corrections via the `updateApplication`
+// MCP tool show up as the agent, not You.
 const actorFromRequest = (req: Request): string | undefined =>
   req.headers.get("x-jobhunt-actor")?.trim() || undefined;
 

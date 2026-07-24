@@ -1,19 +1,19 @@
 import path from "node:path";
 
-// The Claude CoWork asset folder: the app reads/writes here, CoWork works here.
+// The Claude the agent asset folder: the app reads/writes here, the agent works here.
 // Set ASSET_ROOT in your .env to point at your own folder (see .env.example).
 // Defaults to ./asset-root inside the project so a fresh clone works out of the box.
 export const ASSET_ROOT =
   process.env.ASSET_ROOT || path.join(process.cwd(), "asset-root");
 
-// Instruction .md files (the CoWork playbooks) — tracked repo SOURCE, not user data.
+// Instruction .md files (the agent playbooks) — tracked repo SOURCE, not user data.
 // They ship in the repo at <repo>/instructions so a fresh clone has them out of the box; the
 // in-app editor writes back to that tracked folder. Override the location with INSTRUCTIONS_ROOT.
 export const INSTRUCTIONS_ROOT =
   process.env.INSTRUCTIONS_ROOT || path.join(process.cwd(), "instructions");
 
-// NOTE: the CoWork job queue (agent-jobs/{queue,results,done}) and the app-export/* context
-// files were retired — the job queue + ledger now live in the `jobs` DB table, and CoWork
+// NOTE: the agent job queue (agent-jobs/{queue,results,done}) and the app-export/* context
+// files were retired — the job queue + ledger now live in the `jobs` DB table, and the agent
 // reads context + submits results over the jobhunt MCP tools. See lib/jobs/store.ts.
 
 // Resolve a client-supplied relative path safely inside INSTRUCTIONS_ROOT.
@@ -33,7 +33,7 @@ export const PATHS = {
   baseResume: (ext: "docx" | "pdf" = "docx") =>
     path.join(ASSET_ROOT, "resume", `resume-ref.${ext}`),
   tailorQueue: () => path.join(ASSET_ROOT, "tailor-queue"),
-  // one .md file per queued job (the app writes this; CoWork deletes it when done)
+  // one .md file per queued job (the app writes this; the agent deletes it when done)
   queueItem: (slug: string) => path.join(ASSET_ROOT, "tailor-queue", `${slug}.md`),
   // permanent tailored-resume folder after Applied
   tailoredResume: (slug: string) => path.join(ASSET_ROOT, "resume", slug),

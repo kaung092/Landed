@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { Bot, Play, X } from "lucide-react";
-import { useCoWorkQueue, type QueueJob } from "@/components/CoWorkQueueProvider";
+import { useAgentQueue, type QueueJob } from "@/components/AgentQueueProvider";
 import { useAgentChats } from "@/components/AgentChatsProvider";
 import { usePersistentState } from "@/hooks/usePersistentState";
 import { agentColor, jobSubject, jobVerb } from "@/components/jobMeta";
@@ -18,7 +18,7 @@ export const AUTO_WORK_KEY = "landed.agents.autowork";
 // token spend: a backlog over AUTO_WORK_THRESHOLD for a type is gated behind a confirm popup (below)
 // that shows exactly what would run, so a long/expensive drain is always opted into, never silent.
 export default function AutoWorkController() {
-  const { jobs } = useCoWorkQueue();
+  const { jobs } = useAgentQueue();
   const { get, start, setAutoDrain } = useAgentChats();
   const [enabled] = usePersistentState<boolean>(AUTO_WORK_KEY, true);
   // The big-batch confirm currently shown (one type at a time), or null.

@@ -1,19 +1,19 @@
-import { listJobs, inboxLastSynced, coworkContext, createJob, reconcileFitQueue, reconcileTailoringQueue, reapStuckJobs } from "@/lib/jobs/store";
+import { listJobs, inboxLastSynced, agentContext, createJob, reconcileFitQueue, reconcileTailoringQueue, reapStuckJobs } from "@/lib/jobs/store";
 import { JOB_DEFS, jobDef } from "@/lib/jobs/registry";
 
 export const dynamic = "force-dynamic";
 
 // GET /api/jobs -> job types + the DB-backed job ledger/queue + inbox watermark + context.
-// The queue and results live in the `jobs` table now (CoWork submits via the submitJobResult
+// The queue and results live in the `jobs` table now (the agent submits via the submitJobResult
 // MCP tool), so there's nothing to scan or export here — just read the DB.
 //
 // Optional `?status=` (comma-separated, e.g. `queued` or `queued,wip`) filters the `jobs` array to
-// those statuses — CoWork's listJobs tool uses it to fetch only actionable work, not the whole
-// ingested ledger. Omitted → all jobs (the app's CoWork page wants the full history). Matched
+// those statuses — the agent's listJobs tool uses it to fetch only actionable work, not the whole
+// ingested ledger. Omitted → all jobs (the app's Agents page wants the full history). Matched
 // against the effective status (a stale `wip` lease already reads back as `queued` via listJobs).
 export async function GET(request: Request) {
   try {
-    reconcileFitQueue(); // keep CoWork's queue in sync with fit_queue candidates before listing
+    reconcileFitQueue(); // keep the agent's queue in sync with fit_queue candidates before listing
     reconcileTailoringQueue(); // and re-queue any tailoring candidate stranded without a live job
     reapStuckJobs(); // watchdog tick: dead-letter poison jobs (claimed too many times, no result)
     const defs = Object.values(JOB_DEFS);
@@ -40,7 +40,7 @@ export async function GET(request: Request) {
       playbooks: defs.map((d) => d.playbook), // all (incl. hidden) — so the Guides list excludes them
       jobs,
       inboxLastSynced: inboxLastSynced(),
-      context: coworkContext(),
+      context: agentContext(),
     });
   } catch (err) {
     return Response.json({ error: String(err) }, { status: 500 });
@@ -48,7 +48,7 @@ export async function GET(request: Request) {
 }
 
 // POST /api/jobs  body: { type, params?, task?, createdBy? } -> queue a job (createJob tool).
-// Used by CoWork to self-queue work (discovery → fit chaining, scheduled runs). The DB
+// Used by the agent to self-queue work (discovery → fit chaining, scheduled runs). The DB
 // replacement for writing a queue file. Returns the new job id.
 export async function POST(request: Request) {
   let body: { type?: string; params?: Record<string, unknown>; task?: string; createdBy?: string };

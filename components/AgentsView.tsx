@@ -53,7 +53,7 @@ function StatCard({ label, value, tone }: { label: string; value: number; tone: 
 //   Chat    — talk to each agent live (AgentsLive); each agent's playbook is in its header.
 //   Monitor — observability: run/thread timelines + the job queue, incl. dead-lettered failures.
 // (Connections/Gmail moved to the Settings page.)
-export default function CoWorkView() {
+export default function AgentsView() {
   const [view, setView] = usePersistentState<string>("landed.agents.view", "chat");
   const [autoWork, setAutoWork] = usePersistentState<boolean>(AUTO_WORK_KEY, true);
   const [types, setTypes] = useState<JobTypeMeta[]>([]);

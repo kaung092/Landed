@@ -113,7 +113,7 @@ function shortDate(iso: string): string {
 }
 
 // A company you're interviewing with. Researched → links into its prep page; not yet researched →
-// a static card noting CoWork is building the prep (the page is force-dynamic, so it fills in on reload).
+// a static card noting the agent is building the prep (the page is force-dynamic, so it fills in on reload).
 function InterviewingCard({ c }: { c: InterviewingData }) {
   const nextStep = c.nextStepLabel
     ? c.nextStepDate
@@ -176,7 +176,7 @@ function InterviewingCard({ c }: { c: InterviewingData }) {
       ) : (
         <div className="mt-3 flex items-center gap-2 text-[13px] text-zinc-500">
           <Loader2 size={13} className="animate-spin text-zinc-600" />
-          CoWork is researching this company&apos;s interview process…
+          the agent is researching this company&apos;s interview process…
         </div>
       )}
     </div>

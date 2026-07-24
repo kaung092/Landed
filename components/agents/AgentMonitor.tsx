@@ -3,9 +3,10 @@
 import { useMemo, useState } from "react";
 import { CheckCircle2, XCircle, Loader2, Clock, ChevronRight } from "lucide-react";
 import { ago } from "@/lib/format";
+import { actorLabel } from "@/components/jobMeta";
 
 // One job-ledger row — the durable record of a unit of agent work (the real observability source,
-// vs. the deprecated CoWork chat threads).
+// vs. the deprecated the agent chat threads).
 export type MonitorJob = {
   id: string;
   type: string;
@@ -126,7 +127,7 @@ export default function AgentMonitor({ jobs, titleOf }: { jobs: MonitorJob[]; ti
                   <div className="space-y-2 border-t border-zinc-800/60 bg-zinc-950/40 px-4 py-3 text-[12px]">
                     <div className="flex flex-wrap gap-x-4 gap-y-1 text-zinc-500">
                       <span>id <span className="font-mono text-zinc-400">{j.id}</span></span>
-                      <span>by <span className="text-zinc-400">{j.createdBy ?? "—"}</span></span>
+                      <span>by <span className="text-zinc-400">{j.createdBy ? actorLabel(j.createdBy) : "—"}</span></span>
                       <span>status <span className="text-zinc-400">{s.label}</span></span>
                       <span>queued <span className="text-zinc-400">{ago(j.createdAt)}</span></span>
                     </div>

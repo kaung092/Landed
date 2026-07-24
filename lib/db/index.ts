@@ -166,7 +166,7 @@ function connection() {
     redo_added_at TEXT,
     updated_at TEXT
   )`);
-  // Per-company prep profile (CoWork research output). Keyed by canonical company slug.
+  // Per-company prep profile (the agent research output). Keyed by canonical company slug.
   sqlite.exec(`CREATE TABLE IF NOT EXISTS prep_company (
     slug TEXT PRIMARY KEY,
     name TEXT NOT NULL,
@@ -183,7 +183,7 @@ function connection() {
     );
     if (pcCols.size && !pcCols.has("overview")) sqlite.exec(`ALTER TABLE prep_company ADD COLUMN overview TEXT`);
   }
-  // Per-(company, round) prep feedback thread → dispatched to CoWork as a prep-research refinement.
+  // Per-(company, round) prep feedback thread → dispatched to the agent as a prep-research refinement.
   sqlite.exec(`CREATE TABLE IF NOT EXISTS prep_feedback (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     slug TEXT NOT NULL,
@@ -211,13 +211,13 @@ function connection() {
     ["result", "result TEXT"],
     ["claimed_at", "claimed_at TEXT"], // agent-claim timestamp (status wip)
     ["claimed_by", "claimed_by TEXT"], // who claimed it
-    ["thread_id", "thread_id TEXT"], // the CoWork chat (thread) that claimed it — see threads table
+    ["thread_id", "thread_id TEXT"], // the agent chat (thread) that claimed it — see threads table
     ["attempts", "attempts INTEGER NOT NULL DEFAULT 0"], // claims so far — stuck-job detection
     ["error", "error TEXT"], // dead-letter reason (auto "stuck after N attempts" or agent-reported)
   ] as const) {
     if (!jobCols.has(name)) sqlite.exec(`ALTER TABLE jobs ADD COLUMN ${ddl}`);
   }
-  // CoWork threads: one row per CoWork chat (= one MCP server process) + its per-call trace.
+  // The agent threads: one row per agent chat (= one MCP server process) + its per-call trace.
   sqlite.exec(`CREATE TABLE IF NOT EXISTS threads (
     id TEXT PRIMARY KEY,
     label TEXT,
@@ -285,7 +285,7 @@ function connection() {
   )`);
   sqlite.exec("CREATE INDEX IF NOT EXISTS idx_fit_verdicts_run ON fit_verdicts(run_id)");
 
-  // Target scrape config + search criteria on companies (CoWork curates via upsertCompanies).
+  // Target scrape config + search criteria on companies (the agent curates via upsertCompanies).
   const coCols = new Set(
     (sqlite.prepare("PRAGMA table_info(companies)").all() as { name: string }[]).map((r) => r.name)
   );
@@ -330,7 +330,7 @@ function connection() {
     ["applied_date", "applied_date TEXT"],
     ["updated_at", "updated_at TEXT"],
     ["redo_log", "redo_log TEXT"],
-    ["interview_briefs", "interview_briefs TEXT"], // versioned CoWork-generated interview briefs
+    ["interview_briefs", "interview_briefs TEXT"], // versioned the agent-generated interview briefs
     ["comments", "comments TEXT"],
     ["comp", "comp TEXT"], // interview comp-structure intel (markdown)
     ["team_notes", "team_notes TEXT"], // team / product / work intel (markdown)
@@ -391,7 +391,7 @@ function connection() {
   // SQLite can't ALTER a table to ADD a CHECK constraint, so we enforce the enum sets with
   // BEFORE INSERT/UPDATE triggers — rebuilt (DROP+CREATE) from the arrays in ./enums on every
   // boot, so DB enforcement can't drift from the ORM types. Out-of-set writes RAISE(ABORT). This
-  // matters most for `postings.state` and `companies.tier`, which CoWork writes over MCP.
+  // matters most for `postings.state` and `companies.tier`, which the agent writes over MCP.
   const enumGuard = (table: string, cols: { col: string; values: readonly string[]; nullable?: boolean }[]) => {
     const quoted = (vs: readonly string[]) => vs.map((v) => `'${v}'`).join(",");
     const whens = cols

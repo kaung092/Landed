@@ -103,7 +103,7 @@ export default function ResumeUpload() {
 
       <p className="text-[12px] leading-relaxed text-zinc-500">
         The <span className="text-zinc-300">.docx</span> is the tailoring source of truth. Tailored resumes (docx + pdf)
-        are generated per application by CoWork — no base PDF is needed here.
+        are generated per application by the agent — no base PDF is needed here.
       </p>
     </div>
   );

@@ -16,7 +16,7 @@ export async function GET(request: Request) {
 }
 
 // POST /api/prep/questions  body: { url, topic? } -> manual Leetcode add. Inserts a provisional stub
-// immediately (name from the URL slug, difficulty/topic pending) and queues a `leetcode-add` CoWork
+// immediately (name from the URL slug, difficulty/topic pending) and queues a `leetcode-add` the agent
 // job to fill the real name/difficulty/topic. Returns { status, question }. A URL that's already in
 // the bank is a no-op ({ status:"exists" }); a non-LeetCode URL 400s.
 export async function POST(request: Request) {

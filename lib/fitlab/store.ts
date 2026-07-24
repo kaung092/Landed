@@ -9,7 +9,7 @@ import { FITLAB_MODEL, PROMPT_VERSION, normalizeVerdict, type FitRecord } from "
 import type { Criterion, CriterionType, Run, StageTrace, Verdict, VerdictRow } from "./types";
 
 // The Fit Lab DATA layer — pure DB + the deterministic Decide. Imports nothing from lib/jobs (so the
-// registry can import the ingest without a cycle). The LLM work happens in CoWork (see task.ts/queue.ts).
+// registry can import the ingest without a cycle). The LLM work happens in the agent (see task.ts/queue.ts).
 
 const now = () => new Date().toISOString();
 
@@ -30,7 +30,7 @@ export function listCriteria(): Criterion[] {
     .sort((a, b) => a.sortOrder - b.sortOrder);
 }
 
-// ── Profile (the resume CoWork judges against) ─────────────────────────────────────────────
+// ── Profile (the resume the agent judges against) ─────────────────────────────────────────────
 export function getProfile(): string {
   const v = getConfig(PROFILE_CONFIG_KEY);
   if (v != null) return v;
@@ -63,7 +63,7 @@ function assembleRun(runId: number): Run {
   };
 }
 
-// Create the run row up front (pending — no verdicts yet). The Fit Lab page polls this id while CoWork
+// Create the run row up front (pending — no verdicts yet). The Fit Lab page polls this id while the agent
 // works the queued job; the ingest fills in the verdicts. Returns the new run id.
 export function createPendingRun(input: { postingId?: number | null; company: string; role: string; jd: string }): number {
   const run = db.insert(fitRuns).values({
@@ -74,7 +74,7 @@ export function createPendingRun(input: { postingId?: number | null; company: st
   return run.id;
 }
 
-// Fill a pending run with CoWork's submitted verdicts (idempotent — replaces any prior verdicts for the
+// Fill a pending run with the agent's submitted verdicts (idempotent — replaces any prior verdicts for the
 // run, so a redo is clean), then derive the trace stages + decision. This is what the job ingest calls.
 export function ingestVerdicts(runId: number, records: FitRecord[]): Run | null {
   const run = db.select().from(fitRuns).where(eq(fitRuns.id, runId)).get();

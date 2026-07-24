@@ -2,7 +2,7 @@
 //
 // Each context.md is a single markdown dump of EVERYTHING the app knows about a company — recruiter
 // notes + first-hand comments (comp / team / the real loop), the interview rounds, the fit
-// assessment, the JD, and the researched prep profile + question set. The point: open one CoWork
+// assessment, the JD, and the researched prep profile + question set. The point: open one the agent
 // chat per company, point it at that folder, and prep with the full context already on disk.
 //
 // Reads postings/interviews via Drizzle directly (NOT lib/db/queries) so it stays decoupled from the
@@ -164,7 +164,7 @@ function buildContext(company: string, slug: string, rows: Co[], profile: Compan
   const lead = rows[0];
   const out: string[] = [
     `# ${company} — interview prep`,
-    `_Generated ${today} from Landed. The single place CoWork should read to prep me for ${company}._`,
+    `_Generated ${today} from Landed. The single place the agent should read to prep me for ${company}._`,
     "",
     `## Roles in play`,
     ...rows.map((r) => `- **${r.role || "(untitled)"}** — ${r.status}${r.url ? ` · ${r.url}` : ""}`),
@@ -192,8 +192,8 @@ function buildContext(company: string, slug: string, rows: Co[], profile: Compan
     `Interview stage). The "Generate interview brief" job reads every file there to ground the gaps.`,
   );
   out.push(
-    `\n---\n## How to use this in a CoWork chat`,
-    `Open a Claude Code / CoWork chat in this asset folder and start with something like:`,
+    `\n---\n## How to use this in an agent chat`,
+    `Open a Claude Code / the agent chat in this asset folder and start with something like:`,
     `> Read interview-prep/${slug}/context.md. You're my interview-prep coach for ${company}. Help me prep — quiz me, pressure-test answers, suggest variations, and dig into anything I'm weak on.`,
   );
   return out.join("\n") + "\n";
@@ -248,7 +248,7 @@ export function prepContextDumpedAt(slug: string): string | null {
 
 // Standalone question-research output (`questions.md`) — the PURELY ONLINE-researched question bank
 // from the prep-research job: the researched process, rounds, and question set (with confidence +
-// sources), as a clean file to work from in a per-company CoWork prep chat (separate from the full
+// sources), as a clean file to work from in a per-company the agent prep chat (separate from the full
 // context.md dump). Returns the write time, or null if the slug has no researched profile yet.
 export function exportQuestionsFor(slug: string): { at: string } | null {
   const g = gatherCompany(slug);
@@ -296,7 +296,7 @@ export function exportAllPrepContext(): { slug: string; company: string }[] {
     `One subfolder per company I'm interviewing with. Each \`<slug>/context.md\` is a full dump of`,
     `everything Landed knows about that company — my notes + first-hand intel, the interview`,
     `loop, the fit assessment, the JD, and the researched prep profile + question set.`, ``,
-    `**To prep:** open a CoWork chat per company and point it at that company's \`context.md\`.`,
+    `**To prep:** open an agent chat per company and point it at that company's \`context.md\`.`,
     `Regenerate from the app (each company's "Dump context" button) or all at once with`,
     `\`npm run prep:export\`. Overwrites context.md; never deletes folders, so notes you add survive.`, ``,
     `## Companies`, ...index, ``,

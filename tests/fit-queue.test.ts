@@ -16,7 +16,7 @@ const postingFor = (company: string) => {
 };
 
 // Pasting a JD must persist the JD onto the posting row immediately — not leave it only in the
-// fit job's params. Otherwise a JD-pasted posting is blank in the UI until CoWork finishes scoring.
+// fit job's params. Otherwise a JD-pasted posting is blank in the UI until the agent finishes scoring.
 test("enqueueFit persists the pasted JD onto the posting at paste time", () => {
   enqueueFit({ company: "Linear", role: "Product Engineer", jd: JD, url: "https://linear.app/careers/pe" });
   const rows = postingFor("Linear");

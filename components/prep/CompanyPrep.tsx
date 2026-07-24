@@ -143,7 +143,7 @@ function Tracker({
       <SectionTitle title={label} sub={`${questions.length} question${questions.length === 1 ? "" : "s"}`} />
       {questions.length === 0 ? (
         <p className="rounded-lg border border-dashed border-zinc-800/70 py-8 text-center text-[13px] text-zinc-600">
-          No {label} questions yet — ask the agent below, or have CoWork research them.
+          No {label} questions yet — ask the agent below, or have the agent research them.
         </p>
       ) : (
         <div className={dense ? "" : "space-y-2"}>{questions.map(renderCard)}</div>
@@ -153,8 +153,8 @@ function Tracker({
 }
 
 // The research narrative: a concise, role-relevant company snapshot + the rounds and sources.
-// Dump this company's current context to interview-prep/<slug>/context.md (for a CoWork prep chat),
-// showing when it was last dumped. The file is the single brief a per-company CoWork chat reads.
+// Dump this company's current context to interview-prep/<slug>/context.md (for an agent prep chat),
+// showing when it was last dumped. The file is the single brief a per-company the agent chat reads.
 function DumpContextButton({ slug, initialAt }: { slug: string; initialAt: string | null }) {
   const [at, setAt] = useState<string | null>(initialAt);
   const [busy, setBusy] = useState(false);
@@ -174,7 +174,7 @@ function DumpContextButton({ slug, initialAt }: { slug: string; initialAt: strin
   return (
     <div className="flex flex-wrap items-center gap-3 rounded-xl border border-zinc-800/70 bg-zinc-900/30 px-4 py-3">
       <div className="min-w-0 flex-1">
-        <p className="text-[13px] font-medium text-zinc-200">CoWork prep context</p>
+        <p className="text-[13px] font-medium text-zinc-200">Agent prep context</p>
         <p className="text-[12px] text-zinc-500">
           {at ? `Last dumped ${ago(at)}` : "Not dumped yet"} · <code className="text-zinc-400">interview-prep/{slug}/context.md</code>
         </p>

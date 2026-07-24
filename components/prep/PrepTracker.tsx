@@ -3,7 +3,7 @@
 import { useCallback, useMemo, useState } from "react";
 import { ChevronDown, Loader2, Plus, RotateCcw } from "lucide-react";
 import { usePrep } from "@/hooks/usePrep";
-import { useCoWorkQueue } from "@/components/CoWorkQueueProvider";
+import { useAgentQueue } from "@/components/AgentQueueProvider";
 import type { PrepQuestion } from "@/lib/db/prep";
 import { questionTopic } from "@/lib/prep/leetcode";
 import QuestionRow from "./QuestionRow";
@@ -11,7 +11,7 @@ import TabBar from "./TabBar";
 
 // The Leetcode tracker: ALL coding questions — the curriculum, manually-added, and company-sourced —
 // grouped by topic, with an overall progress bar, per-topic collapsibles, noted/redo flags, and a
-// redo queue. Manually add a problem by pasting its LeetCode URL (a CoWork job fills the details).
+// redo queue. Manually add a problem by pasting its LeetCode URL (an agent job fills the details).
 // DB-backed via usePrep — progress persists server-side.
 export default function PrepTracker({ track, company }: { track: string; company?: string }) {
   const { questions, loading, reload, logAttempt, undoLast, setNoted, setRedo } = usePrep(track, company);
@@ -155,9 +155,9 @@ export default function PrepTracker({ track, company }: { track: string; company
 }
 
 // Manual add: paste a LeetCode URL (+ optional topic). Inserts a stub immediately and queues a
-// leetcode-add CoWork job to fill the name/difficulty/topic (see leetcode-add.md).
+// leetcode-add the agent job to fill the name/difficulty/topic (see leetcode-add.md).
 function AddLeetcode({ onAdded }: { onAdded: () => void }) {
-  const { bump } = useCoWorkQueue();
+  const { bump } = useAgentQueue();
   const [url, setUrl] = useState("");
   const [topic, setTopic] = useState("");
   const [adding, setAdding] = useState(false);
@@ -183,7 +183,7 @@ function AddLeetcode({ onAdded }: { onAdded: () => void }) {
         setMsg(`Already tracked: ${d.question?.name ?? "that problem"}.`);
       } else {
         pendo.track("leetcode_question_added", { url: u, has_topic: !!topic.trim() });
-        setMsg(`Added ${d.question?.name ?? "problem"} — CoWork will fill the details. Run your CoWork queue.`);
+        setMsg(`Added ${d.question?.name ?? "problem"} — The agent will fill the details. Run your the agent queue.`);
         setUrl("");
         setTopic("");
         bump(); // surface the queued job in the floating queue
@@ -208,7 +208,7 @@ function AddLeetcode({ onAdded }: { onAdded: () => void }) {
             type="text"
             value={url}
             onChange={(e) => setUrl(e.target.value)}
-            placeholder="Paste a LeetCode problem URL — CoWork fills name, difficulty & topic"
+            placeholder="Paste a LeetCode problem URL — the agent fills name, difficulty & topic"
             className="w-full rounded-md bg-zinc-950/60 py-1.5 pl-8 pr-2.5 text-[13px] text-zinc-200 outline-none ring-1 ring-inset ring-zinc-800 transition placeholder:text-zinc-600 hover:ring-zinc-700 focus:ring-zinc-600"
           />
         </div>
@@ -217,7 +217,7 @@ function AddLeetcode({ onAdded }: { onAdded: () => void }) {
           value={topic}
           onChange={(e) => setTopic(e.target.value)}
           placeholder="Topic (optional)"
-          title="e.g. Heap. Leave blank and CoWork infers it."
+          title="e.g. Heap. Leave blank and the agent infers it."
           className="w-40 shrink-0 rounded-md bg-zinc-950/60 py-1.5 px-2.5 text-[13px] text-zinc-200 outline-none ring-1 ring-inset ring-zinc-800 transition placeholder:text-zinc-600 hover:ring-zinc-700 focus:ring-zinc-600"
         />
         <button

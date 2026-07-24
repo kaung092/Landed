@@ -1,27 +1,27 @@
 import type { Criterion, Verdict } from "./types";
 
-// The CoWork contract for a fit assessment — NO direct LLM API call. The app queues a `fitlab-assess`
-// job; Claude Code (CoWork) claims it, does the Extract + Detect reasoning itself, and submits verdicts
+// The agent contract for a fit assessment — NO direct LLM API call. The app queues a `fitlab-assess`
+// job; Claude Code (the agent) claims it, does the Extract + Detect reasoning itself, and submits verdicts
 // over MCP. This is the cost-saving Claude-Code route: the app stays mechanical, the agent does judgment.
 
-export const FITLAB_MODEL = "claude-code"; // who runs the judgment (CoWork over MCP), not a paid API
+export const FITLAB_MODEL = "claude-code"; // who runs the judgment (the agent over MCP), not a paid API
 export const PROMPT_VERSION = "v1";
 
 const VERDICTS: Verdict[] = ["met", "partial", "unmet", "unclear", "na"];
 export const normalizeVerdict = (v: unknown): Verdict => (VERDICTS.includes(v as Verdict) ? (v as Verdict) : "unclear");
 
-// One verdict record CoWork submits per criterion (the Output contract, mirrored in the playbook).
+// One verdict record the agent submits per criterion (the Output contract, mirrored in the playbook).
 export type FitRecord = {
   runId: number;
   criterionKey: string;
-  requirement: string; // what the JD demands for this criterion (CoWork extracts it)
+  requirement: string; // what the JD demands for this criterion (the agent extracts it)
   verdict: Verdict;
   confidence: number; // 0–100
   evidence: string | null;
   reasoning: string | null;
 };
 
-// Render the self-contained instruction CoWork follows. Everything it needs (rubric + profile + JD)
+// Render the self-contained instruction the agent follows. Everything it needs (rubric + profile + JD)
 // is embedded so it needs no extra fetches; it returns one record per criterion.
 export function buildFitTask(params: {
   runId: number; company: string; role: string; jd: string; profile: string;

@@ -5,10 +5,10 @@ import { Copy, Check } from "lucide-react";
 import { jobVerb, jobPlaybook } from "@/components/jobMeta";
 
 // The exact thing to say to the desktop agent — copied to the clipboard so it's paste-ready. A short
-// "clear my queue" is too vague for CoWork to act on reliably, so spell out the workflow. The prompt
-// is SCOPED TO ONE TYPE (the tab you're viewing): it tells CoWork to drain just that queue via
+// "clear my queue" is too vague for the agent to act on reliably, so spell out the workflow. The prompt
+// is SCOPED TO ONE TYPE (the tab you're viewing): it tells the agent to drain just that queue via
 // claimNext({ type }) and stop — matching the server-side one-type-at-a-time rule. Shared by the
-// floating queue and the CoWork page so they never drift.
+// floating queue and the Agents page so they never drift.
 export function promptFor(type: string): string {
   return (
     `Work ONLY my Landed "${type}" queue this run. Call claimNext({ type: "${type}" }) to lease the next ${type} job — it returns the job with its task + params and a live claim. ` +
@@ -18,7 +18,7 @@ export function promptFor(type: string): string {
   );
 }
 
-// One-click "copy the CoWork instruction" button, scoped to a single job type.
+// One-click "copy the agent instruction" button, scoped to a single job type.
 export function CopyPrompt({ type, className }: { type: string; className?: string }) {
   const [copied, setCopied] = useState(false);
   const copy = () => {
@@ -29,7 +29,7 @@ export function CopyPrompt({ type, className }: { type: string; className?: stri
   return (
     <button
       onClick={copy}
-      title={`Copy the instruction to paste into Claude CoWork — scoped to the ${jobVerb(type)} queue`}
+      title={`Copy the instruction to paste into the agent — scoped to the ${jobVerb(type)} queue`}
       className={`flex items-center justify-center gap-1.5 whitespace-nowrap rounded-md bg-violet-500 px-2 py-1.5 text-[12px] font-medium text-violet-50 transition hover:bg-violet-400 ${className ?? ""}`}
     >
       {copied ? <><Check size={12} /> Copied</> : <><Copy size={12} /> Copy prompt — {jobVerb(type)}</>}

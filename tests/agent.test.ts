@@ -140,13 +140,13 @@ test("a rejection never inserts a new posting when the company has one — it ra
   assert.equal(after.interviewed, true, "interviewed flag preserved");
 });
 
-// --- change-log actor attribution (CoWork's MCP edits vs the app UI) ----------------------
+// --- change-log actor attribution (the agent's MCP edits vs the app UI) ----------------------
 
-test("updateApplication attributes the change-log event to the passed actor (CoWork), not the You default", () => {
+test("updateApplication attributes the change-log event to the passed actor (the agent), not the You default", () => {
   seedApp({ company: "Rokt", role: "Senior Software Engineer", status: "interview", interviewed: true });
   const id = Number(find("Rokt")!.id);
 
-  // CoWork edit (MCP path passes actor) → CoWork / cowork, never the human default.
+  // The agent edit (MCP path passes actor) → the agent / cowork, never the human default.
   updateApplication(id, { status: "rejected" }, "CoWork");
   const ev = db.select().from(events).where(eq(events.entityId, id)).all().at(-1)!;
   assert.equal(ev.actor, "CoWork");
@@ -184,7 +184,7 @@ test("deleting a tailoring REDO job leaves the already-tailored candidate (resum
   assert.equal(row.resumeDir, "stripe-swe-v1"); // resume kept
 });
 
-// --- inbox-sync: the core CoWork → system loop -------------------------------------------
+// --- inbox-sync: the core the agent → system loop -------------------------------------------
 
 test("submitJobResult(inbox-sync) updates an existing posting, inserts a new one, advances the watermark, and records the ledger row", () => {
   seedApp({ company: "Cursor", role: "Software Engineer", status: "applied", interviewed: false });
@@ -375,7 +375,7 @@ test("createJob queues a fit job that listFitQueue surfaces, and submitJobResult
   assert.equal(db.select().from(jobs).where(eq(jobs.id, id)).get()?.status, "ingested");
 });
 
-// --- targets (CoWork curates the target list) ------------------------------------------
+// --- targets (the agent curates the target list) ------------------------------------------
 
 test("upsertCompanies inserts new records with config and patches existing ones by canonical name", () => {
   // insert with full scrape config + criteria
@@ -449,7 +449,7 @@ test("addComment/deleteComment append + remove a posting's personal comment thre
   assert.equal(p.comments?.[0].text, "referral from Alex");
 });
 
-// --- watchlist-scan: app queues stale companies, CoWork closes + stamps -------------------
+// --- watchlist-scan: app queues stale companies, the agent closes + stamps -------------------
 
 test("queueStaleWatchlistScans queues only stale, watchlisted companies — idempotently", () => {
   const old = new Date(Date.now() - 5 * 86_400_000).toISOString();

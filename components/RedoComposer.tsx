@@ -2,11 +2,11 @@
 
 import { useState } from "react";
 import { RefreshCw } from "lucide-react";
-import { useCoWorkQueue } from "@/components/CoWorkQueueProvider";
+import { useAgentQueue } from "@/components/AgentQueueProvider";
 import type { RedoPhase } from "@/lib/types";
 
 // "Redo with a note" — a prominent composer pinned below a detail view (the résumé diff or the fit
-// assessment). Queues the next version for CoWork (the note becomes a turn in the posting's redo
+// assessment). Queues the next version for the agent (the note becomes a turn in the posting's redo
 // conversation) and pulses the floating queue. Shared by ResumeDiffModal (tailor) and
 // FitDetailModal (fit) so both flows read and feel identical.
 const COPY: Record<RedoPhase, { heading: string; placeholder: string }> = {
@@ -23,7 +23,7 @@ const COPY: Record<RedoPhase, { heading: string; placeholder: string }> = {
 // `initialNote` pre-fills the box with the note of an already-queued redo so reopening the popup
 // remembers it and the user can edit it (re-queuing edits in place — see requeueRedo).
 export default function RedoComposer({ postingId, phase, initialNote }: { postingId: string; phase: RedoPhase; initialNote?: string }) {
-  const { bump } = useCoWorkQueue();
+  const { bump } = useAgentQueue();
   const editing = !!initialNote;
   const [note, setNote] = useState(initialNote ?? "");
   const [sending, setSending] = useState(false);

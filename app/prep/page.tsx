@@ -14,7 +14,7 @@ function progress(qs: { done: boolean }[]) {
 
 // Companies with a posting currently in the interview/offer stage, with their prep-profile summary
 // and the application's next step (pipeline status + next scheduled round). Companies with no profile
-// yet show as "researching" (CoWork auto-queues a prep-research job on stage entry). Collapsed by
+// yet show as "researching" (the agent auto-queues a prep-research job on stage entry). Collapsed by
 // canonical slug so multiple postings at one company show once.
 function interviewingCompanies(postings: Posting[]): InterviewingData[] {
   const byCompany = new Map<string, Posting>();

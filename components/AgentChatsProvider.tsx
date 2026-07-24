@@ -4,7 +4,7 @@ import { createContext, useCallback, useContext, useEffect, useRef, useState } f
 
 // Holds every live agent conversation ABOVE the page tree (mounted in the root layout), so chats —
 // and any in-flight stream — survive navigating between pages. Without this, the chat lived inside
-// the CoWork page and got torn down (losing the transcript and killing the run) on every navigation.
+// the Agents page and got torn down (losing the transcript and killing the run) on every navigation.
 // Transcripts + session ids also persist to localStorage so they survive a full reload.
 
 export type Entry =

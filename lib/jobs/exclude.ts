@@ -1,7 +1,7 @@
 // Shared exclude filter — the title/department patterns that disqualify a posting regardless of
 // who fetched it. Applied by the app's api scan (lib/jobs/scan.ts) AND enforced server-side on
 // every glance submission (applyGlance), so careers-get/browser fetches get the exact same
-// exclusion as api without CoWork re-implementing it per method.
+// exclusion as api without the agent re-implementing it per method.
 //
 // Order: GTM/field, people-management + program/TPM (IC only), security, non-eng job families,
 // hardware/IT (we want SOFTWARE IC), and a junior floor. NOT bare "operations" (would kill

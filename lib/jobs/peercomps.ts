@@ -3,7 +3,7 @@ import { getConfig, setConfig } from "@/lib/db/config-store";
 
 // The peer-comp comparison is a single GLOBAL artifact (spans every active interviewing role), so it
 // isn't tied to a posting — it lives as the latest generated markdown in app_config under
-// PEER_COMP_KEY. Generation runs through the CoWork job queue (type "peer-comp", see registry.ts):
+// PEER_COMP_KEY. Generation runs through the agent job queue (type "peer-comp", see registry.ts):
 // the ingest writes the submitted markdown here. Each run overwrites the latest (no version history).
 
 export const PEER_COMP_KEY = "peer_comp";

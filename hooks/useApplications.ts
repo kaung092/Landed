@@ -180,7 +180,7 @@ export function useApplications() {
     [postings, patch, loadAll]
   );
 
-  // Toggle a company on/off the discovery watchlist (what CoWork auto-scans). Company-level,
+  // Toggle a company on/off the discovery watchlist (what the agent auto-scans). Company-level,
   // independent of tier; persisted via the upsert endpoint (works even with no postings).
   const setWatchlist = useCallback(
     async (company: string, on: boolean) => {

@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { ChevronRight, FileText, Gauge, RefreshCw, X } from "lucide-react";
 import RedoComposer from "@/components/RedoComposer";
-import { useCoWorkQueue } from "@/components/CoWorkQueueProvider";
+import { useAgentQueue } from "@/components/AgentQueueProvider";
 import { FitBadge, LevelBadge, GapList, StrengthsList } from "@/components/board/Badges";
 import type { Posting } from "@/lib/types";
 
@@ -14,7 +14,7 @@ import type { Posting } from "@/lib/types";
 // conversation, and a prominent "redo with a note" composer pinned below so you can re-request a
 // re-assessment while reading the detail.
 export default function FitDetailModal({ p, onClose }: { p: Posting; onClose: () => void }) {
-  const { redoNoteFor } = useCoWorkQueue();
+  const { redoNoteFor } = useAgentQueue();
   // The JD is large, so it's not on the board payload — fetch it lazily when the modal opens.
   const [jd, setJd] = useState<string | null>(null);
   useEffect(() => {

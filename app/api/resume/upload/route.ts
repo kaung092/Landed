@@ -17,7 +17,7 @@ export async function GET() {
 }
 
 // POST /api/resume/upload — multipart form with `file` (a .docx). Saves it as the base résumé.
-// docx only: the docx is the source; the docx+pdf pair is generated PER TAILORED resume by CoWork.
+// docx only: the docx is the source; the docx+pdf pair is generated PER TAILORED resume by the agent.
 export async function POST(request: Request) {
   let form: FormData;
   try {

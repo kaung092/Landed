@@ -27,7 +27,7 @@ test("claimJob is an atomic take: the first claim wins, a second returns null", 
   assert.equal(jobRow(id).claimedBy, "agent-A", "the original claimant still holds it");
 });
 
-test("claimJob defaults the claimant to CoWork, and won't claim an ingested job", () => {
+test("claimJob defaults the claimant to the agent, and won't claim an ingested job", () => {
   const id = createJob({ id: "fit-claim-2", type: "fit", params: { postings: [{ company: "Linear", role: "Eng" }] } });
   assert.equal(claimJob(id)!.claimedBy, "CoWork");
 

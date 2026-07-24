@@ -4,8 +4,8 @@ import { createJob } from "@/lib/jobs/store";
 export const dynamic = "force-dynamic";
 
 // POST /api/scanned/glance  body: { verdicts: GlanceInput[] }
-// CoWork's superficial second pass (title + location, no JD). Per posting: high | low | drop.
-//   high → a discovered application + a fit job are created (CoWork fetches the JD when it runs the
+// the agent's superficial second pass (title + location, no JD). Per posting: high | low | drop.
+//   high → a discovered application + a fit job are created (the agent fetches the JD when it runs the
 //   fit job); low → review; drop → discarded. Creates the scanned row if it didn't exist yet.
 export async function POST(request: Request) {
   let body: { verdicts?: GlanceInput[] };

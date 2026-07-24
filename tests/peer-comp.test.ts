@@ -14,7 +14,7 @@ const setComp = (id: number, comp?: string, jd?: string) =>
 const setIntel = (id: number, patch: { comp?: string; note?: string; teamNotes?: string }) =>
   db.update(postings).set(patch).where(eq(postings.id, id)).run();
 
-// ── input gather (pure DB/FS read — CoWork does the synthesis; no model call in tests) ───────────
+// ── input gather (pure DB/FS read — The agent does the synthesis; no model call in tests) ───────────
 test("gatherPeerInputs returns interview/offer roles with their comp + JD, excludes applied", () => {
   const a = seedApp({ company: "Acme", role: "Backend Engineer", status: "interview" });
   const b = seedApp({ company: "Initech", role: "Staff Software Engineer", status: "offer" });
@@ -61,7 +61,7 @@ test("setPeerComp / getPeerComp round-trips and keeps only the latest", () => {
   assert.equal(getPeerComp()?.generatedAt, "2026-07-10T01:00:00.000Z");
 });
 
-// ── ingest (CoWork's { markdown } result lands as the latest artifact) ────────────────────────
+// ── ingest (the agent's { markdown } result lands as the latest artifact) ────────────────────────
 test("peer-comp ingest stores the submitted markdown as the latest; dryRun persists nothing", () => {
   const def = jobDef("peer-comp")!;
   assert.ok(def, "peer-comp job type is registered");

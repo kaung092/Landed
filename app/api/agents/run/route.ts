@@ -8,10 +8,10 @@ import { drainPrompt } from "@/lib/agents/personas";
 export const dynamic = "force-dynamic";
 
 // POST /api/agents/run  body: { type } — launch a headless Claude Code run that DRAINS the given
-// job type's queue, then exits. The lean alternative to a parked CoWork chat: it runs on your Pro
+// job type's queue, then exits. The lean alternative to a parked the agent chat: it runs on your Pro
 // subscription (OAuth, no API fees) only when there's work, so it doesn't burn idle quota.
 //
-// It talks to the SAME jobhunt MCP server (so it claims/works/submits exactly like CoWork) and is
+// It talks to the SAME jobhunt MCP server (so it claims/works/submits exactly like the agent) and is
 // tagged JOBHUNT_THREAD_LABEL="Claude Code", so it shows up in the agents view as its own chat.
 //
 // Prereqs: `claude` CLI authenticated against your subscription (`claude setup-token`), and ANThropic

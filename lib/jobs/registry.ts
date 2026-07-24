@@ -41,7 +41,7 @@ function ingestCandidateUpdates(
     byId.set(c.id, c);
     (byCo.get(c.companyId) ?? byCo.set(c.companyId, []).get(c.companyId)!).push(c);
   }
-  // ID-ONLY. The posting `id` is the stable round-trip key the app stamped on the job and CoWork
+  // ID-ONLY. The posting `id` is the stable round-trip key the app stamped on the job and the agent
   // echoes back — title/url guessing here risks binding the result onto the wrong posting, so it
   // was removed. An id that doesn't resolve raises a human-action item instead of silently skipping.
   const match = (r: ResultRecord): { co: CompanyRow; cand: PostingRow } | null => {
@@ -91,7 +91,7 @@ function ingestCandidateUpdates(
   return { inserted: 0, updated, fieldChanges: updated, flagged: 0, pending: unbound, newCompanies: 0, summary, details };
 }
 
-// tailoring record { company, role, slug, note }: CoWork tailored a resume into resume/<slug>/.
+// tailoring record { company, role, slug, note }: the agent tailored a resume into resume/<slug>/.
 // The slug is the versioned folder the app told it to write (resume/<base>/v<N>/); `note` is the
 // "what changed & why" that becomes this version's agent turn in the redo conversation.
 function ingestTailoring(records: ResultRecord[], dryRun?: boolean): ReconcileResult {
@@ -102,7 +102,7 @@ function ingestTailoring(records: ResultRecord[], dryRun?: boolean): ReconcileRe
     const log = parseRedoLog(cand.redoLog);
     const version = nextVersion(log, "tailor");
     const note = str(r.note) ?? "Tailored the base resume to the posting.";
-    // CoWork's annotated tailored-vs-base diff (each changed line + why). Optional — when absent the
+    // the agent's annotated tailored-vs-base diff (each changed line + why). Optional — when absent the
     // diff view falls back to the computed textutil diff.
     const diff = coerceDiff(r.diff);
     const turn: RedoTurn = { phase: "tailor", role: "agent", at: new Date().toISOString(), text: note, version, slug, ...(diff ? { diff } : {}) };
@@ -143,14 +143,14 @@ function ingestFit(records: ResultRecord[], dryRun?: boolean): ReconcileResult {
     };
     const next: Record<string, unknown> = { fitScore: score, fitDetail: JSON.stringify(detail), redoLog: JSON.stringify([...log, turn]) };
     const jd = str(r.jd);
-    if (jd) next.jd = jd; // persist the JD CoWork used so tailoring reuses it (no re-fetch)
+    if (jd) next.jd = jd; // persist the JD the agent used so tailoring reuses it (no re-fetch)
     if (cand.state === "fit_queue") next.state = "assessed";
     return { next, summary: `${co.name} — ${cand.title} · fit v${version} ${score ?? "?"} (${detail.levelMatch?.call ?? "?"})` };
   });
 }
 
 // interview-brief record: { id, role?, tc?, team?, expectations?, nextStep? (each a string or
-// {text, source}), gaps:[{area,why,severity,source}], summary?, materials?|sources? }. CoWork read
+// {text, source}), gaps:[{area,why,severity,source}], summary?, materials?|sources? }. The agent read
 // the interview-prep asset folder (context.md + transcripts + emails.md + attachments) and
 // synthesized a source-tagged overview. Append it as a new version to interview_briefs; the drawer
 // projects the latest. ID-only match (the posting id the app stamped on the job).
@@ -179,7 +179,7 @@ function ingestInterviewBrief(records: ResultRecord[], dryRun?: boolean): Reconc
 }
 
 // peer-comp record: ONE { markdown } — the full comp comparison (6-column table + prose synthesis)
-// CoWork produced across every actively-interviewing role. GLOBAL (not tied to a posting), so it
+// The agent produced across every actively-interviewing role. GLOBAL (not tied to a posting), so it
 // doesn't use ingestCandidateUpdates: just persist the markdown as the latest artifact in app_config
 // (latest-only, overwrites). See lib/jobs/peercomps.ts.
 function ingestPeerComp(records: ResultRecord[], dryRun?: boolean): ReconcileResult {
@@ -192,7 +192,7 @@ function ingestPeerComp(records: ResultRecord[], dryRun?: boolean): ReconcileRes
 }
 
 // prep record: { leetcodeNum?|name, status, durationSec?, notes?, noted?, redo?, ... }.
-// CoWork logged a coding practice attempt; ingestPrepRecords resolves it to a catalog
+// The agent logged a coding practice attempt; ingestPrepRecords resolves it to a catalog
 // question (or inserts a new one) and appends the attempt. Doesn't touch applications.
 function ingestPrep(records: ResultRecord[], dryRun?: boolean): ReconcileResult {
   const r = ingestPrepRecords(records, dryRun);
@@ -212,7 +212,7 @@ function ingestPrep(records: ResultRecord[], dryRun?: boolean): ReconcileResult 
   };
 }
 
-// leetcode-add record: { id, name?, difficulty?, topic?|pattern?, leetcodeNum? }. CoWork resolved a
+// leetcode-add record: { id, name?, difficulty?, topic?|pattern?, leetcodeNum? }. The agent resolved a
 // manually-added stub's real name/difficulty/topic from its URL; ingestLeetcodeAdd fills the row by id.
 function ingestLeetcodeAddJob(records: ResultRecord[], dryRun?: boolean): ReconcileResult {
   const r = ingestLeetcodeAdd(records, dryRun);
@@ -230,13 +230,13 @@ function ingestLeetcodeAddJob(records: ResultRecord[], dryRun?: boolean): Reconc
 
 // prep-research record batch: one { type:"profile", company, process, rounds[], categories[],
 // sources[] } + N { type:"question", company, category, track?, name, leetcodeNum?|prompt, ... }.
-// CoWork researched a company's interview process; ingestPrepResearch upserts the profile and
+// The agent researched a company's interview process; ingestPrepResearch upserts the profile and
 // tags/creates questions (reusing the shared bank by leetcodeNum so progress carries over).
 function ingestPrepResearchJob(records: ResultRecord[], dryRun?: boolean): ReconcileResult {
   const r = ingestPrepResearch(records, dryRun);
   // "Research questions" is one of the three asset inputs — refresh the company's context.md dump and
   // write the standalone questions.md (online-research question bank) so the interview-brief job + a
-  // per-company CoWork prep chat can read the fresh research. Best-effort; never breaks the ingest.
+  // per-company the agent prep chat can read the fresh research. Best-effort; never breaks the ingest.
   if (!dryRun) {
     const company = records.map((rec) => str(rec.company)).find(Boolean);
     const slug = company ? companySlug(company) : null;
@@ -292,12 +292,12 @@ function ingestDiscovered(source: string) {
   };
 }
 
-// watchlist-add has no submitJobResult ingest — CoWork writes directly via upsertCompanies +
+// watchlist-add has no submitJobResult ingest — The agent writes directly via upsertCompanies +
 // addToWatchlist. The def exists so it shows as a job (with its playbook); ingest is a no-op.
 const noopIngest = (): ReconcileResult => ({ inserted: 0, updated: 0, fieldChanges: 0, flagged: 0, pending: 0, newCompanies: 0, summary: "", details: [] });
 
 // Ordered by pipeline stage (ascending): create → scan → fit → tailor → inbox sync.
-// prep / prep-research keep their machinery but are hidden from the CoWork Jobs list for now.
+// prep / prep-research keep their machinery but are hidden from the agent Jobs list for now.
 export const JOB_DEFS: Record<JobType, JobDef> = {
   "watchlist-add": {
     type: "watchlist-add",
@@ -368,7 +368,7 @@ export const JOB_DEFS: Record<JobType, JobDef> = {
   prep: {
     type: "prep",
     title: "Coding prep",
-    description: "Log coding-practice progress (attempts, times, notes) from a CoWork session.",
+    description: "Log coding-practice progress (attempts, times, notes) from an agent session.",
     playbook: "prep.md",
     hidden: true,
     buildTask: () =>

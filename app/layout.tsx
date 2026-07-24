@@ -4,7 +4,7 @@ import Script from "next/script";
 import "./globals.css";
 import NavRail from "@/components/NavRail";
 import PageFrame from "@/components/PageFrame";
-import CoWorkQueueProvider from "@/components/CoWorkQueueProvider";
+import AgentQueueProvider from "@/components/AgentQueueProvider";
 import AgentChatsProvider from "@/components/AgentChatsProvider";
 import AddJobProvider from "@/components/AddJobProvider";
 import FloatingQueue from "@/components/FloatingQueue";
@@ -54,7 +54,7 @@ z=e.getElementsByTagName(n)[0];z.parentNode.insertBefore(y,z);}})(window,documen
       </head>
       <body className="flex h-screen overflow-hidden">
         <PendoInitializer />
-        <CoWorkQueueProvider>
+        <AgentQueueProvider>
           <AgentChatsProvider>
             <AddJobProvider>
               <NavRail />
@@ -64,7 +64,7 @@ z=e.getElementsByTagName(n)[0];z.parentNode.insertBefore(y,z);}})(window,documen
               <GetStartedChecklist />
             </AddJobProvider>
           </AgentChatsProvider>
-        </CoWorkQueueProvider>
+        </AgentQueueProvider>
       </body>
     </html>
   );

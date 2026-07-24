@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { BarChart3, Sparkles } from "lucide-react";
 import PopoverPanel, { anchorFrom } from "@/components/Popover";
-import { useCoWorkQueue } from "@/components/CoWorkQueueProvider";
+import { useAgentQueue } from "@/components/AgentQueueProvider";
 import { DEFAULT_LEVELING_REF, LEVEL_AXIS, hasLadder, straddleRungs, type Leveling, type LevelingRef } from "@/lib/leveling";
 
 // Reference vs the company, side-by-side on a shared 1–10 axis (both ladders use the same scale, so
@@ -54,10 +54,10 @@ export default function LevelLadder({ company, leveling, levelingRef }: { compan
 // Icon trigger for the Assessed/funnel "Lvl" column — click to pop the side-by-side ladder.
 // Leveling is fetched lazily (it's the slow, fragile levels.fyi step), so when a company has no
 // ladder yet this surfaces a "not fetched" popover with a button that queues a `leveling` job for
-// just that company. `source:"none"` = CoWork checked and found no ladder → offer a re-check.
+// just that company. `source:"none"` = the agent checked and found no ladder → offer a re-check.
 export function LevelChip({ company, leveling, levelingRef = DEFAULT_LEVELING_REF }: { company: string; leveling?: Leveling | null; levelingRef?: LevelingRef }) {
   const [pos, setPos] = useState<{ x: number; y: number } | null>(null);
-  const { add, jobs } = useCoWorkQueue();
+  const { add, jobs } = useAgentQueue();
   // Read `source` before the hasLadder guard narrows `leveling` away (source:"none" is still a
   // Leveling, but the guard's false branch drops the whole type).
   const confirmedNone = leveling?.source === "none";
@@ -106,7 +106,7 @@ export function LevelChip({ company, leveling, levelingRef = DEFAULT_LEVELING_RE
           </p>
           {queued ? (
             <span className="inline-flex items-center gap-1.5 text-[12px] text-sky-300">
-              <Sparkles size={12} /> Queued — CoWork will fetch it
+              <Sparkles size={12} /> Queued — the agent will fetch it
             </span>
           ) : (
             <button

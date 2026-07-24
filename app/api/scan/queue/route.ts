@@ -8,7 +8,7 @@ export const dynamic = "force-dynamic";
 //   body { staleDays?: number } -> queue a `watchlist-scan` job per watchlisted company not scraped
 //                                 in the last `staleDays` (default 3, or never), skipping any already
 //                                 in the queue (the "Scrape watchlist" button).
-// Either way the scan runs through the CoWork queue (claim → scanCompany + glance → close), not as an
+// Either way the scan runs through the agent queue (claim → scanCompany + glance → close), not as an
 // inline app scan.
 export async function POST(request: Request) {
   let body: { staleDays?: number; company?: string };

@@ -2,7 +2,7 @@ import { getConfig, setConfig } from "./config-store";
 import { DEFAULT_LEVELING_REF, type LevelingRef } from "@/lib/leveling";
 
 // The candidate's search identity — the source of truth for what counts as a fit. Read by the
-// scan's second pass (CoWork) and the fit playbook's leveling. Stored as one JSON blob in
+// scan's second pass (the agent) and the fit playbook's leveling. Stored as one JSON blob in
 // app_config under "profile"; editable on the Discovery page.
 export type Profile = {
   levelBaseline: string; // who I am, level-wise
@@ -10,7 +10,7 @@ export type Profile = {
   includeDisciplines: string[]; // SWE disciplines that count as a match
   excludeDisciplines: string[]; // disciplines to drop even if the title says "engineer"
   locations: string; // where I'll work
-  notes: string; // freeform extra context for CoWork
+  notes: string; // freeform extra context for the agent
 };
 
 const PROFILE_KEY = "profile";

@@ -2,7 +2,7 @@
 
 import { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
 
-// A live CoWork job, as the floating queue + CoWork page see it — `queued` (up for grabs) or `wip`
+// A live the agent job, as the floating queue + Agents page see it — `queued` (up for grabs) or `wip`
 // (an agent claimed it; has claimedAt). Ingested/history rows are excluded.
 export type QueueJob = {
   id: string;
@@ -26,7 +26,7 @@ type QueueCtx = {
   add: (spec: AddJobSpec) => Promise<void>;
   remove: (id: string) => Promise<void>;
   requeue: (id: string) => Promise<void>; // return a stuck/failed wip job to the queue (manual recovery)
-  refresh: () => void; // re-read the queue (after an external add, or to catch CoWork draining it)
+  refresh: () => void; // re-read the queue (after an external add, or to catch the agent draining it)
   bump: () => void; // pulse + refresh — for adds made through other endpoints (e.g. discovery actions)
   // The queued redo note for a posting's phase, or null if no redo is queued. Live (the queue polls
   // + refreshes on delete), so the "Queued for redo" tag + the composer pre-fill clear the moment
@@ -43,9 +43,9 @@ type QueueCtx = {
 
 const Ctx = createContext<QueueCtx | null>(null);
 
-// Owns the live CoWork queue for the whole app: one fetch, shared by the floating icon and the
-// CoWork page. Adds optimistically + pulses; polls so the badge shrinks as CoWork drains the queue.
-export default function CoWorkQueueProvider({ children }: { children: React.ReactNode }) {
+// Owns the live the agent queue for the whole app: one fetch, shared by the floating icon and the
+// Agents page. Adds optimistically + pulses; polls so the badge shrinks as the agent drains the queue.
+export default function AgentQueueProvider({ children }: { children: React.ReactNode }) {
   const [jobs, setJobs] = useState<QueueJob[]>([]);
   const [inboxLastSynced, setInboxLastSynced] = useState<string | null>(null);
   const [pulse, setPulse] = useState(false);
@@ -61,7 +61,7 @@ export default function CoWorkQueueProvider({ children }: { children: React.Reac
       .catch(() => {});
   }, []);
 
-  // Initial load + a light poll, and a refresh whenever the tab regains focus (CoWork may have
+  // Initial load + a light poll, and a refresh whenever the tab regains focus (the agent may have
   // drained the queue while you were away).
   useEffect(() => {
     refresh();
@@ -139,8 +139,8 @@ export default function CoWorkQueueProvider({ children }: { children: React.Reac
   );
 }
 
-export function useCoWorkQueue(): QueueCtx {
+export function useAgentQueue(): QueueCtx {
   const c = useContext(Ctx);
-  if (!c) throw new Error("useCoWorkQueue must be used within CoWorkQueueProvider");
+  if (!c) throw new Error("useAgentQueue must be used within AgentQueueProvider");
   return c;
 }

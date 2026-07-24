@@ -18,7 +18,7 @@ export default function McpDocsPage() {
           <div>
             <h1 className="text-[16px] font-semibold tracking-tight text-zinc-100">MCP tool reference</h1>
             <p className="mt-0.5 text-[13px] text-zinc-500">
-              The <code className="font-mono text-zinc-300">{server.name}</code> server (v{server.version}) — the {tools.length} capabilities Claude (CoWork) calls over MCP to run your pipeline. Live from <code className="font-mono">mcp/jobhunt-server.mjs</code>.
+              The <code className="font-mono text-zinc-300">{server.name}</code> server (v{server.version}) — the {tools.length} capabilities the agent calls over MCP to run your pipeline. Live from <code className="font-mono">mcp/jobhunt-server.mjs</code>.
             </p>
           </div>
         </div>

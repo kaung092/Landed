@@ -10,7 +10,7 @@ beforeEach(() => reset());
 
 const stateOf = (id: number) => db.select().from(postings).where(eq(postings.id, id)).get()!;
 
-// queueOnly hands work to CoWork WITHOUT moving the posting's stage — actions decoupled from status.
+// queueOnly hands work to the agent WITHOUT moving the posting's stage — actions decoupled from status.
 test("scannedAction queue-fit with queueOnly leaves the stage untouched but returns a fit payload", () => {
   const id = seedCandidate({ company: "Linear", state: "tailored" });
   const r = scannedAction(id, "queue-fit", { queueOnly: true });

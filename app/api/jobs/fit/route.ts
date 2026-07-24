@@ -2,7 +2,7 @@ import { listFitQueue, enqueueFit } from "@/lib/jobs/store";
 
 export const dynamic = "force-dynamic";
 
-// GET /api/jobs/fit -> postings awaiting CoWork's fit assessment
+// GET /api/jobs/fit -> postings awaiting the agent's fit assessment
 export async function GET() {
   try {
     return Response.json({ queue: listFitQueue() });

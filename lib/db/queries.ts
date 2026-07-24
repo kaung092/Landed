@@ -255,7 +255,7 @@ export function addComment(id: number, text: string): Posting | null {
   return getPosting(id);
 }
 
-// Persist a posting's JD (CoWork's savePostingJd tool, called at the fit stage with the JD it
+// Persist a posting's JD (the agent's savePostingJd tool, called at the fit stage with the JD it
 // fetched). A dedicated write — NOT echoed through submitJobResult — so fit + tailoring reuse it
 // without re-fetching from the URL. Idempotent; only writes when the JD is non-empty.
 export function setPostingJd(id: number, jd: string): Posting | null {
@@ -440,7 +440,7 @@ export function listCompanies(): CompanyView[] {
   return db.select().from(companies).all().map(toCompanyView);
 }
 
-// Just the discovery watchlist (companies CoWork auto-scans). Independent of tier.
+// Just the discovery watchlist (companies the agent auto-scans). Independent of tier.
 export function listWatchlist(): CompanyView[] {
   return db.select().from(companies).where(eq(companies.watchlist, true)).all().map(toCompanyView);
 }
@@ -453,7 +453,7 @@ export type CompanyInput = {
   name: string;
   tier?: Tier;
   ats?: string | null;
-  fetchMethod?: string | null; // api | careers-get | browser — how CoWork reads the board
+  fetchMethod?: string | null; // api | careers-get | browser — how the agent reads the board
   fetchRecipe?: string | null; // scan steps for browser/careers-get boards (filters, excludes, level source)
   slug?: string | null;
   endpoint?: string | null;
@@ -465,7 +465,7 @@ export type CompanyInput = {
   lastScrapedAt?: string | null; // ISO; usually auto-stamped on discovery, but settable here too
 };
 
-// Upsert company records — CoWork curates these as you chat. Matched by canonical name: an
+// Upsert company records — The agent curates these as you chat. Matched by canonical name: an
 // existing company is patched (only the provided fields change); an unknown one is inserted.
 // Never renames an existing company, never touches its watchlist flag. Returns rows + counts.
 export function upsertCompanies(
@@ -636,7 +636,7 @@ export function listScannedPostings(f: { company?: string; state?: string } = {}
 export function scannedAction(
   id: number,
   action: "discard" | "queue-fit" | "tailor" | "apply",
-  // apply: the date the user entered/confirmed; defaults to today. queueOnly: hand the work to CoWork
+  // apply: the date the user entered/confirmed; defaults to today. queueOnly: hand the work to the agent
   // WITHOUT moving the posting's stage — the queue action is decoupled from status tracking.
   opts?: { appliedDate?: string; queueOnly?: boolean }
 ): { ok: boolean; appId?: number; fit?: { id: number; company: string; role: string; url?: string; jd?: string }; tailor?: { id: number; company: string; role: string; url?: string; jd?: string } } {
@@ -664,14 +664,14 @@ export function scannedAction(
   }
   if (action === "tailor") {
     // queueOnly: just enqueue the tailoring job — leave the stage alone. Otherwise also enter the
-    // tailor stage (CoWork fills resumeDir + advances to `tailored` when the resume is ready).
+    // tailor stage (the agent fills resumeDir + advances to `tailored` when the resume is ready).
     if (!queueOnly) {
       db.update(postings).set({ state: "tailoring" }).where(eq(postings.id, id)).run();
       logEvent({ entity: "company", entityId: row.companyId, action: "update", source: "discovery", summary: `${name} — ${row.title} · tailoring` });
     } else {
       logEvent({ entity: "company", entityId: row.companyId, action: "update", source: "discovery", summary: `${name} — ${row.title} · tailoring re-queued` });
     }
-    // Return a tailor payload so the route enqueues a tailoring job (the CoWork handoff).
+    // Return a tailor payload so the route enqueues a tailoring job (the agent handoff).
     return { ok: true, tailor: { id: row.id, company: name, role: row.title, url: row.url ?? undefined, jd: row.jd ?? undefined } };
   }
   // apply → graduate into the tracker. One model now: just advance this posting's stage in place
@@ -684,10 +684,10 @@ export function scannedAction(
   return { ok: true, appId: id };
 }
 
-// CoWork's superficial glance verdict (title + location, no JD) on a scanned candidate:
+// the agent's superficial glance verdict (title + location, no JD) on a scanned candidate:
 //   high → queue to fit (creates a discovered application) · low → review (your call) · drop → discarded.
 // Finds the existing scanned row (by ats id, else url); creates one if missing (careers-get/browser
-// companies CoWork fetched itself). Returns a fit payload for `high` so the route enqueues the job.
+// companies the agent fetched itself). Returns a fit payload for `high` so the route enqueues the job.
 export type GlanceInput = {
   company: string; atsId?: string | null; url?: string | null; title?: string | null;
   location?: string | null; department?: string | null; glance: "high" | "low" | "drop"; reason?: string | null;
@@ -702,7 +702,7 @@ export function applyGlance(v: GlanceInput): { ok: boolean; appId?: number; fit?
 
   const title = v.title ?? row?.title ?? "(untitled)";
   const department = v.department ?? row?.department ?? null;
-  // Shared exclude — the same filter the api scan uses — overrides CoWork's call (EM/TPM/
+  // Shared exclude — the same filter the api scan uses — overrides the agent's call (EM/TPM/
   // Security/intern/Solutions etc.), so every fetch method gets a uniform floor.
   const excluded = isExcludedTitle(title, department);
   const glance = excluded ? "drop" : v.glance;
@@ -880,7 +880,7 @@ export function listPendingMatches(): PendingMatchView[] {
       const u = JSON.parse(r.payload) as { jobType: string; declaredId: number | null; role: string | null };
       return {
         id: r.id, createdAt: r.createdAt, kind: "unbound" as const, companyName: r.companyName,
-        detail: `CoWork's ${u.jobType} result couldn't find posting #${u.declaredId ?? "?"}${u.role ? ` (“${u.role}”)` : ""} — it was skipped.`,
+        detail: `the agent's ${u.jobType} result couldn't find posting #${u.declaredId ?? "?"}${u.role ? ` (“${u.role}”)` : ""} — it was skipped.`,
         incoming: { role: u.role, status: `${u.jobType} result`, note: null, appliedDate: null },
         candidates: candidatesOf(ids),
       };

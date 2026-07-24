@@ -1,4 +1,4 @@
-// AUTO-GENERATED from the CoWork prep artifacts (colors stripped). Display-only reference data.
+// AUTO-GENERATED from the agent prep artifacts (colors stripped). Display-only reference data.
 export const TECH_COMPARISONS = [
   {
     "category": "Message Queue",

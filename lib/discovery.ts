@@ -1,6 +1,6 @@
 // The pipeline spine — the single source of truth for the home Pipeline page's stages, drawn as the
 // arrow-ribbon funnel (components/Pipeline.tsx). `turn` = whose move it is: you = your decision,
-// cowork = waiting on CoWork, done = graduated to the tracker, archive = dropped.
+// cowork = waiting on the agent, done = graduated to the tracker, archive = dropped.
 // A step spans one or more `states`: pre-apply steps over candidate scan-store states (Fit
 // Assessment = fit_queue + assessed; Tailor Resume = tailoring + tailored; Apply Later = apply_later)
 // summed from /api/scanned?state=<states>; tracker steps over Posting statuses (filtered via lib/pipeline columnOf).
@@ -15,8 +15,8 @@ export const DISCOVERY_SPINE: SpineStep[] = [
   // Note: the watchlist/scan-setup ("Scan Watchlist") is no longer a funnel step — it lives on its
   // own /watchlist route as optional auto-discovery. Fit Assessment is the funnel's first step; its
   // `review` here is a candidate STATE (a scanned posting awaiting triage), not the old step.
-  { key: "fit", label: "Fit Assessment", turn: "cowork", states: ["matched", "review", "fit_queue", "assessed"], hint: "Triage new matches (queue or discard), CoWork scores them, then tailor / apply / save" },
-  { key: "tailor", label: "Tailor Resume", turn: "cowork", states: ["tailoring", "tailored"], hint: "CoWork tailors a resume — then apply" },
+  { key: "fit", label: "Fit Assessment", turn: "cowork", states: ["matched", "review", "fit_queue", "assessed"], hint: "Triage new matches (queue or discard), the agent scores them, then tailor / apply / save" },
+  { key: "tailor", label: "Tailor Resume", turn: "cowork", states: ["tailoring", "tailored"], hint: "The agent tailors a resume — then apply" },
   { key: "later", label: "Apply Later", turn: "you", states: ["apply_later"], hint: "Ready to submit — parked here until you apply" },
   { key: "applied", label: "Applied", turn: "done", states: ["applied"], hint: "Submitted — awaiting a response" },
   { key: "interview", label: "Interviewing", turn: "done", states: ["interview", "offer"], hint: "In the loop — interviews and offers" },

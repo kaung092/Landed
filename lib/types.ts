@@ -14,7 +14,7 @@ export type Tier = "tier1" | "tier2" | "tier3";
 export type Status =
   | "discovered" // freshly scraped, untouched
   | "assessed" // fit note generated, awaiting your decision
-  | "tailoring" // bundle exported, being tailored (in CoWork)
+  | "tailoring" // bundle exported, being tailored (in the agent)
   | "applied" // submitted
   | "interview" // reached an interview
   | "offer" // received an offer
@@ -40,7 +40,7 @@ export const STATUS_ORDER: Status[] = [
   "expired",
 ];
 
-// Structured fit assessment from CoWork — detailed, not surface-level. Stored as a JSON
+// Structured fit assessment from the agent — detailed, not surface-level. Stored as a JSON
 // blob (applications.fit_detail) and parsed onto the posting.
 export type FitGap = { text: string; severity?: "hard" | "soft"; detail?: string };
 export type FitAssessment = {
@@ -63,12 +63,12 @@ export type RedoTurn = {
   text: string; // agent: what changed / the fit summary · user: the redo instruction
   version?: number; // agent turns only — the version this attempt produced (v1, v2, …)
   slug?: string; // tailor agent turns — the resume/<slug>/ folder for this version
-  diff?: DiffOp[]; // tailor agent turns — CoWork's annotated tailored-vs-base diff (each changed line + why)
+  diff?: DiffOp[]; // tailor agent turns — the agent's annotated tailored-vs-base diff (each changed line + why)
   fitScore?: number; // fit agent turns
   fit?: FitAssessment; // fit agent turns — the full snapshot for this version
 };
 
-// The interview brief — a versioned overview CoWork generates from the interview-prep asset
+// The interview brief — a versioned overview the agent generates from the interview-prep asset
 // folder (context.md + call transcripts + pulled emails + attachments). Each generation appends a
 // new version to postings.interview_briefs; the drawer renders the latest and lets you switch
 // versions.
@@ -131,7 +131,7 @@ export type InterviewRound = {
 export type EmailRefs = { applied?: string; rejected?: string; offer?: string; interview?: string };
 
 // A personal comment You leaves on a posting (distinct from `note`, which is shared with
-// CoWork/historical sync). Stored as a JSON array on the posting; the funnel shows a count + popover.
+// The agent/historical sync). Stored as a JSON array on the posting; the funnel shows a count + popover.
 export type Comment = { text: string; at: string; editedAt?: string }; // at = created, editedAt = last edit (ISO timestamps)
 
 export type Posting = {
@@ -165,5 +165,5 @@ export type Posting = {
   history?: boolean; // true = imported from the old tracker.csv
   interviews?: InterviewRound[]; // interview-stage rounds (from inbox-sync), ordered by round
   emailRefs?: EmailRefs; // Gmail thread ids per stage (inbox-sync) — for direct email links
-  interviewBriefs?: InterviewBrief[]; // versioned interview briefs (CoWork-generated), oldest → newest
+  interviewBriefs?: InterviewBrief[]; // versioned interview briefs (the agent-generated), oldest → newest
 };

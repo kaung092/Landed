@@ -206,7 +206,7 @@ export function listQuestions(opts: { track?: string; company?: string } = {}): 
     : out.sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0));
 }
 
-// ── Company prep profiles (CoWork research output) ──
+// ── Company prep profiles (the agent research output) ──
 
 // `key` links questions (companyMeta[slug].round) to a round. Optional so older profiles
 // without keys still parse; the interview view falls back to index-based keys.
@@ -298,8 +298,8 @@ export function deleteAttempt(id: number): boolean {
   return db.delete(prepAttempts).where(eq(prepAttempts.id, id)).run().changes > 0;
 }
 
-// ── CoWork prep handoff (ingest practice progress) ──
-// CoWork practices coding with You and writes a result file the app ingests, one
+// ── the agent prep handoff (ingest practice progress) ──
+// The agent practices coding with You and writes a result file the app ingests, one
 // record per question worked. Identity is resolved against the catalog by leetcodeNum
 // first, then normalized name; an unrecognized question is inserted (track=coding) so
 // the attempt has a home — see prep.md.
@@ -340,7 +340,7 @@ export type PrepIngestResult = {
   details: ChangeDetail[];
 };
 
-// Ingest CoWork's prep result records. dryRun computes the same outcome without writing
+// Ingest the agent's prep result records. dryRun computes the same outcome without writing
 // (powers the preview). Matching + dedupe happen against an in-memory catalog snapshot so
 // a new question referenced twice in one batch is inserted once.
 export function ingestPrepRecords(records: Record<string, unknown>[], dryRun = false): PrepIngestResult {
@@ -467,7 +467,7 @@ export function addLeetcodeStub(input: { url: string; topic?: string }): Leetcod
 
 export type LeetcodeAddResult = { enriched: number; details: ChangeDetail[] };
 
-// Ingest for the leetcode-add job: CoWork resolved a stub's real name/difficulty/topic (from the URL)
+// Ingest for the leetcode-add job: the agent resolved a stub's real name/difficulty/topic (from the URL)
 // and submits one record per question, keyed by the stub's `id`. We only FILL — set difficulty, the
 // canonical name + leetcodeNum, the topic tag (unless the user already gave one), and clear the
 // pending flag. Never creates or dedupes here (the stub already exists); an unknown id is skipped.
@@ -533,8 +533,8 @@ export function setProgress(
   return { questionId, noted, redo };
 }
 
-// ── CoWork prep-research handoff (per-company interview prep) ──
-// CoWork researches a company's interview process and submits one batch: a single profile
+// ── the agent prep-research handoff (per-company interview prep) ──
+// The agent researches a company's interview process and submits one batch: a single profile
 // record ({ type:"profile", ... }) plus N question records ({ type:"question", category, ... }).
 // Questions reuse the shared bank — a coding/system_design record that matches an existing
 // catalog question by leetcodeNum (or name) is TAGGED onto the company (companies += slug,
@@ -681,7 +681,7 @@ export function ingestPrepResearch(
 
 // ── Prep feedback (per-company / per-round refinement requests) ──
 // You leave feedback on a company's prep (optionally scoped to one round); it's appended to a
-// thread and dispatched to CoWork as a prep-research refinement job. CoWork re-researches and,
+// thread and dispatched to the agent as a prep-research refinement job. The agent re-researches and,
 // on re-ingest, the queued feedback for that company is marked applied (see markFeedbackApplied).
 
 export type PrepFeedback = {
@@ -738,7 +738,7 @@ export function deleteFeedback(id: number): boolean {
   return db.delete(prepFeedback).where(eq(prepFeedback.id, id)).run().changes > 0;
 }
 
-// Mark a company's queued feedback as applied — called from ingestPrepResearch after CoWork's
+// Mark a company's queued feedback as applied — called from ingestPrepResearch after the agent's
 // refresh lands so the UI can show the loop closing. Returns the count flipped.
 export function markFeedbackApplied(slug: string): number {
   return db

@@ -5,7 +5,7 @@ export const dynamic = "force-dynamic";
 // The discovery watchlist (the scan list) — a curated subset of companies, separate from
 // company curation. Scanning is expensive, so discovery only scans what's here.
 
-// GET /api/watchlist -> the companies CoWork's discovery auto-scans (with scrape config).
+// GET /api/watchlist -> the companies the agent's discovery auto-scans (with scrape config).
 export async function GET() {
   try {
     return Response.json({ watchlist: listWatchlist() });

@@ -12,7 +12,7 @@ const STATUS_MAP: Record<string, Status> = {
   expired: "expired",
 };
 
-// Coarse round types CoWork may emit, mapped onto our enum; anything unrecognized → "other".
+// Coarse round types the agent may emit, mapped onto our enum; anything unrecognized → "other".
 const KIND_MAP: Record<string, InterviewKind> = {
   recruiter_screen: "recruiter_screen", recruiter: "recruiter_screen", recruiter_call: "recruiter_screen", screen: "recruiter_screen",
   phone_screen: "phone_screen", phone: "phone_screen",
@@ -32,7 +32,7 @@ const toOutcome = (v: unknown): InterviewRound["outcome"] | undefined => {
   return o === "passed" || o === "rejected" || o === "pending" ? o : undefined;
 };
 
-// Map a record's `interviews` array (loose JSON from CoWork) → normalized InterviewRound[].
+// Map a record's `interviews` array (loose JSON from the agent) → normalized InterviewRound[].
 function incomingRounds(raw: unknown): InterviewRound[] | undefined {
   if (!Array.isArray(raw)) return undefined;
   const rounds = raw
@@ -53,7 +53,7 @@ function incomingRounds(raw: unknown): InterviewRound[] | undefined {
 }
 
 // Pull per-stage Gmail thread ids from a record (best-effort): an `emailRefs` map, else flat keys
-// CoWork may emit. Empty → undefined, so it never overwrites stored ids with nothing.
+// The agent may emit. Empty → undefined, so it never overwrites stored ids with nothing.
 function incomingEmailRefs(r: Record<string, unknown>): EmailRefs | undefined {
   const m = (r.emailRefs ?? r.emails) as Record<string, unknown> | undefined;
   const out: EmailRefs = {};

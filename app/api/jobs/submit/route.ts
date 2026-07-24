@@ -3,7 +3,7 @@ import { submitJobResult } from "@/lib/jobs/store";
 export const dynamic = "force-dynamic";
 
 // POST /api/jobs/submit  body: { type, records[], jobId?, createdBy?, dryRun? }
-// The MCP write path (submitJobResult tool): CoWork hands a job's result records back
+// The MCP write path (submitJobResult tool): the agent hands a job's result records back
 // directly instead of dropping results/<id>.json. Runs the type's ingest() → reconcile
 // (dedup + needsReview gate) and records the ledger row. Set dryRun to preview the change
 // without persisting. Returns the reconcile summary + details.

@@ -36,7 +36,7 @@ export default function FitLab() {
 
   const [run, setRun] = useState<Run | null>(null);
   const [running, setRunning] = useState(false);
-  const [pendingRunId, setPendingRunId] = useState<number | null>(null); // queued, waiting on CoWork
+  const [pendingRunId, setPendingRunId] = useState<number | null>(null); // queued, waiting on the agent
   const [error, setError] = useState<string | null>(null);
   const [showProduction, setShowProduction] = useState(false); // modeled production nodes — collapsed by default
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -58,7 +58,7 @@ export default function FitLab() {
   // Stop any in-flight poll on unmount.
   useEffect(() => () => { if (pollRef.current) clearInterval(pollRef.current); }, []);
 
-  // Poll a pending run until CoWork has submitted its verdicts (verdicts.length > 0), then show it.
+  // Poll a pending run until the agent has submitted its verdicts (verdicts.length > 0), then show it.
   const pollRun = useCallback((runId: number) => {
     if (pollRef.current) clearInterval(pollRef.current);
     pollRef.current = setInterval(async () => {
@@ -70,7 +70,7 @@ export default function FitLab() {
     }, 3000);
   }, [loadBootstrap]);
 
-  // QUEUE a CoWork job (no direct LLM API). The run is created pending; CoWork processes it from the
+  // QUEUE an agent job (no direct LLM API). The run is created pending; the agent processes it from the
   // queue and the page polls until its verdicts land.
   const runAssessment = useCallback(async () => {
     setRunning(true);
@@ -367,7 +367,7 @@ export default function FitLab() {
 }
 
 // Right panel — the FULL run history, newest first (listRuns sorts desc). Click to load a run into the
-// pipeline. Pending runs (queued for CoWork, no verdicts yet) show as "queued".
+// pipeline. Pending runs (queued for the agent, no verdicts yet) show as "queued".
 function RunsPanel({ runs, activeId, onSelect }: {
   runs: { id: number; company: string; role: string; score: number | null; decision: string | null; pending: boolean; createdAt: string }[];
   activeId: number | null; onSelect: (id: number) => void;

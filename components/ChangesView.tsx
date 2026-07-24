@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { User, Bot, AlertTriangle, Check, X, Loader2, Search, ChevronRight } from "lucide-react";
 import type { Posting } from "@/lib/types";
 import { ago } from "@/lib/format";
+import { actorLabel, sourceLabel } from "@/components/jobMeta";
 
 type EventView = {
   id: number;
@@ -35,11 +36,9 @@ const ACTOR_META: Record<string, { icon: typeof User; cls: string; ring: string 
   CoWork: { icon: Bot, cls: "text-violet-300", ring: "bg-violet-500/15" },
 };
 
-// Display labels: the audit log surfaces the automated actor/source as "Agent" / "agent". The data
-// still stores the legacy "CoWork" / "cowork" (so filters, batching, and ACTOR_META keep keying off
-// it) — only the rendered text changes.
-const actorLabel = (a: string) => (a === "CoWork" ? "Agent" : a);
-const sourceLabel = (s: string) => (s === "cowork" ? "agent" : s);
+// Display labels (actorLabel/sourceLabel): the audit log surfaces the automated actor/source as
+// "Agent"/"agent" while the data still stores the legacy "CoWork"/"cowork" (so filters, batching, and
+// ACTOR_META keep keying off it). Shared with the queue/monitor so no render site shows the codename.
 
 // Color-coded verb chips. Keyed by the *humanized* verb so glance verdicts get their own
 // colors (dropped/queued/review) instead of a generic "updated".
@@ -76,7 +75,7 @@ const TYPE_TABS: { id: TypeFilter; label: string }[] = [
 // Turn a raw event into a scannable shape: a colored verb, the company/role it touched,
 // and a plain-English description of what actually changed. Summaries follow the shape
 // `Company — Role · detail`, so we split on those separators and humanize known jargon
-// (notably CoWork's `glance:high|low|drop` discovery verdicts).
+// (notably the agent's `glance:high|low|drop` discovery verdicts).
 type Described = {
   verb: { label: string; cls: string };
   company: string | null;
@@ -328,7 +327,7 @@ function MultiRow({ node, nested }: { node: Extract<FeedNode, { kind: "multi" }>
   );
 }
 
-// A collapsed run of CoWork events. The header summarizes the run (count + verb breakdown);
+// A collapsed run of agent events. The header summarizes the run (count + verb breakdown);
 // expanding reveals the individual rows.
 function BatchRow({ node, open, onToggle }: { node: Extract<FeedNode, { kind: "batch" }>; open: boolean; onToggle: () => void }) {
   const m = ACTOR_META[node.actor] ?? ACTOR_META.CoWork;

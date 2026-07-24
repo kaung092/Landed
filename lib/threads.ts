@@ -2,8 +2,8 @@ import { eq, lt } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { jobs, threads, threadSteps } from "@/lib/db/schema";
 
-// ── CoWork thread heartbeat ──
-// A "thread" is one CoWork session. The Claude Code runner spawns a separate `jobhunt` MCP server
+// ── the agent thread heartbeat ──
+// A "thread" is one the agent session. The Claude Code runner spawns a separate `jobhunt` MCP server
 // process per session; that process mints a threadId at boot and tags every call with it
 // (x-jobhunt-thread). We record the session here (register/heartbeat) and a per-call trace
 // (recordStep). There's no user-facing threads view anymore — the Agents page reads the job ledger
@@ -68,7 +68,7 @@ export function recordStep(input: {
 }
 
 // Stamp a job with the session that claimed it (called from the claim path with the request's thread
-// header). Best-effort: a missing/blank threadId is a no-op, so non-CoWork claims are unaffected.
+// header). Best-effort: a missing/blank threadId is a no-op, so non-the agent claims are unaffected.
 export function stampJobThread(jobId: string, threadId?: string | null): void {
   const tid = threadId?.trim();
   if (!tid || !jobId) return;

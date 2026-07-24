@@ -3,7 +3,7 @@ import { enqueueInterviewEmails } from "@/lib/jobs/store";
 export const dynamic = "force-dynamic";
 
 // POST /api/applications/:id/interview-emails — (re)queue the "pull interview emails" job for this
-// posting's company. CoWork sweeps the company's last ~3 months of interviewing emails into
+// posting's company. The agent sweeps the company's last ~3 months of interviewing emails into
 // interview-prep/<slug>/ (emails.md + attachments/). Asset capture only; global inbox-sync still
 // owns tracker status. Idempotent on interview-emails-<companyId>. Returns { jobId, slug } (or 404).
 export async function POST(_request: Request, { params }: { params: Promise<{ id: string }> }) {

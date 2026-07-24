@@ -8,7 +8,7 @@ import { ASSET_ROOT } from "@/lib/config";
 export const CLAUDE_BIN = process.env.CLAUDE_BIN || "claude";
 
 // Write (idempotently) an MCP config pointing the run at the jobhunt server, labeled "Claude Code"
-// so its activity shows up as a distinct agent in the CoWork view. Returns the file path.
+// so its activity shows up as a distinct agent in the agent view. Returns the file path.
 export function mcpConfigPath(): string {
   const root = process.cwd();
   const dataDir = path.join(root, "data");

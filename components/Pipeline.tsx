@@ -9,7 +9,7 @@ import TrackerTag from "@/components/TrackerTag";
 import { LevelChip } from "@/components/LevelLadder";
 import { DEFAULT_LEVELING_REF, hasLadder, type Leveling, type LevelingRef } from "@/lib/leveling";
 import { useApplications } from "@/hooks/useApplications";
-import { useCoWorkQueue } from "@/components/CoWorkQueueProvider";
+import { useAgentQueue } from "@/components/AgentQueueProvider";
 import { JOB_ADDED_EVENT } from "@/components/AddFitModal";
 import EmptyStateGetStarted from "@/components/EmptyStateGetStarted";
 import CompanyDrawer from "@/components/board/CompanyDrawer";
@@ -91,7 +91,7 @@ const pinnedCls = (k: string, body: boolean): string => {
 const headerStyle = (k: string): React.CSSProperties =>
   isPinned(k) ? { ...pinnedStyle(k, 30), top: 0 } : { position: "sticky", top: 0, zIndex: 25 };
 // Row actions per candidate state, PRIMARY FIRST — the first is the quick button, the rest fold
-// into a ⋯ menu. A queued row (fit_queue / tailoring) only offers Discard until CoWork writes back.
+// into a ⋯ menu. A queued row (fit_queue / tailoring) only offers Discard until the agent writes back.
 const ACTIONS_BY_STATE: Record<string, ActionKey[]> = {
   matched: ["queue-fit", "discard"], // freshly scraped, awaiting glance — same triage as `review`
   review: ["queue-fit", "discard"],
@@ -104,7 +104,7 @@ const ACTIONS_BY_STATE: Record<string, ActionKey[]> = {
   filtered: ["queue-fit", "discard"],
 };
 
-// The CoWork hand-off ("queue") actions — grouped into their own menu section (see ActionCell) so
+// The agent hand-off ("queue") actions — grouped into their own menu section (see ActionCell) so
 // you can kick off fit assessment or resume tailoring from any pre-apply row, out of sequence.
 const QUEUE_KEYS: ActionKey[] = ["queue-fit", "tailor"];
 const QUEUE_ACTIONS: { key: ActionKey; label: string }[] = [
@@ -130,12 +130,12 @@ const TONE_TEXT: Record<string, string> = {
   emerald: "text-emerald-300", sky: "text-sky-300", amber: "text-amber-300", rose: "text-rose-300",
 };
 
-// Action button presentation, looked up from a step's `actions` list. A Bot icon = CoWork does it
+// Action button presentation, looked up from a step's `actions` list. A Bot icon = the agent does it
 // (the hand-off); a trailing → (`arrow`) = the action advances the row to the next stage. Holds
 // (Apply later) and drops (Discard) carry neither.
 const ACTION_META: Record<ActionKey, { label: string; tone: "emerald" | "rose" | "sky" | "amber"; title: string; icon?: typeof Bot; arrow?: boolean }> = {
-  "queue-fit": { label: "Assess fit", tone: "sky", title: "Hand off to CoWork — assess fit → next stage", icon: Bot, arrow: true },
-  tailor: { label: "Tailor", tone: "sky", title: "Hand off to CoWork — tailor a resume → next stage", icon: Bot, arrow: true },
+  "queue-fit": { label: "Assess fit", tone: "sky", title: "Hand off to the agent — assess fit → next stage", icon: Bot, arrow: true },
+  tailor: { label: "Tailor", tone: "sky", title: "Hand off to the agent — tailor a resume → next stage", icon: Bot, arrow: true },
   apply: { label: "Mark applied", tone: "emerald", title: "Mark applied → moves to the tracker", icon: Check, arrow: true },
   discard: { label: "Discard", tone: "rose", title: "Discard — won't resurface", icon: Trash2 },
 };
@@ -302,7 +302,7 @@ function stageEmailLinks(p: FRow): { label: string; url: string; direct: boolean
 }
 
 // Default order for the Fit Assessment tab: un-queued review matches first (your triage), then
-// queued (waiting on CoWork), then assessed by score (highest first). Ascending sort.
+// queued (waiting on the agent), then assessed by score (highest first). Ascending sort.
 const fitRank = (p: FRow): number =>
   p.fitScore != null ? 1000 - p.fitScore : p.state === "review" || p.state === "matched" ? 0 : 1;
 
@@ -325,7 +325,7 @@ export default function Pipeline() {
     postings, loading, reload, setStatus, setInterviewed, setCompanyTier,
     setWatchlist, setField, renameCompany, moveJob, deleteJob,
   } = useApplications();
-  const { jobs, add, bump, redoNoteFor, isWorking, isQueued, inboxLastSynced } = useCoWorkQueue();
+  const { jobs, add, bump, redoNoteFor, isWorking, isQueued, inboxLastSynced } = useAgentQueue();
   // Moving a posting into "Applied" opens a small prompt to capture (or update) the real applied
   // date — kept distinct from the status change itself. `askAppliedDate` resolves with the chosen
   // date, or null if the user cancels (which aborts the whole move).
@@ -603,7 +603,7 @@ export default function Pipeline() {
   const rows = raw == null ? null : raw
     .filter((p) => matches(p.company))
     // Click-to-sort wins; else the per-step default — but newly-arrived rows always float to the top
-    // first (so what CoWork just added in this stage is the first thing you see), then the per-step
+    // first (so what the agent just added in this stage is the first thing you see), then the per-step
     // default (tracker = newest, Fit = un-queued review first, then queued, then assessed by score).
     .sort((a, b) => {
       // Pinned rows always lead the table — even over an explicit click-sort.
@@ -630,7 +630,7 @@ export default function Pipeline() {
     </>
   );
 
-  // `queueOnly` (the ⋯ "Queue" section) hands fit/tailor work to CoWork WITHOUT moving the posting's
+  // `queueOnly` (the ⋯ "Queue" section) hands fit/tailor work to the agent WITHOUT moving the posting's
   // stage — actions are decoupled from status tracking. The default (inline quick buttons) still
   // advances the stage.
   const act = async (id: number, action: ActionKey, queueOnly = false) => {
@@ -673,7 +673,7 @@ export default function Pipeline() {
     const d = await r.json().catch(() => ({}));
     if (d.fitAlreadyQueued) notify(`Fit assessment is already queued for ${row?.company ?? "this posting"} — skipped the duplicate.`);
     loadCounts(terms); // keep the spine badges accurate
-    if (action === "queue-fit" || action === "tailor") bump(); // handed work to CoWork — pulse the queue
+    if (action === "queue-fit" || action === "tailor") bump(); // handed work to the agent — pulse the queue
   };
 
   // Jump a posting to ANY stage, out of sequence (the ⋯ "Move to" menu — works from every stage, e.g.
@@ -947,7 +947,7 @@ export default function Pipeline() {
     await bulkPatch({ status: state, ...extra });
   };
   const bulkDiscard = () => { pendo.track("bulk_action", { action: "discard", count: selected.size, step: tab }); return bulkPatch({ status: "dismissed" }); };
-  // CoWork hand-offs enqueue jobs, so they go through the scanned endpoint (which creates the fit/
+  // The agent hand-offs enqueue jobs, so they go through the scanned endpoint (which creates the fit/
   // tailoring job); then pulse the queue.
   const bulkHandoff = async (action: "queue-fit" | "tailor") => {
     pendo.track("bulk_action", { action, count: selected.size, step: tab });
@@ -1049,7 +1049,7 @@ export default function Pipeline() {
                   </button>
                 </>
               )}
-              {/* Queue an inbox-sync job for CoWork (read Gmail → update statuses/interviews/dates).
+              {/* Queue an inbox-sync job for the agent (read Gmail → update statuses/interviews/dates).
                   Disabled while one is already outstanding so clicks don't stack duplicates. */}
               {/* Sync inbox. The subtext shows last-synced + whether daily auto-sync is configured
                   (a read-only reflection — configure it on /settings). */}
@@ -1057,7 +1057,7 @@ export default function Pipeline() {
               <button
                 onClick={() => { if (!queued) { setSyncing(true); add({ type: "inbox-sync" }); pendo.track("inbox_sync_queued"); } }}
                 disabled={queued}
-                title={queued ? "An inbox sync is already queued — run your CoWork queue" : `Queue an inbox sync for CoWork — last synced ${fmtTs(inboxLastSynced)}${dailySync ? " · daily auto-sync on" : ""}`}
+                title={queued ? "An inbox sync is already queued — run your agent queue" : `Queue an inbox sync for the agent — last synced ${fmtTs(inboxLastSynced)}${dailySync ? " · daily auto-sync on" : ""}`}
                 className="flex shrink-0 items-center gap-1.5 rounded-md px-2.5 py-1 text-zinc-300 ring-1 ring-inset ring-zinc-800 transition hover:text-zinc-100 hover:ring-zinc-700 disabled:cursor-default disabled:text-zinc-600 disabled:ring-zinc-800/60 disabled:hover:text-zinc-600"
               >
                 <Mail size={13} className={queued ? "text-zinc-600" : "text-sky-300"} />
@@ -1070,7 +1070,7 @@ export default function Pipeline() {
                       </span>
                     )}
                     {dailySync && <span className="text-zinc-700">·</span>}
-                    {queued ? "in CoWork queue" : inboxLastSynced ? `Synced ${ago(inboxLastSynced)}` : "Never synced"}
+                    {queued ? "in the agent queue" : inboxLastSynced ? `Synced ${ago(inboxLastSynced)}` : "Never synced"}
                   </span>
                 </span>
               </button>
@@ -1302,10 +1302,10 @@ function DropTailoringModal({ company, role, target, onResolve }: { company: str
         <h3 className="text-[15px] font-semibold text-zinc-100">Drop the queued tailoring job?</h3>
         <p className="mt-1.5 text-[13px] leading-relaxed text-zinc-400">
           <span className="text-zinc-200">{company}</span>{role ? <> — {role}</> : null} has a résumé-tailoring job still
-          queued (CoWork hasn&apos;t run it). Moving it to <span className="text-zinc-200">{target}</span> can drop that job.
+          queued (the agent hasn&apos;t run it). Moving it to <span className="text-zinc-200">{target}</span> can drop that job.
         </p>
         <p className="mt-2 text-[12px] leading-relaxed text-zinc-600">
-          Keep it and the job outlives the move — but when CoWork runs it, the posting moves back to <span className="text-zinc-400">Tailored</span>.
+          Keep it and the job outlives the move — but when the agent runs it, the posting moves back to <span className="text-zinc-400">Tailored</span>.
         </p>
         <div className="mt-4 flex flex-wrap justify-end gap-2">
           <button onClick={() => onResolve("cancel")} className="rounded-lg px-3 py-1.5 text-[13px] text-zinc-400 transition hover:text-zinc-200">Cancel</button>
@@ -1915,7 +1915,7 @@ function ActionCell({ actions, state, fitDone, resumeDone, onAct, onMove, onEdit
                 <button
                   key={q.key}
                   onClick={() => { onAct(q.key, true); setPos(null); }}
-                  title={`Hand off to CoWork — ${label.toLowerCase()} (doesn't change the stage)`}
+                  title={`Hand off to the agent — ${label.toLowerCase()} (doesn't change the stage)`}
                   className="flex items-center gap-1.5 whitespace-nowrap rounded-md px-2.5 py-1.5 text-left text-[13px] font-medium text-sky-300 transition hover:bg-zinc-800"
                 >
                   <Bot size={13} />{label}<ArrowRight size={13} className="ml-auto text-zinc-500" />
@@ -1943,10 +1943,10 @@ function ActionCell({ actions, state, fitDone, resumeDone, onAct, onMove, onEdit
   );
 }
 
-// A quiet "waiting on CoWork" status. How to actually run the queue lives once in the floating
+// A quiet "waiting on the agent" status. How to actually run the queue lives once in the floating
 // queue panel (its command center), so the rows stay uncluttered.
 // "NEW" — a row that entered its current stage within the last day (see isNewRow). Draws the eye to
-// what CoWork just added to this stage; the row also floats to the top and carries a faint tint.
+// what the agent just added to this stage; the row also floats to the top and carries a faint tint.
 function NewTag() {
   return (
     <span className="inline-flex shrink-0 items-center rounded bg-emerald-500/20 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-emerald-300" title="Added to this stage in the last day">
