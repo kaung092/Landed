@@ -14,8 +14,8 @@ type Profile = {
   notes: string;
 };
 
-// Editable search identity — the source of truth for what counts as a fit. Read by CoWork's scan
-// second pass and fit's leveling (via getContext). Chrome-less: the settings page owns the card.
+// Editable search identity — the source of truth for what counts as a fit. Read by the agents' scan
+// pass and fit leveling (via getContext). Chrome-less: the settings page owns the card.
 export default function ProfilePanel() {
   const [p, setP] = useState<Profile | null>(null);
 
@@ -42,7 +42,7 @@ export default function ProfilePanel() {
           <PreviewItem label="Target-level rule" value={p.levelRule} full />
           <ChipsPreview label="Include disciplines" tone="emerald" items={p.includeDisciplines} />
           <ChipsPreview label="Exclude disciplines" tone="rose" items={p.excludeDisciplines} />
-          <PreviewItem label="Notes for CoWork" value={p.notes} full />
+          <PreviewItem label="Notes for agents" value={p.notes} full />
         </dl>
       )}
       renderEdit={() => (
@@ -52,7 +52,7 @@ export default function ProfilePanel() {
           <Field label="Target-level rule" value={p.levelRule} onCommit={(v) => save({ levelRule: v })} full />
           <Tags label="Include disciplines" tone="emerald" value={p.includeDisciplines} onCommit={(a) => save({ includeDisciplines: a })} />
           <Tags label="Exclude disciplines" tone="rose" value={p.excludeDisciplines} onCommit={(a) => save({ excludeDisciplines: a })} />
-          <Field label="Notes for CoWork" value={p.notes} onCommit={(v) => save({ notes: v })} full placeholder="anything else that should shape the match…" />
+          <Field label="Notes for agents" value={p.notes} onCommit={(v) => save({ notes: v })} full placeholder="anything else that should shape the match…" />
         </div>
       )}
     />
