@@ -10,7 +10,8 @@ export type Profile = {
   includeDisciplines: string[]; // SWE disciplines that count as a match
   excludeDisciplines: string[]; // disciplines to drop even if the title says "engineer"
   locations: string; // where I'll work
-  notes: string; // freeform extra context for the agent
+  fitGuidance: string; // how the agent should assess fit (honored by fit.md)
+  tailorGuidance: string; // how the agent should tailor the resume (honored by tailoring.md)
 };
 
 const PROFILE_KEY = "profile";
@@ -25,7 +26,10 @@ export const DEFAULT_PROFILE: Profile = {
   includeDisciplines: ["backend", "fullstack", "platform", "infrastructure", "distributed systems"],
   excludeDisciplines: ["hardware / embedded", "IT / sysadmin"],
   locations: "Remote (US)",
-  notes: "",
+  fitGuidance:
+    "Weight leveling match and hard-gap coverage most; the score is secondary. Be honest — a weak or partial match is a 'low', not a stretch. Favor roles at or near my level and flag big level stretches. Call out any hard must-have I clearly lack.",
+  tailorGuidance:
+    "Mirror the JD's exact terms — but only what I can truthfully claim; never invent experience. Lead with my most relevant bullets, keep them concrete and metric-driven, and address the fit record's hard gaps honestly. Keep the resume ATS-clean: standard sections, no tables or graphics.",
 };
 
 export function getProfile(): Profile {

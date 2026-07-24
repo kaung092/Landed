@@ -15,6 +15,9 @@ tailor, apply as-is, or skip.
      it's a cheap idempotent write. It's a **separate** call from `submitJobResult`; don't try to
      pass the JD back inside the fit result.
 2. My **base resume**: `resume/resume-ref.docx`.
+3. My **profile** from `getContext` — read my **`fitGuidance`** (how I want fit judged: what to
+   weight, how strict to be) and honor it throughout. It also carries my level baseline + rule for
+   the leveling call below. (If `fitGuidance` is blank, use your own judgement.)
 
 Judge gaps and level against what you actually know about me, not just keyword overlap.
 

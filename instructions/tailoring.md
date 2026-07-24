@@ -10,9 +10,9 @@ experience to mirror the JD and clear ATS — **never invent** experience.
    posting's `id` — you echo it back in the result.
 2. My **base resume**: `resume/resume-ref.docx` — the ONLY source. Never edit it; copy from it.
 3. The posting's prior **fit** record if present (gaps + leveling call) — use it to steer the edits.
-4. My **profile** from `getContext` — honor my **notes for agents** (tone, emphasis, wording,
-   things to include or avoid) when tailoring. This is where I leave standing guidance for you;
-   there is no per-job note field, so always check it.
+4. My **profile** from `getContext` — honor my **`tailorGuidance`** (how I want résumés tailored:
+   tone, emphasis, wording, things to include or avoid). This is my standing guidance for tailoring;
+   there is no per-job note field, so always check it. (If it's blank, use your own judgement.)
 
 ## Steps (per posting) — do ALL of these. None are optional.
 

@@ -1,5 +1,6 @@
-import { UserCog, Gauge, FileText } from "lucide-react";
+import { UserCog, Gauge, FileText, Bot } from "lucide-react";
 import ProfilePanel from "@/components/ProfilePanel";
+import AgentGuidancePanel from "@/components/AgentGuidancePanel";
 import LevelingRefEditor from "@/components/settings/LevelingRefEditor";
 import ResumeUpload from "@/components/settings/ResumeUpload";
 import SettingsCard from "@/components/settings/SettingsCard";
@@ -25,6 +26,15 @@ export default function ProfilePage() {
             description="What the agents use to judge fit and to filter which jobs a scan surfaces — your level, disciplines, and locations. Most fields are freeform text, so describe yourself in plain words."
           >
             <ProfilePanel />
+          </SettingsCard>
+
+          <SettingsCard
+            icon={<Bot size={17} />}
+            accent="sky"
+            title="Agent guidance"
+            description="How the agents assess fit and tailor your résumé — standing guidance both playbooks honor. Defaults are sensible; edit to steer them, or blank a field to leave it to the agent."
+          >
+            <AgentGuidancePanel />
           </SettingsCard>
 
           <SettingsCard
