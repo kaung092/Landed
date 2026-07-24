@@ -2,8 +2,16 @@
 
 import { useState } from "react";
 import { Sparkles, X, Loader2 } from "lucide-react";
-import { ago } from "@/lib/format";
 import { useAgentQueue } from "@/components/AgentQueueProvider";
+
+// Consistent hour/day relative time for the "Scanned" column (avoids ago()'s "just now" / minutes /
+// absolute-date mix): "<1h ago" · "5h ago" · "3d ago".
+function scannedAgo(iso: string): string {
+  const h = Math.floor(Math.max(0, Date.now() - new Date(iso).getTime()) / 3_600_000);
+  if (h < 1) return "<1h ago";
+  if (h < 24) return `${h}h ago`;
+  return `${Math.floor(h / 24)}d ago`;
+}
 
 // A posting the watchlist scan surfaced and that's awaiting your triage (glance → review/matched).
 export type Scanned = { id: number; company: string; title: string; location: string | null; scannedAt: string };
@@ -112,7 +120,7 @@ export default function ScanResults({ rows, reload }: { rows: Scanned[] | null; 
                 <td className="py-2 pr-4 align-middle text-zinc-300">{r.title}</td>
                 <td className="py-2 pr-4 align-middle text-zinc-400">{r.location ?? "—"}</td>
                 <td className="py-2 pr-4 align-middle text-zinc-400">{levelFromTitle(r.title)}</td>
-                <td className="py-2 pr-4 align-middle text-zinc-500" title={r.scannedAt}>{ago(r.scannedAt)}</td>
+                <td className="py-2 pr-4 align-middle text-zinc-500" title={r.scannedAt}>{scannedAgo(r.scannedAt)}</td>
                 <td className="py-2 align-middle text-right">
                   <div className="inline-flex items-center gap-1">
                     <button
