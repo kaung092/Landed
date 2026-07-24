@@ -334,6 +334,7 @@ function connection() {
     ["comments", "comments TEXT"],
     ["comp", "comp TEXT"], // interview comp-structure intel (markdown)
     ["team_notes", "team_notes TEXT"], // team / product / work intel (markdown)
+    ["posted_at", "posted_at TEXT"], // ATS posted/published date (Ashby publishedAt / Greenhouse updated_at), when available
   ] as const) {
     if (!candCols.has(name)) sqlite.exec(`ALTER TABLE postings ADD COLUMN ${ddl}`);
   }

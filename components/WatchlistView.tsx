@@ -22,7 +22,7 @@ export default function WatchlistView() {
     fetch("/api/scanned?state=review,matched")
       .then((r) => r.json())
       .then((d) => setScanRows((d.postings ?? []).map((p: Scanned) => ({
-        id: p.id, company: p.company, title: p.title, location: p.location, scannedAt: p.scannedAt,
+        id: p.id, company: p.company, title: p.title, location: p.location, scannedAt: p.scannedAt, postedAt: p.postedAt ?? null,
       }))))
       .catch(() => setScanRows([]));
   }, []);

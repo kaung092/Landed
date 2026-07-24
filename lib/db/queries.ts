@@ -562,6 +562,7 @@ export type ScannedView = {
   id: number; company: string; companyId: number; atsId: string | null; title: string;
   location: string | null; url: string | null; department: string | null;
   verdict: string; reason: string | null; state: string; scannedAt: string; updatedAt?: string | null;
+  postedAt?: string | null;
   fitScore?: number | null; fit?: FitAssessment; resumeDir?: string | null; leveling?: Leveling;
   redoLog?: RedoTurn[]; comments?: Comment[]; pinned?: boolean;
 };
@@ -618,7 +619,7 @@ export function listScannedPostings(f: { company?: string; state?: string } = {}
       atsId: postings.atsId, title: postings.title, location: postings.location,
       url: postings.url, department: postings.department, verdict: postings.verdict,
       reason: postings.reason, state: postings.state, scannedAt: postings.scannedAt,
-      updatedAt: postings.updatedAt,
+      updatedAt: postings.updatedAt, postedAt: postings.postedAt,
       fitScore: postings.fitScore, fitDetail: postings.fitDetail, resumeDir: postings.resumeDir,
       redoLog: postings.redoLog, comments: postings.comments, leveling: companies.leveling,
       pinned: postings.pinned,

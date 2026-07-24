@@ -334,6 +334,7 @@ export const postings = sqliteTable("postings", {
   discoveredAt: text("discovered_at"),
   appliedDate: text("applied_date"),
   updatedAt: text("updated_at"),
+  postedAt: text("posted_at"), // ATS posted/published date (from the scan), when available
 });
 
 // ── Fit Lab ────────────────────────────────────────────────────────────────────────────────

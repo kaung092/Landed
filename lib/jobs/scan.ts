@@ -305,10 +305,10 @@ function persistScan(companyId: number, verdicts: { j: ScannedJob; reason: ScanR
       const verdict = (reason === "kept" ? "kept" : "dropped") as "kept" | "dropped";
       const reasonVal = reason === "kept" ? null : reason;
       tx.insert(postings)
-        .values({ companyId, atsId: j.atsId, title: j.title, location: j.location, url: j.url, department: j.department, verdict, reason: reasonVal, state, scannedAt: at })
+        .values({ companyId, atsId: j.atsId, title: j.title, location: j.location, url: j.url, department: j.department, verdict, reason: reasonVal, state, scannedAt: at, postedAt: j.updatedAt })
         .onConflictDoUpdate({
           target: [postings.companyId, postings.atsId],
-          set: { title: j.title, location: j.location, url: j.url, department: j.department, verdict, reason: reasonVal, state, scannedAt: at },
+          set: { title: j.title, location: j.location, url: j.url, department: j.department, verdict, reason: reasonVal, state, scannedAt: at, postedAt: j.updatedAt },
         })
         .run();
     }

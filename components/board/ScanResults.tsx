@@ -14,7 +14,12 @@ function scannedAgo(iso: string): string {
 }
 
 // A posting the watchlist scan surfaced and that's awaiting your triage (glance → review/matched).
-export type Scanned = { id: number; company: string; title: string; location: string | null; scannedAt: string };
+export type Scanned = { id: number; company: string; title: string; location: string | null; scannedAt: string; postedAt: string | null };
+
+// Short posted date (e.g. "Jul 20") — the ATS's published/updated date, when the scan captured one.
+function fmtPosted(iso: string): string {
+  return new Date(iso).toLocaleDateString(undefined, { month: "short", day: "numeric" });
+}
 
 // Pre-fit postings have no computed level, so infer a seniority from the title — a rough signal for
 // deciding what's worth assessing. "—" when the title gives nothing away.
@@ -106,6 +111,7 @@ export default function ScanResults({ rows, reload }: { rows: Scanned[] | null; 
               <th className="pb-2 pr-4">Title</th>
               <th className="pb-2 pr-4">Location</th>
               <th className="pb-2 pr-4">Level</th>
+              <th className="pb-2 pr-4">Posted</th>
               <th className="pb-2 pr-4">Scanned</th>
               <th className="pb-2 text-right">Action</th>
             </tr>
@@ -120,6 +126,7 @@ export default function ScanResults({ rows, reload }: { rows: Scanned[] | null; 
                 <td className="py-2 pr-4 align-middle text-zinc-300">{r.title}</td>
                 <td className="py-2 pr-4 align-middle text-zinc-400">{r.location ?? "—"}</td>
                 <td className="py-2 pr-4 align-middle text-zinc-400">{levelFromTitle(r.title)}</td>
+                <td className="py-2 pr-4 align-middle text-zinc-400" title={r.postedAt ?? undefined}>{r.postedAt ? fmtPosted(r.postedAt) : "—"}</td>
                 <td className="py-2 pr-4 align-middle text-zinc-500" title={r.scannedAt}>{scannedAgo(r.scannedAt)}</td>
                 <td className="py-2 align-middle text-right">
                   <div className="inline-flex items-center gap-1">
