@@ -3,7 +3,8 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { Bot, ChevronRight, Loader2, Play, Square, Send, Wrench, CheckCircle2, AlertCircle, Eraser, BookOpen, X } from "lucide-react";
+import { Bot, ChevronRight, Loader2, Play, Square, Send, Wrench, CheckCircle2, AlertCircle, Eraser, BookOpen, X, Trash2 } from "lucide-react";
+import { useAgentQueue } from "@/components/AgentQueueProvider";
 import { agentColor } from "@/components/jobMeta";
 import { ago } from "@/lib/format";
 import { personaFor } from "@/lib/agents/personas";
@@ -169,6 +170,7 @@ function AgentCard({ meta, backlog, open, onToggle, onInstructions, disabled, di
   disabled?: boolean; disabledReason?: string;
 }) {
   const { get, clear, setAutoDrain } = useAgentChats();
+  const { clearQueued } = useAgentQueue();
   const { running, contextTokens, model, entries, sessionId, autoDrain } = get(meta.type);
   const hasSession = !!sessionId || entries.length > 0 || !!contextTokens;
   const auto = autoDrain !== false; // undefined → armed (default on)
@@ -234,6 +236,15 @@ function AgentCard({ meta, backlog, open, onToggle, onInstructions, disabled, di
           <aside className="hidden w-80 shrink-0 flex-col border-l border-zinc-800/60 md:flex">
             <div className="flex shrink-0 items-center gap-2 border-b border-zinc-800/60 px-3 py-2">
               <p className="text-[10px] font-semibold uppercase tracking-wider text-zinc-500">Queue</p>
+              {backlog > 0 && (
+                <button
+                  onClick={() => { if (window.confirm(`Clear ${backlog} queued job${backlog === 1 ? "" : "s"} for this agent? In-flight jobs keep running.`)) clearQueued(meta.type); }}
+                  title={`Clear ${backlog} queued job${backlog === 1 ? "" : "s"}`}
+                  className="ml-auto inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-medium text-zinc-500 transition hover:bg-zinc-800 hover:text-rose-300"
+                >
+                  <Trash2 size={11} /> Clear
+                </button>
+              )}
             </div>
             <div className="min-h-0 flex-1">
               <AgentQueue type={meta.type} />

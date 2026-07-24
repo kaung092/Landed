@@ -1,10 +1,9 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Bot, Loader2, ChevronRight, FileText, AlertTriangle, RotateCcw, Trash2 } from "lucide-react";
+import { Bot, Loader2, ChevronRight, FileText, AlertTriangle, RotateCcw } from "lucide-react";
 import { ago } from "@/lib/format";
 import { usePersistentState } from "@/hooks/usePersistentState";
-import { useAgentQueue } from "@/components/AgentQueueProvider";
 import AgentsLive from "@/components/AgentsLive";
 import AgentMonitor, { type MonitorJob } from "@/components/agents/AgentMonitor";
 import Playbook from "@/components/agents/Playbook";
@@ -92,13 +91,6 @@ export default function AgentsView() {
     await fetch(`/api/jobs/${encodeURIComponent(id)}?action=retry`, { method: "POST" }).catch(() => {});
     load();
   };
-  const { clearQueued } = useAgentQueue();
-  const clearQueue = async () => {
-    if (queued === 0) return;
-    if (!window.confirm(`Clear the work queue? This drops ${queued} queued job${queued === 1 ? "" : "s"}. In-flight jobs keep running.`)) return;
-    await clearQueued();
-    load();
-  };
 
   // Guides = every instruction file that isn't a job's own playbook (README, non-agent playbooks).
   // (Per-agent playbooks now live in each agent's header in the Chat view.)
@@ -180,17 +172,6 @@ export default function AgentsView() {
         {activeTab === "monitor" && (
           <div className="mx-auto max-w-5xl space-y-6">
             {/* Health strip — the at-a-glance state of the agent fleet + queue. */}
-            <div className="flex items-center justify-between">
-              <h2 className="text-[13px] font-semibold uppercase tracking-wider text-zinc-400">Queue health</h2>
-              <button
-                onClick={clearQueue}
-                disabled={queued === 0}
-                title={queued === 0 ? "The queue is empty" : `Drop all ${queued} queued jobs (in-flight jobs keep running)`}
-                className="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-[12px] font-medium text-zinc-300 ring-1 ring-inset ring-zinc-700 transition hover:bg-zinc-800 hover:text-rose-300 disabled:cursor-not-allowed disabled:text-zinc-600 disabled:ring-zinc-800 disabled:hover:bg-transparent disabled:hover:text-zinc-600"
-              >
-                <Trash2 size={13} /> Clear queue{queued > 0 ? ` (${queued})` : ""}
-              </button>
-            </div>
             <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
               <StatCard label="Queued" value={queued} tone="zinc" />
               <StatCard label="In flight" value={wip} tone="sky" />
