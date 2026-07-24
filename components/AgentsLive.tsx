@@ -27,8 +27,6 @@ export default function AgentsLive() {
   // Which agents count as "in progress" (queued OR in-flight). Poll-derived so it only changes on a
   // refresh — clearing a queue empties the badge now but doesn't re-partition until the next poll.
   const [activeSet, setActiveSet] = useState<Set<string>>(new Set());
-  // Only in-progress agents show by default; the rest hide behind "See all agents".
-  const [showAll, setShowAll] = useState(false);
   // The agent whose instructions (playbook) are open in the side drawer, or null.
   const [instr, setInstr] = useState<{ title: string; type: string; playbook: string } | null>(null);
   // Inbox-sync can't do anything until Gmail is wired, so we grey its card out. Start `true` to avoid
@@ -109,26 +107,18 @@ export default function AgentsLive() {
         <div className="rounded-2xl border border-dashed border-zinc-700 px-4 py-6 text-center text-[13px] text-zinc-400">loading agents…</div>
       ) : (
         <div className="space-y-2">
-          {active.length > 0 ? (
+          {/* In-progress agents grouped at the top; every other agent is shown below (nothing hidden). */}
+          {active.length > 0 && (
             <>
               <p className="px-1 text-[11px] font-semibold uppercase tracking-wider text-amber-300/80">Work in progress</p>
               {active.map(card)}
             </>
-          ) : (
-            <p className="px-1 py-1 text-[12px] text-zinc-500">No agents are working right now.</p>
           )}
           {rest.length > 0 && (
-            <div className="pt-1">
-              <button
-                onClick={() => setShowAll((v) => !v)}
-                className="flex w-full items-center gap-2 rounded-lg px-1 py-1.5 text-left text-[12px] font-semibold uppercase tracking-wider text-zinc-500 transition hover:text-zinc-300"
-              >
-                <ChevronRight size={13} className={`transition-transform duration-200 ${showAll ? "rotate-90" : ""}`} />
-                {showAll ? "Hide" : "See all agents"}
-                <span className="rounded-full bg-zinc-800 px-1.5 py-0.5 text-[10px] font-medium tabular-nums text-zinc-400">{rest.length}</span>
-              </button>
-              {showAll && <div className="mt-2 space-y-2">{rest.map(card)}</div>}
-            </div>
+            <>
+              {active.length > 0 && <p className="px-1 pt-2 text-[11px] font-semibold uppercase tracking-wider text-zinc-500">Other agents</p>}
+              {rest.map(card)}
+            </>
           )}
         </div>
       )}
