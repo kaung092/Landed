@@ -11,6 +11,7 @@ import { DEFAULT_LEVELING_REF, hasLadder, type Leveling, type LevelingRef } from
 import { useApplications } from "@/hooks/useApplications";
 import { useCoWorkQueue } from "@/components/CoWorkQueueProvider";
 import { JOB_ADDED_EVENT } from "@/components/AddFitModal";
+import EmptyStateGetStarted from "@/components/EmptyStateGetStarted";
 import CompanyDrawer from "@/components/board/CompanyDrawer";
 import ResumeDiffModal from "@/components/ResumeDiff";
 import PeerCompModal from "@/components/PeerCompModal";
@@ -1116,7 +1117,7 @@ export default function Pipeline() {
             {tableLoading ? (
               <div className="flex items-center gap-2 py-8 text-[13px] text-zinc-500"><Loader2 size={14} className="animate-spin" /> loading…</div>
             ) : empty ? (
-              <div className="rounded-xl border border-dashed border-zinc-800/80 py-10 text-center text-[13px] text-zinc-600">nothing in this step</div>
+              <EmptyStateGetStarted />
             ) : (
               <table className="border-separate border-spacing-0 text-left" style={{ tableLayout: "fixed", width: fcols.reduce((s, k) => s + colW(k), 0) }}>
                 <thead>

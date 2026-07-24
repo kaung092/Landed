@@ -4,22 +4,24 @@ import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { CheckCircle2, Circle, X, ArrowRight, Rocket, FilePlus2 } from "lucide-react";
 import { useAddJob } from "@/components/AddJobProvider";
-import { onboardingComplete, type OnboardingStatus } from "@/lib/onboarding-shared";
+import { onboardingAllDone, OPEN_GETSTARTED_EVENT, type OnboardingStatus } from "@/lib/onboarding-shared";
 
 const DISMISS_KEY = "landed.getstarted.dismissed";
 
 type Step = { key: keyof OnboardingStatus; label: string; href?: string; action?: "add"; optional?: boolean };
 const STEPS: Step[] = [
   { key: "profile", label: "Set your search profile", href: "/profile" },
+  { key: "assetFolder", label: "Set up your asset folder", href: "/settings" },
   { key: "resume", label: "Upload your base résumé", href: "/profile" },
   { key: "firstJob", label: "Add your first job — paste a JD", action: "add" },
   { key: "gmail", label: "Connect Gmail", href: "/settings", optional: true },
   { key: "agent", label: "Run the CoWork agent", href: "/agents", optional: true },
 ];
 
-// The first-run "Get started" card on Home. Each step reflects real state (see /api/onboarding), so
-// it ticks off as you actually set the app up. Dismissible; auto-hides once the three essentials
-// (profile · résumé · first job) are done. Fixed bottom-left so it clears the floating queue.
+// The first-run "Get started" card. Each step reflects real state (see /api/onboarding), so it ticks
+// off as you actually set the app up. Shown on every page (mounted in the layout) until all steps are
+// done or you dismiss it; the empty-table "Get started" button re-opens it. Fixed bottom-left so it
+// clears the floating queue.
 export default function GetStartedChecklist() {
   const { openAddJob } = useAddJob();
   const [status, setStatus] = useState<OnboardingStatus | null>(null);
@@ -37,14 +39,21 @@ export default function GetStartedChecklist() {
     load();
     // Re-check when a job is added here, or when returning to the tab after setting things up elsewhere.
     const onChange = () => load();
+    // The empty-table button asks to re-open the card — un-dismiss (progress is always live) + refresh.
+    const onOpen = () => { try { localStorage.removeItem(DISMISS_KEY); } catch { /* quota */ } setDismissed(false); load(); };
     window.addEventListener("landed:job-added", onChange);
     window.addEventListener("focus", onChange);
-    return () => { window.removeEventListener("landed:job-added", onChange); window.removeEventListener("focus", onChange); };
+    window.addEventListener(OPEN_GETSTARTED_EVENT, onOpen);
+    return () => {
+      window.removeEventListener("landed:job-added", onChange);
+      window.removeEventListener("focus", onChange);
+      window.removeEventListener(OPEN_GETSTARTED_EVENT, onOpen);
+    };
   }, [load]);
 
   const dismiss = () => { try { localStorage.setItem(DISMISS_KEY, "1"); } catch { /* quota */ } setDismissed(true); };
 
-  if (dismissed || !status || onboardingComplete(status)) return null;
+  if (dismissed || !status || onboardingAllDone(status)) return null;
 
   const doneCount = STEPS.filter((s) => status[s.key]).length;
 

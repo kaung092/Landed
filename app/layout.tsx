@@ -8,6 +8,7 @@ import CoWorkQueueProvider from "@/components/CoWorkQueueProvider";
 import AgentChatsProvider from "@/components/AgentChatsProvider";
 import AddJobProvider from "@/components/AddJobProvider";
 import FloatingQueue from "@/components/FloatingQueue";
+import GetStartedChecklist from "@/components/GetStartedChecklist";
 import PendoInitializer from "@/components/PendoInitializer";
 
 const geistSans = Geist({
@@ -58,6 +59,7 @@ z=e.getElementsByTagName(n)[0];z.parentNode.insertBefore(y,z);}})(window,documen
               <NavRail />
               <div className="flex-1 overflow-hidden"><PageFrame>{children}</PageFrame></div>
               <FloatingQueue />
+              <GetStartedChecklist />
             </AddJobProvider>
           </AgentChatsProvider>
         </CoWorkQueueProvider>
