@@ -11,11 +11,9 @@ import { useAgentChats, type Entry } from "@/components/AgentChatsProvider";
 import AgentQueue from "@/components/AgentQueue";
 import Playbook from "@/components/agents/Playbook";
 
-// `core` (the everyday paste→fit→tailor + inbox loop) comes from the job registry (JobDef.core) via
-// /api/jobs, so adding a core agent there surfaces it here — no list to keep in sync. Core agents
-// stay expanded up top; the rest tuck under "Advanced" — collapsed, but never hidden (each keeps its
-// own "Work queue" drain button, so a rarely-used queue can still be run).
-type JobTypeMeta = { type: string; title: string; description: string; playbook: string; core?: boolean };
+// Agents with queued work ("Work in progress") show up top; the idle rest hide behind "See all
+// agents" — so the page reflects what's actually happening rather than a fixed grouping.
+type JobTypeMeta = { type: string; title: string; description: string; playbook: string };
 type JobView = { type: string; status: string };
 
 // The Claude-Code-backed Agents section: one agent per job type, each a live streaming conversation.
@@ -25,10 +23,19 @@ export default function AgentsLive() {
   const { open, setOpen } = useAgentChats();
   const [types, setTypes] = useState<JobTypeMeta[]>([]);
   const [backlog, setBacklog] = useState<Record<string, number>>({});
-  // Advanced (supporting) agents are collapsed by default so the page reads as the 3 core agents.
-  const [showAdvanced, setShowAdvanced] = useState(false);
+  // Only agents with queued work show by default; the rest hide behind "See all agents".
+  const [showAll, setShowAll] = useState(false);
   // The agent whose instructions (playbook) are open in the side drawer, or null.
   const [instr, setInstr] = useState<{ title: string; type: string; playbook: string } | null>(null);
+  // Inbox-sync can't do anything until Gmail is wired, so we grey its card out. Start `true` to avoid
+  // a disabled flash before the check resolves; re-check on focus (so connecting Gmail elsewhere frees it).
+  const [gmailReady, setGmailReady] = useState(true);
+  useEffect(() => {
+    const check = () => fetch("/api/gmail").then((r) => r.json()).then((d) => setGmailReady(!!d.connected)).catch(() => {});
+    check();
+    window.addEventListener("focus", check);
+    return () => window.removeEventListener("focus", check);
+  }, []);
 
   const apply = useCallback((d: { types?: JobTypeMeta[]; jobs?: JobView[] }) => {
     setTypes(d.types ?? []);
@@ -45,24 +52,28 @@ export default function AgentsLive() {
     return () => { alive = false; clearInterval(iv); };
   }, [apply]);
 
-  // Partition into the everyday "core" agents and the rest; recompute only when the data changes,
-  // not on unrelated re-renders (expand/collapse, playbook drawer).
-  const { core, advanced, advQueued } = useMemo(() => {
-    const core = types.filter((t) => t.core);
-    const advanced = types.filter((t) => !t.core);
-    return { core, advanced, advQueued: advanced.reduce((n, t) => n + (backlog[t.type] ?? 0), 0) };
-  }, [types, backlog]);
+  // Surface the agents that have work in progress (a queued backlog); the idle rest hide behind
+  // "See all agents". Recompute only when the data changes, not on unrelated re-renders.
+  const { active, rest } = useMemo(() => ({
+    active: types.filter((t) => (backlog[t.type] ?? 0) > 0),
+    rest: types.filter((t) => (backlog[t.type] ?? 0) === 0),
+  }), [types, backlog]);
 
-  const card = (t: JobTypeMeta) => (
-    <AgentCard
-      key={t.type}
-      meta={t}
-      backlog={backlog[t.type] ?? 0}
-      open={open === t.type}
-      onToggle={() => setOpen(open === t.type ? null : t.type)}
-      onInstructions={() => setInstr({ title: personaFor(t.type), type: t.type, playbook: t.playbook })}
-    />
-  );
+  const card = (t: JobTypeMeta) => {
+    const blocked = t.type === "inbox-sync" && !gmailReady;
+    return (
+      <AgentCard
+        key={t.type}
+        meta={t}
+        backlog={backlog[t.type] ?? 0}
+        open={open === t.type}
+        onToggle={() => setOpen(open === t.type ? null : t.type)}
+        onInstructions={() => setInstr({ title: personaFor(t.type), type: t.type, playbook: t.playbook })}
+        disabled={blocked}
+        disabledReason={blocked ? "Connect Gmail on the Settings page to sync your inbox." : undefined}
+      />
+    );
+  };
 
   return (
     <section>
@@ -78,22 +89,25 @@ export default function AgentsLive() {
         <div className="rounded-2xl border border-dashed border-zinc-700 px-4 py-6 text-center text-[13px] text-zinc-400">loading agents…</div>
       ) : (
         <div className="space-y-2">
-          {core.map(card)}
-          {advanced.length > 0 && (
+          {active.length > 0 ? (
+            <>
+              <p className="px-1 text-[11px] font-semibold uppercase tracking-wider text-amber-300/80">Work in progress</p>
+              {active.map(card)}
+            </>
+          ) : (
+            <p className="px-1 py-1 text-[12px] text-zinc-500">No agents are working right now.</p>
+          )}
+          {rest.length > 0 && (
             <div className="pt-1">
               <button
-                onClick={() => setShowAdvanced((v) => !v)}
+                onClick={() => setShowAll((v) => !v)}
                 className="flex w-full items-center gap-2 rounded-lg px-1 py-1.5 text-left text-[12px] font-semibold uppercase tracking-wider text-zinc-500 transition hover:text-zinc-300"
               >
-                <ChevronRight size={13} className={`transition-transform duration-200 ${showAdvanced ? "rotate-90" : ""}`} />
-                Advanced agents
-                <span className="rounded-full bg-zinc-800 px-1.5 py-0.5 text-[10px] font-medium tabular-nums text-zinc-400">{advanced.length}</span>
-                {/* Surface queued work even while collapsed, so a rarely-run agent's backlog isn't missed. */}
-                {advQueued > 0 && (
-                  <span className="rounded-full bg-amber-500/20 px-1.5 py-0.5 text-[10px] font-bold tabular-nums text-amber-200">{advQueued} queued</span>
-                )}
+                <ChevronRight size={13} className={`transition-transform duration-200 ${showAll ? "rotate-90" : ""}`} />
+                {showAll ? "Hide" : "See all agents"}
+                <span className="rounded-full bg-zinc-800 px-1.5 py-0.5 text-[10px] font-medium tabular-nums text-zinc-400">{rest.length}</span>
               </button>
-              {showAdvanced && <div className="mt-2 space-y-2">{advanced.map(card)}</div>}
+              {showAll && <div className="mt-2 space-y-2">{rest.map(card)}</div>}
             </div>
           )}
         </div>
@@ -150,17 +164,21 @@ function ContextMeter({ tokens, model }: { tokens?: number; model?: string }) {
   );
 }
 
-function AgentCard({ meta, backlog, open, onToggle, onInstructions }: {
+function AgentCard({ meta, backlog, open, onToggle, onInstructions, disabled, disabledReason }: {
   meta: JobTypeMeta; backlog: number; open: boolean; onToggle: () => void; onInstructions: () => void;
+  disabled?: boolean; disabledReason?: string;
 }) {
   const { get, clear, setAutoDrain } = useAgentChats();
   const { running, contextTokens, model, entries, sessionId, autoDrain } = get(meta.type);
   const hasSession = !!sessionId || entries.length > 0 || !!contextTokens;
   const auto = autoDrain !== false; // undefined → armed (default on)
   return (
-    <div className="overflow-hidden rounded-2xl border border-zinc-800 bg-zinc-900/30">
+    <div
+      title={disabled ? disabledReason : undefined}
+      className={`overflow-hidden rounded-2xl border border-zinc-800 bg-zinc-900/30 ${disabled ? "opacity-50" : ""}`}
+    >
       <div className="flex items-center">
-        <button onClick={onToggle} className="flex min-w-0 flex-1 items-center gap-3 px-4 py-3 text-left transition hover:bg-zinc-900/50">
+        <button onClick={onToggle} disabled={disabled} className="flex min-w-0 flex-1 items-center gap-3 px-4 py-3 text-left transition hover:bg-zinc-900/50 disabled:cursor-not-allowed disabled:hover:bg-transparent">
           <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-zinc-800"><Bot size={16} className={agentColor(meta.type)} /></span>
           <div className="min-w-0 flex-1">
             <p className="flex items-center gap-2 text-sm font-medium">
@@ -189,7 +207,7 @@ function AgentCard({ meta, backlog, open, onToggle, onInstructions }: {
           </button>
         </div>
         {/* Drain (or Stop) the queue right from the header — no need to expand the card first. */}
-        <div className="shrink-0 pr-2"><WorkQueueButton type={meta.type} /></div>
+        <div className="shrink-0 pr-2"><WorkQueueButton type={meta.type} disabled={disabled} /></div>
         {/* Each agent's operating manual, one click from where you talk to it. */}
         <button
           onClick={onInstructions}
@@ -201,8 +219,9 @@ function AgentCard({ meta, backlog, open, onToggle, onInstructions }: {
         {/* Collapse/expand chevron — pinned to the far right end of the header. */}
         <button
           onClick={onToggle}
+          disabled={disabled}
           title={open ? "Collapse" : "Expand"}
-          className="mr-2 ml-1 shrink-0 rounded p-1 text-zinc-500 transition hover:bg-zinc-800 hover:text-zinc-200"
+          className="mr-2 ml-1 shrink-0 rounded p-1 text-zinc-500 transition hover:bg-zinc-800 hover:text-zinc-200 disabled:cursor-not-allowed disabled:hover:bg-transparent"
         >
           <ChevronRight size={16} className={`transition ${open ? "rotate-90" : ""}`} />
         </button>
@@ -250,9 +269,15 @@ function AutoDrainToggle({ on, onChange }: { on: boolean; onChange: (v: boolean)
 
 // Start/stop the queue drain — lives in the Queue panel (it acts on the queue). Toggles to Stop
 // while a run is streaming.
-function WorkQueueButton({ type }: { type: string }) {
+function WorkQueueButton({ type, disabled }: { type: string; disabled?: boolean }) {
   const { get, start, stop } = useAgentChats();
   const { running } = get(type);
+  if (disabled)
+    return (
+      <button disabled className="inline-flex cursor-not-allowed items-center gap-1 rounded-lg bg-zinc-800 px-2 py-1 text-[11px] font-medium text-zinc-500">
+        <Play size={11} /> Work queue
+      </button>
+    );
   return running ? (
     <button onClick={() => stop(type)} className="inline-flex items-center gap-1 rounded-lg bg-rose-600 px-2 py-1 text-[11px] font-medium text-white transition hover:bg-rose-500">
       <Square size={11} /> Stop

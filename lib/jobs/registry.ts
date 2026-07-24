@@ -331,7 +331,6 @@ export const JOB_DEFS: Record<JobType, JobDef> = {
     title: "Assess Job Fit",
     description: "Score fit + draft a tailoring brief for discovered postings.",
     playbook: "fit.md",
-    core: true,
     buildTask: () => `Assess fit for the postings in this job using my base resume; write the result per fit.md.`,
     ingest: ingestFit,
   },
@@ -350,7 +349,6 @@ export const JOB_DEFS: Record<JobType, JobDef> = {
     title: "Tailor Resume For a Job",
     description: "Tailor a resume per posting (postings in the 'tailoring' stage) and save it.",
     playbook: "tailoring.md",
-    core: true,
     buildTask: () =>
       `Tailor resumes for postings in the 'tailoring' stage (see the listApplications MCP tool). For each, read its JD, tailor the base resume, save to resume/<slug>/, and report the result via submitJobResult per tailoring.md.`,
     ingest: ingestTailoring,
@@ -360,7 +358,6 @@ export const JOB_DEFS: Record<JobType, JobDef> = {
     title: "Sync Inbox",
     description: "Read job email → update application statuses, interviews, and dates.",
     playbook: "inbox-sync.md",
-    core: true,
     buildTask: (p) =>
       `Audit my Gmail for job-application emails since ${p?.since ?? "the last sync"} and write the result per inbox-sync.md.`,
     ingest: (records, dryRun) => reconcile(incomingFromInboxRecords(records), { actor: "CoWork", source: "inbox-sync", dryRun }),

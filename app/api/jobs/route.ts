@@ -17,7 +17,7 @@ export async function GET(request: Request) {
     reconcileTailoringQueue(); // and re-queue any tailoring candidate stranded without a live job
     reapStuckJobs(); // watchdog tick: dead-letter poison jobs (claimed too many times, no result)
     const defs = Object.values(JOB_DEFS);
-    const types = defs.filter((d) => !d.hidden).map((d) => ({ type: d.type, title: d.title, description: d.description, playbook: d.playbook, core: !!d.core }));
+    const types = defs.filter((d) => !d.hidden).map((d) => ({ type: d.type, title: d.title, description: d.description, playbook: d.playbook }));
     const url = new URL(request.url);
     const statusParam = url.searchParams.get("status");
     // `lean=1` (the agent's MCP read path) strips task/params from QUEUED rows so the queue is a

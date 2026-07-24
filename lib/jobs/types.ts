@@ -58,5 +58,4 @@ export type JobDef = {
   // dryRun: compute the changes without persisting (powers the preview)
   ingest: (records: ResultRecord[], dryRun?: boolean) => ReconcileResult;
   hidden?: boolean; // keep the def (ingest/queue machinery) but omit from the agent Jobs list
-  core?: boolean; // the everyday loop (fit/tailor/inbox) — shown expanded on the Agents page vs. "Advanced"
 };
