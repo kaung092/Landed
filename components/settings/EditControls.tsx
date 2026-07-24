@@ -58,7 +58,8 @@ export function PreviewItem({ label, value, accent = "emerald", full }: { label:
       <dt className={`mb-1 flex items-center gap-1.5 text-[11px] font-medium uppercase tracking-wide ${t.label}`}>
         <span className={`h-1 w-1 rounded-full ${t.dot}`} /> {label}
       </dt>
-      <dd className={`rounded-lg bg-zinc-950/40 px-3 py-2 text-[13px] leading-relaxed ring-1 ring-inset ${set ? `text-zinc-100 ${t.ring}` : "text-zinc-600 ring-zinc-800"}`}>
+      {/* Read-only: plain text (no box/ring) so it doesn't look like an editable input until Edit is hit. */}
+      <dd className={`px-0.5 text-[13px] leading-relaxed ${set ? "text-zinc-100" : "italic text-zinc-600"}`}>
         {set ? value : "Not set"}
       </dd>
     </div>
@@ -72,11 +73,12 @@ export function ChipsPreview({ label, items, tone, full }: { label: string; item
       <dt className={`mb-1 flex items-center gap-1.5 text-[11px] font-medium uppercase tracking-wide ${t.label}`}>
         <span className={`h-1 w-1 rounded-full ${t.dot}`} /> {label}
       </dt>
-      <dd className={`flex flex-wrap gap-1 rounded-lg bg-zinc-950/40 px-3 py-2 ring-1 ring-inset ${items.length ? t.ring : "ring-zinc-800"}`}>
+      {/* Read-only: bare chips (no surrounding input-like box). */}
+      <dd className="flex flex-wrap gap-1 px-0.5 pt-0.5">
         {items.length ? (
           items.map((x) => <span key={x} className={`rounded px-1.5 py-0.5 text-[12px] font-medium ${t.chip}`}>{x}</span>)
         ) : (
-          <span className="text-[13px] text-zinc-600">Not set</span>
+          <span className="text-[13px] italic text-zinc-600">Not set</span>
         )}
       </dd>
     </div>
