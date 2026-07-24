@@ -163,6 +163,8 @@ body {
   line-height: 1.7;
   font-size: 0.925rem;
 }
+.prose-instructions > :first-child { margin-top: 0; }
+.prose-instructions > :last-child { margin-bottom: 0; }
 .prose-instructions h1 { font-size: 1.5rem; font-weight: 700; margin: 1.2em 0 0.5em; color: #fafafa; }
 .prose-instructions h2 { font-size: 1.2rem; font-weight: 600; margin: 1.4em 0 0.5em; color: #fafafa; border-bottom: 1px solid #27272a; padding-bottom: 0.25em; }
 .prose-instructions h3 { font-size: 1.02rem; font-weight: 600; margin: 1.2em 0 0.4em; color: #f4f4f5; }

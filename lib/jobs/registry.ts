@@ -420,7 +420,6 @@ export const JOB_DEFS: Record<JobType, JobDef> = {
     title: "Pull interview emails",
     description: "Capture a company's interview emails (recruiter outreach, scheduling, what-to-expect, comp) + attachments into its interview-prep folder. Asset-only — does NOT touch tracker status (global inbox-sync owns that).",
     playbook: "interview-emails.md",
-    hidden: true,
     buildTask: (p) => {
       const slug = p?.slug ?? "<slug>";
       const co = p?.company ?? "the company";

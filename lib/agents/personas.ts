@@ -14,9 +14,15 @@ export const PERSONA: Record<string, string> = {
   "leetcode-add": "Leetcode Scout",
   discovery: "Scout",
   "fitlab-assess": "Fit Lab",
+  "interview-brief": "Interview Briefer",
+  "interview-emails": "Interview Scout",
+  "peer-comp": "Comp Analyst",
 };
 
-export const personaFor = (type: string): string => PERSONA[type] ?? "CoWork";
+// Fall back to a task-descriptive name (the prettified type), never a brand — a new job type gets a
+// sensible label on the Agents page without a map edit.
+export const personaFor = (type: string): string =>
+  PERSONA[type] ?? type.replace(/-/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
 
 // One-shot kickoff: claim + work + submit, looping until the type's queue is empty, then stop.
 export const drainPrompt = (type: string): string =>

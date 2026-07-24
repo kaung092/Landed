@@ -1,6 +1,7 @@
-import { FolderOpen } from "lucide-react";
+import { FolderOpen, Mail } from "lucide-react";
 import GmailConnect from "@/components/GmailConnect";
 import AssetFolderInfo from "@/components/settings/AssetFolderInfo";
+import InboxSyncSettings from "@/components/settings/InboxSyncSettings";
 import SettingsCard from "@/components/settings/SettingsCard";
 
 export const dynamic = "force-dynamic";
@@ -18,6 +19,15 @@ export default function SettingsPage() {
 
         <div className="space-y-5">
           <GmailConnect />
+
+          <SettingsCard
+            icon={<Mail size={17} />}
+            accent="sky"
+            title="Inbox sync"
+            description="How your inbox is synced into the pipeline — statuses, interview rounds, and dates."
+          >
+            <InboxSyncSettings />
+          </SettingsCard>
 
           <SettingsCard
             icon={<FolderOpen size={17} />}

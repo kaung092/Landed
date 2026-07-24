@@ -21,6 +21,7 @@ export type AddJobSpec = { type: string; params?: Record<string, unknown>; task?
 type QueueCtx = {
   jobs: QueueJob[]; // outstanding (queued + wip), newest first
   count: number;
+  inboxLastSynced: string | null; // `inbox_last_synced` watermark (ISO) — last inbox-sync ingest, or null
   pulse: boolean; // transient — drives the "job added" animation on the floating icon
   add: (spec: AddJobSpec) => Promise<void>;
   remove: (id: string) => Promise<void>;
@@ -46,13 +47,17 @@ const Ctx = createContext<QueueCtx | null>(null);
 // CoWork page. Adds optimistically + pulses; polls so the badge shrinks as CoWork drains the queue.
 export default function CoWorkQueueProvider({ children }: { children: React.ReactNode }) {
   const [jobs, setJobs] = useState<QueueJob[]>([]);
+  const [inboxLastSynced, setInboxLastSynced] = useState<string | null>(null);
   const [pulse, setPulse] = useState(false);
   const pulseTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const refresh = useCallback(() => {
     fetch("/api/jobs")
       .then((r) => r.json())
-      .then((d) => setJobs((d.jobs ?? []).filter((j: QueueJob) => j.status === "queued" || j.status === "wip")))
+      .then((d) => {
+        setJobs((d.jobs ?? []).filter((j: QueueJob) => j.status === "queued" || j.status === "wip"));
+        setInboxLastSynced(d.inboxLastSynced ?? null);
+      })
       .catch(() => {});
   }, []);
 
@@ -128,7 +133,7 @@ export default function CoWorkQueueProvider({ children }: { children: React.Reac
   const isQueued = useCallback((postingId: string, phase: "fit" | "tailor"): boolean => !!jobFor(postingId, phase), [jobFor]);
 
   return (
-    <Ctx.Provider value={{ jobs, count: jobs.length, pulse, add, remove, requeue, refresh, bump, redoNoteFor, isWorking, isQueued }}>
+    <Ctx.Provider value={{ jobs, count: jobs.length, inboxLastSynced, pulse, add, remove, requeue, refresh, bump, redoNoteFor, isWorking, isQueued }}>
       {children}
     </Ctx.Provider>
   );

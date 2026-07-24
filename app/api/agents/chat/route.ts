@@ -1,7 +1,8 @@
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { randomUUID } from "node:crypto";
-import { CLAUDE_BIN, mcpConfigPath, claudeEnv, baseArgs } from "@/lib/agents/claude-code";
+import { CLAUDE_BIN, mcpConfigPath, claudeEnv, baseArgs, prepChatArgs } from "@/lib/agents/claude-code";
+import { PREP_ROOT, resolvePrepDir, ensurePrepFiles } from "@/lib/prep/export-context";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 300; // a turn can take a while (model + tool calls)
@@ -12,15 +13,24 @@ const run = promisify(execFile);
 // appended to its system prompt; a RESUME continues an existing session (its system prompt is
 // already baked in). Returns the parsed Claude Code JSON. Throws on a non-zero exit (the caller
 // inspects the message to tell a dead session apart from a real failure).
-async function runTurn(opts: { message: string; sid: string; resume: boolean; context?: string }) {
+//
+// TWO modes, chosen by `slug`:
+// - with a valid company `slug` → the LOCKED-DOWN interview-prep chat: cwd is that company's prep
+//   folder, read-only file tools only, no jobhunt MCP (see prepChatArgs). Its research .md files are
+//   dumped (if missing) before the first turn so they're on disk to read.
+// - without a slug → the FULL agent (general chat / drain runner): repo cwd, jobhunt MCP, asset write.
+async function runTurn(opts: { message: string; sid: string; resume: boolean; context?: string; slug?: string }) {
+  const prepDir = opts.slug ? resolvePrepDir(opts.slug) : null;
+  if (prepDir && !opts.resume) ensurePrepFiles(opts.slug!); // fresh context files before turn one
   const args = [
     "-p", opts.message,
     ...(opts.resume ? ["-r", opts.sid] : ["--session-id", opts.sid]),
     ...(!opts.resume && opts.context?.trim() ? ["--append-system-prompt", opts.context.trim()] : []),
     "--output-format", "json",
-    ...baseArgs(mcpConfigPath()),
+    ...(prepDir ? prepChatArgs(PREP_ROOT) : baseArgs(mcpConfigPath())),
   ];
-  const { stdout } = await run(CLAUDE_BIN, args, { cwd: process.cwd(), env: claudeEnv(), maxBuffer: 16 * 1024 * 1024 });
+  const cwd = prepDir ?? process.cwd();
+  const { stdout } = await run(CLAUDE_BIN, args, { cwd, env: claudeEnv(), maxBuffer: 16 * 1024 * 1024 });
   return JSON.parse(stdout) as { session_id?: string; result?: string; is_error?: boolean };
 }
 
@@ -30,9 +40,10 @@ async function runTurn(opts: { message: string; sid: string; resume: boolean; co
 const isDeadSession = (msg: string) =>
   /no conversation found|session( id)? .*(not found|does not exist|expired|invalid)|--resume|no such session/i.test(msg);
 
-// POST /api/agents/chat  body: { message, sessionId?, context? } — one turn of an INTERACTIVE
-// Claude Code chat with the jobhunt MCP server + asset-folder write access. First message omits
-// sessionId (we mint one); later messages pass it back to resume the same conversation (`-r`).
+// POST /api/agents/chat  body: { message, sessionId?, context?, slug? } — one turn of an INTERACTIVE
+// Claude Code chat. First message omits sessionId (we mint one); later messages pass it back to
+// resume the same conversation (`-r`). A company `slug` puts the turn in locked-down interview-prep
+// mode (see runTurn); no slug runs the full agent (jobhunt MCP + asset write).
 //
 // `context` scopes the chat (appended to the system prompt when a session is created). ALWAYS send
 // it — it's used both on the first turn and on background recovery. If a resume fails because the
@@ -43,11 +54,13 @@ export async function POST(request: Request) {
   let message: string | undefined;
   let sessionId: string | undefined;
   let context: string | undefined;
+  let slug: string | undefined;
   try {
     const b = await request.json();
     message = b?.message;
     sessionId = b?.sessionId;
     context = typeof b?.context === "string" ? b.context : undefined;
+    slug = typeof b?.slug === "string" ? b.slug : undefined;
   } catch {
     // ignore
   }
@@ -57,7 +70,7 @@ export async function POST(request: Request) {
   if (!sessionId) {
     const fresh = randomUUID();
     try {
-      const d = await runTurn({ message, sid: fresh, resume: false, context });
+      const d = await runTurn({ message, sid: fresh, resume: false, context, slug });
       return Response.json({ sessionId: d.session_id ?? fresh, reply: d.result ?? "", isError: !!d.is_error });
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
@@ -67,7 +80,7 @@ export async function POST(request: Request) {
 
   // Resume turn — try to continue the session; auto-recover if it's dead.
   try {
-    const d = await runTurn({ message, sid: sessionId, resume: true });
+    const d = await runTurn({ message, sid: sessionId, resume: true, slug });
     return Response.json({ sessionId: d.session_id ?? sessionId, reply: d.result ?? "", isError: !!d.is_error });
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
@@ -78,7 +91,7 @@ export async function POST(request: Request) {
     // Session is gone — start a fresh, re-seeded one and answer the same message.
     const fresh = randomUUID();
     try {
-      const d = await runTurn({ message, sid: fresh, resume: false, context });
+      const d = await runTurn({ message, sid: fresh, resume: false, context, slug });
       return Response.json({ sessionId: d.session_id ?? fresh, reply: d.result ?? "", isError: !!d.is_error, recovered: true });
     } catch (e2) {
       const m2 = e2 instanceof Error ? e2.message : String(e2);

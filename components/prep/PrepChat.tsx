@@ -1,25 +1,30 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { Bot, Send, Loader2, User, Trash2, PanelRightClose } from "lucide-react";
+import { Bot, Send, Loader2, User, Trash2, PanelRightClose, FileText } from "lucide-react";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 
-// A full-height chat with a headless Claude Code agent (runs on your subscription, has the jobhunt
-// MCP server + asset-folder access). Designed to fill a docked side panel. Keyed by `storageId` so
-// each company's chat persists separately; `context` is sent on the first turn and appended to the
-// agent's system prompt, scoping it to this company so you can iterate and ask questions
-// ("give me 3 variations of this problem", "what would the staff bar look like here?").
+// A full-height chat with the locked-down interview-prep agent for one company (runs on your
+// subscription; read-only file access to that company's prep folder, no other tools). Designed to
+// fill a docked side panel. Keyed by `storageId` so each company's chat persists separately; `slug`
+// scopes the server turn to the company folder; `context` is the system prompt appended on the first
+// turn. The header lists the folder's research .md files so you can see what the coach is reading.
 // `note` = a system line (e.g. "session refreshed") rendered muted + centered, not a chat bubble.
 type Msg = { role: "user" | "assistant" | "note"; text: string; error?: boolean };
+type CtxFile = { name: string; size: number; mtime: string };
 
 export default function PrepChat({
   storageId,
+  slug,
   context,
   placeholder = "Ask Claude Code…  (Enter to send, Shift+Enter for newline)",
   intro,
   onCollapse,
 }: {
   storageId: string; // stable per company — keys the persisted history + session
-  context: string; // appended to the system prompt on the first turn (company + loop + questions)
+  slug: string; // company folder the server scopes this chat to (interview-prep/<slug>)
+  context: string; // appended to the system prompt on the first turn (scope + how to use the files)
   placeholder?: string;
   intro?: string; // empty-state hint
   onCollapse?: () => void; // show a collapse control in the header
@@ -34,11 +39,22 @@ export default function PrepChat({
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
   const [sid, setSid] = useState<string | null>(() => (typeof window === "undefined" ? null : localStorage.getItem(SID_KEY)));
+  const [ctxFiles, setCtxFiles] = useState<CtxFile[]>([]);
   const scrollRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
   }, [msgs, busy]);
+  // The research files the coach reads from this company's folder — shown so the context is visible,
+  // like a CoWork project's file list. Refetched after each turn (a turn can dump/refresh them).
+  useEffect(() => {
+    let alive = true;
+    fetch(`/api/prep/company/${slug}/files`)
+      .then((r) => r.json())
+      .then((d) => { if (alive && Array.isArray(d.files)) setCtxFiles(d.files); })
+      .catch(() => { /* non-critical — just hides the list */ });
+    return () => { alive = false; };
+  }, [slug, busy]);
   useEffect(() => {
     try { localStorage.setItem(MSGS_KEY, JSON.stringify(msgs.slice(-200))); } catch { /* quota — skip */ }
   }, [msgs, MSGS_KEY]);
@@ -67,9 +83,10 @@ export default function PrepChat({
       const r = await fetch("/api/agents/chat", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        // Always send the scope: it seeds the first turn AND any background recovery (if the session
-        // died, the server starts a fresh one re-seeded with this context).
-        body: JSON.stringify({ message: text, sessionId: sid, context }),
+        // Always send scope + slug: `context` seeds the first turn AND any background recovery (if the
+        // session died, the server re-seeds a fresh one); `slug` keeps the turn locked to this
+        // company's prep folder (read-only, no other tools).
+        body: JSON.stringify({ message: text, sessionId: sid, context, slug }),
       });
       const d = await r.json();
       if (d.sessionId) setSid(d.sessionId);
@@ -120,26 +137,71 @@ export default function PrepChat({
         )}
       </div>
 
+      {/* Context files — the research .md outputs the coach reads from this company's folder. Shown
+          so it's transparent what the assistant is working from, like a CoWork project's file list. */}
+      {ctxFiles.length > 0 && (
+        <div className="shrink-0 border-b border-zinc-800/60 bg-zinc-950/60 px-4 py-2">
+          <p className="mb-1 text-[10px] font-medium uppercase tracking-wider text-zinc-600">Context · reading from this folder</p>
+          <ul className="flex flex-wrap gap-1.5">
+            {ctxFiles.map((f) => (
+              <li
+                key={f.name}
+                title={`${(f.size / 1024).toFixed(1)} KB · updated ${new Date(f.mtime).toLocaleString()}`}
+                className="inline-flex items-center gap-1 rounded-md bg-zinc-800/60 px-1.5 py-0.5 text-[11px] text-zinc-300 ring-1 ring-zinc-700/60"
+              >
+                <FileText size={10} className="text-sky-300/80" />
+                {f.name}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
       <div ref={scrollRef} className="flex-1 space-y-3 overflow-y-auto px-4 py-3">
         {msgs.length === 0 && (
-          <p className="py-6 text-center text-[12px] leading-relaxed text-zinc-500">{intro ?? "Chat with Claude Code about this company — it has your tracker, postings, and résumé tools."}</p>
+          <p className="py-6 text-center text-[12px] leading-relaxed text-zinc-500">{intro ?? "Your interview-prep coach for this company — it reads this company's research files and helps you prep."}</p>
         )}
-        {msgs.map((m, i) =>
-          m.role === "note" ? (
-            <p key={i} className="px-2 py-1 text-center text-[11px] leading-relaxed text-zinc-600">{m.text}</p>
-          ) : (
-            <div key={i} className={`flex items-start gap-2 ${m.role === "user" ? "flex-row-reverse" : ""}`}>
-              <span className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full ring-1 ${m.role === "user" ? "bg-zinc-700 ring-zinc-600" : "bg-sky-500/15 ring-sky-500/30"}`}>
-                {m.role === "user" ? <User size={12} className="text-zinc-300" /> : <Bot size={12} className="text-sky-300" />}
-              </span>
-              <div className={`max-w-[85%] whitespace-pre-wrap rounded-2xl px-3 py-1.5 text-[12px] leading-relaxed ${
-                m.role === "user" ? "rounded-br-md bg-sky-600 text-white" : m.error ? "rounded-bl-md bg-rose-500/20 text-rose-100" : "rounded-bl-md bg-zinc-800 text-zinc-100"
-              }`}>
-                {m.text}
+        {msgs.map((m, i) => {
+          if (m.role === "note")
+            return <p key={i} className="px-2 py-1 text-center text-[11px] leading-relaxed text-zinc-600">{m.text}</p>;
+
+          // User turns stay a compact right-aligned bubble (plain text — you typed it).
+          if (m.role === "user")
+            return (
+              <div key={i} className="flex flex-row-reverse items-start gap-2">
+                <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-zinc-700 ring-1 ring-zinc-600">
+                  <User size={12} className="text-zinc-300" />
+                </span>
+                <div className="max-w-[85%] whitespace-pre-wrap rounded-2xl rounded-br-md bg-sky-600 px-3 py-1.5 text-[13px] leading-relaxed text-white">
+                  {m.text}
+                </div>
               </div>
+            );
+
+          // Assistant turns render as full-width markdown prose (headings, lists, code, tables), the
+          // way a Claude/CoWork reply reads — not a cramped bubble. Errors stay plain text.
+          return (
+            <div key={i} className="flex items-start gap-2">
+              <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-sky-500/15 ring-1 ring-sky-500/30">
+                <Bot size={12} className="text-sky-300" />
+              </span>
+              {m.error ? (
+                <div className="max-w-[85%] whitespace-pre-wrap rounded-2xl rounded-bl-md bg-rose-500/20 px-3 py-1.5 text-[13px] leading-relaxed text-rose-100">
+                  {m.text}
+                </div>
+              ) : (
+                <div className="prose-instructions min-w-0 flex-1 pt-0.5">
+                  <ReactMarkdown
+                    remarkPlugins={[remarkGfm]}
+                    components={{ a: (props) => <a {...props} target="_blank" rel="noopener noreferrer" /> }}
+                  >
+                    {m.text}
+                  </ReactMarkdown>
+                </div>
+              )}
             </div>
-          )
-        )}
+          );
+        })}
         {busy && (
           <div className="flex items-center gap-2 text-[12px] text-zinc-400">
             <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-sky-500/15 ring-1 ring-sky-500/30"><Bot size={12} className="text-sky-300" /></span>

@@ -8,6 +8,7 @@ import CoWorkQueueProvider from "@/components/CoWorkQueueProvider";
 import AgentChatsProvider from "@/components/AgentChatsProvider";
 import AddJobProvider from "@/components/AddJobProvider";
 import FloatingQueue from "@/components/FloatingQueue";
+import AutoWorkController from "@/components/AutoWorkController";
 import GetStartedChecklist from "@/components/GetStartedChecklist";
 import PendoInitializer from "@/components/PendoInitializer";
 
@@ -59,6 +60,7 @@ z=e.getElementsByTagName(n)[0];z.parentNode.insertBefore(y,z);}})(window,documen
               <NavRail />
               <div className="flex-1 overflow-hidden"><PageFrame>{children}</PageFrame></div>
               <FloatingQueue />
+              <AutoWorkController />
               <GetStartedChecklist />
             </AddJobProvider>
           </AgentChatsProvider>

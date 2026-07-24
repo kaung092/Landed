@@ -153,9 +153,10 @@ function ContextMeter({ tokens, model }: { tokens?: number; model?: string }) {
 function AgentCard({ meta, backlog, open, onToggle, onInstructions }: {
   meta: JobTypeMeta; backlog: number; open: boolean; onToggle: () => void; onInstructions: () => void;
 }) {
-  const { get, clear } = useAgentChats();
-  const { running, contextTokens, model, entries, sessionId } = get(meta.type);
+  const { get, clear, setAutoDrain } = useAgentChats();
+  const { running, contextTokens, model, entries, sessionId, autoDrain } = get(meta.type);
   const hasSession = !!sessionId || entries.length > 0 || !!contextTokens;
+  const auto = autoDrain !== false; // undefined → armed (default on)
   return (
     <div className="overflow-hidden rounded-2xl border border-zinc-800 bg-zinc-900/30">
       <div className="flex items-center">
@@ -171,8 +172,10 @@ function AgentCard({ meta, backlog, open, onToggle, onInstructions }: {
           {backlog > 0 && (
             <span className="rounded-full bg-zinc-800 px-2 py-0.5 text-[11px] font-bold tabular-nums text-zinc-300">{backlog} queued</span>
           )}
-          <ChevronRight size={16} className={`shrink-0 text-zinc-600 transition ${open ? "rotate-90" : ""}`} />
         </button>
+        {/* Per-agent auto-drain status + toggle: green "Auto" = new queued jobs start on their own;
+            "Paused" = stays stopped (set by manual Stop) until Work queue re-arms it. */}
+        <AutoDrainToggle on={auto} onChange={(v) => setAutoDrain(meta.type, v)} />
         {/* Context meter + one-click reset, side by side — see the session fill up, clear it right there. */}
         <div className="flex shrink-0 items-center gap-2 pl-1 pr-2">
           <ContextMeter tokens={contextTokens} model={model} />
@@ -191,9 +194,17 @@ function AgentCard({ meta, backlog, open, onToggle, onInstructions }: {
         <button
           onClick={onInstructions}
           title="Instructions (this agent's playbook)"
-          className="mr-3 inline-flex shrink-0 items-center gap-1 rounded-md px-2 py-1 text-[12px] text-zinc-400 ring-1 ring-inset ring-zinc-800 transition hover:bg-zinc-800 hover:text-zinc-200"
+          className="inline-flex shrink-0 items-center gap-1 rounded-md px-2 py-1 text-[12px] text-zinc-400 ring-1 ring-inset ring-zinc-800 transition hover:bg-zinc-800 hover:text-zinc-200"
         >
           <BookOpen size={12} /> Instructions
+        </button>
+        {/* Collapse/expand chevron — pinned to the far right end of the header. */}
+        <button
+          onClick={onToggle}
+          title={open ? "Collapse" : "Expand"}
+          className="mr-2 ml-1 shrink-0 rounded p-1 text-zinc-500 transition hover:bg-zinc-800 hover:text-zinc-200"
+        >
+          <ChevronRight size={16} className={`transition ${open ? "rotate-90" : ""}`} />
         </button>
       </div>
       {open && (
@@ -212,6 +223,28 @@ function AgentCard({ meta, backlog, open, onToggle, onInstructions }: {
         </div>
       )}
     </div>
+  );
+}
+
+// Per-agent auto-drain status pill + toggle. Green "Auto" = queued jobs start their agent on their
+// own; grey "Paused" = a manual Stop turned it off, so it stays stopped until re-armed here or by
+// "Work queue". Reflects + flips this agent's `autoDrain` flag (see AgentChatsProvider).
+function AutoDrainToggle({ on, onChange }: { on: boolean; onChange: (v: boolean) => void }) {
+  return (
+    <button
+      onClick={() => onChange(!on)}
+      role="switch"
+      aria-checked={on}
+      title={on
+        ? "Auto-drain on — new queued jobs start this agent automatically. Click to pause."
+        : "Auto-drain paused — this agent stays stopped until you hit Work queue. Click to arm."}
+      className={`flex shrink-0 items-center gap-1.5 rounded-md px-2 py-1 text-[11px] font-medium ring-1 ring-inset transition ${
+        on ? "text-emerald-300 ring-emerald-500/30 hover:bg-emerald-500/10" : "text-zinc-500 ring-zinc-800 hover:bg-zinc-800"
+      }`}
+    >
+      <span className={`h-1.5 w-1.5 rounded-full ${on ? "bg-emerald-400" : "bg-zinc-600"}`} />
+      {on ? "Auto" : "Paused"}
+    </button>
   );
 }
 

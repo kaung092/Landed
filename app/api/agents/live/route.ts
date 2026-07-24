@@ -34,6 +34,7 @@ export const maxDuration = 600; // a full queue drain + tool calls can run for m
 //   { kind: "text", text }                                 — a chunk of assistant prose
 //   { kind: "tool", name, input }                          — an MCP/native tool call
 //   { kind: "tool_result", ok, preview }                   — that tool's result (truncated)
+//   { kind: "usage", contextTokens }                       — live per-turn context (before `result`)
 //   { kind: "result", text, isError, costUsd, turns }      — the turn finished
 //   { kind: "error", message }  |  { kind: "exit", code }  — failure / stream end
 
@@ -245,7 +246,14 @@ function translate(line: string, send: (obj: unknown) => void, state: TranslateS
 
   if (t === "assistant") {
     const message = msg.message as { content?: unknown[]; usage?: Record<string, unknown> } | undefined;
-    if (message?.usage) state.lastAssistantUsage = message.usage; // latest turn wins → final context
+    if (message?.usage) {
+      state.lastAssistantUsage = message.usage; // latest turn wins → final context
+      // Emit context LIVE, per turn — not only bundled into the terminal `result`. A long run (e.g.
+      // the Board Scanner) can be cut off (5-min auto-stop / stall / Stop / API blip) before `result`,
+      // which would otherwise leave the token meter blank despite heavy usage.
+      const ctx = contextOf(message.usage);
+      if (ctx) send({ kind: "usage", contextTokens: ctx });
+    }
     const content = message?.content ?? [];
     for (const block of content as Record<string, unknown>[]) {
       if (block.type === "text" && typeof block.text === "string") send({ kind: "text", text: block.text });

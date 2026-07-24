@@ -21,6 +21,45 @@ export const PREP_ROOT = path.join(ASSET_ROOT, "interview-prep");
 const contextPath = (slug: string) => path.join(PREP_ROOT, slug, "context.md");
 const questionsPath = (slug: string) => path.join(PREP_ROOT, slug, "questions.md");
 
+// A prep chat is scoped to one company's folder. Resolve <PREP_ROOT>/<slug> safely — null if the
+// slug is empty or tries to escape the interview-prep tree (so a chat can never be pointed outside).
+export function resolvePrepDir(slug: string): string | null {
+  const root = path.resolve(PREP_ROOT);
+  const full = path.resolve(root, slug);
+  if (full === root || !full.startsWith(root + path.sep)) return null;
+  return full;
+}
+
+export type PrepFile = { name: string; size: number; mtime: string };
+
+// The markdown research outputs sitting in a directory (context.md, questions.md, …), newest first —
+// the "context files" a prep chat is working from. Pure over the dir so it's unit-testable.
+export function mdFilesIn(dir: string): PrepFile[] {
+  let entries: string[];
+  try { entries = fs.readdirSync(dir); } catch { return []; }
+  return entries
+    .filter((n) => n.toLowerCase().endsWith(".md"))
+    .map((n) => {
+      const st = fs.statSync(path.join(dir, n));
+      return { name: n, size: st.size, mtime: st.mtime.toISOString() };
+    })
+    .sort((a, b) => b.mtime.localeCompare(a.mtime));
+}
+
+// The context files on disk for one company's prep chat (empty if the slug is bad or nothing dumped).
+export function listPrepFiles(slug: string): PrepFile[] {
+  const dir = resolvePrepDir(slug);
+  return dir ? mdFilesIn(dir) : [];
+}
+
+// Make sure a company's prep .md files exist before a chat cwds into the folder to read them. Dumps
+// context.md / questions.md only when MISSING (the "Dump context" button force-refreshes from the
+// DB). Best-effort: a cloud-sync write hiccup must never block the chat from opening.
+export function ensurePrepFiles(slug: string): void {
+  try { if (!prepContextDumpedAt(slug)) exportPrepContextFor(slug); } catch { /* best-effort */ }
+  try { if (!questionsDumpedAt(slug)) exportQuestionsFor(slug); } catch { /* best-effort */ }
+}
+
 type Co = {
   company: string; role: string; status: string; url?: string | null;
   comp?: string | null; teamNotes?: string | null; note?: string | null; jd?: string | null;

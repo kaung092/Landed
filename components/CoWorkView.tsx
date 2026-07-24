@@ -9,6 +9,7 @@ import AgentMonitor, { type MonitorJob } from "@/components/agents/AgentMonitor"
 import Playbook from "@/components/agents/Playbook";
 import TabBar from "@/components/prep/TabBar";
 import McpDocsPanel from "@/components/mcp/McpDocsPanel";
+import { AUTO_WORK_KEY } from "@/components/AutoWorkController";
 
 type JobView = MonitorJob;
 type JobTypeMeta = { type: string; title: string; description: string; playbook: string };
@@ -16,6 +17,25 @@ type InstrFile = { path: string; name: string; group: string };
 
 const guideTitle = (f: InstrFile) =>
   f.name === "README.md" ? "How the agents work" : f.name.replace(/\.md$/, "").replace(/-/g, " ").replace(/^\w/, (c) => c.toUpperCase());
+
+// Auto-work switch: when ON, a queued job starts its agent right away (no manual "Work queue"). A
+// big backlog still asks first (see AutoWorkController). Persisted app-wide via AUTO_WORK_KEY.
+function AutoWorkToggle({ on, onChange }: { on: boolean; onChange: (v: boolean) => void }) {
+  return (
+    <button
+      onClick={() => onChange(!on)}
+      role="switch"
+      aria-checked={on}
+      title={on ? "Auto-work: queued jobs start their agent right away (big batches ask first)" : "Auto-work off: drain queues manually with “Work queue”"}
+      className="flex shrink-0 items-center gap-2 rounded-lg border border-zinc-800 bg-zinc-900/40 px-2.5 py-1.5 text-[12px] font-medium text-zinc-300 transition hover:bg-zinc-900"
+    >
+      <span className={`relative h-4 w-7 rounded-full transition ${on ? "bg-sky-500" : "bg-zinc-700"}`}>
+        <span className={`absolute top-0.5 h-3 w-3 rounded-full bg-white transition-all ${on ? "left-3.5" : "left-0.5"}`} />
+      </span>
+      Auto-work
+    </button>
+  );
+}
 
 // One health metric in the Monitor dashboard strip.
 function StatCard({ label, value, tone }: { label: string; value: number; tone: "zinc" | "sky" | "emerald" | "amber" }) {
@@ -35,6 +55,7 @@ function StatCard({ label, value, tone }: { label: string; value: number; tone: 
 // (Connections/Gmail moved to the Settings page.)
 export default function CoWorkView() {
   const [view, setView] = usePersistentState<string>("landed.agents.view", "chat");
+  const [autoWork, setAutoWork] = usePersistentState<boolean>(AUTO_WORK_KEY, true);
   const [types, setTypes] = useState<JobTypeMeta[]>([]);
   const [playbooks, setPlaybooks] = useState<string[]>([]);
   const [jobs, setJobs] = useState<JobView[]>([]);
@@ -95,12 +116,17 @@ export default function CoWorkView() {
       )}
 
       <header className="px-6 pt-3.5">
-        <h1 className="flex items-center gap-2 text-[15px] font-semibold tracking-tight">
-          <Bot size={16} className="text-violet-300" /> Agents
-        </h1>
-        <p className="mt-0.5 text-[13px] text-zinc-500">
-          Live agents that read &amp; write your pipeline over MCP.{lastActive && <> Last active {ago(lastActive)}.</>}
-        </p>
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <h1 className="flex items-center gap-2 text-[15px] font-semibold tracking-tight">
+              <Bot size={16} className="text-violet-300" /> Agents
+            </h1>
+            <p className="mt-0.5 text-[13px] text-zinc-500">
+              Live agents that read &amp; write your pipeline over MCP.{lastActive && <> Last active {ago(lastActive)}.</>}
+            </p>
+          </div>
+          <AutoWorkToggle on={autoWork} onChange={setAutoWork} />
+        </div>
         <div className="mt-3"><TabBar tabs={tabs} active={activeTab} onChange={setView} /></div>
       </header>
 

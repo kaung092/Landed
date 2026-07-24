@@ -3,6 +3,10 @@
 import { useState, useSyncExternalStore } from "react";
 import { MessageSquare } from "lucide-react";
 import PrepChat from "./PrepChat";
+import { usePersistentState } from "@/hooks/usePersistentState";
+
+const MIN_W = 320;
+const MAX_W = 820;
 
 const WIDE = "(min-width: 1024px)";
 // Read the viewport-is-wide state without setState-in-effect (the lint-clean way to read an external
@@ -39,6 +43,21 @@ export default function CompanyChatPanel({
   const open = override ?? isWide;
   const setOpen = (v: boolean) => setOverride(v);
 
+  // Docked width (wide screens only) — drag the left edge to resize; persisted across reloads.
+  const [width, setWidth] = usePersistentState("landed.prepchat.width", 420);
+  const startResize = (e: React.PointerEvent) => {
+    e.preventDefault();
+    const onMove = (ev: PointerEvent) => setWidth(Math.min(MAX_W, Math.max(MIN_W, window.innerWidth - ev.clientX)));
+    const onUp = () => {
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+      document.body.style.userSelect = "";
+    };
+    document.body.style.userSelect = "none";
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
+  };
+
   if (!open) {
     return (
       <button
@@ -56,13 +75,25 @@ export default function CompanyChatPanel({
     <>
       {/* Backdrop — only on narrow screens, where the panel overlays the content. */}
       <div className="fixed inset-0 z-20 bg-black/40 lg:hidden" onClick={() => setOpen(false)} />
-      <aside className="fixed inset-y-0 right-0 z-30 flex w-full max-w-[400px] shrink-0 flex-col border-l border-zinc-800/80 bg-zinc-950 shadow-2xl lg:static lg:z-auto lg:w-[380px] lg:shadow-none">
+      <aside
+        className="fixed inset-y-0 right-0 z-30 flex shrink-0 flex-col border-l border-zinc-800/80 bg-zinc-950 shadow-2xl max-lg:w-full max-lg:max-w-[85vw] lg:relative lg:inset-y-auto lg:z-auto lg:shadow-none"
+        style={isWide ? { width } : undefined}
+      >
+        {/* Drag handle — resize the docked panel (wide screens only). */}
+        {isWide && (
+          <div
+            onPointerDown={startResize}
+            title="Drag to resize"
+            className="absolute inset-y-0 left-0 z-40 -ml-1 w-2 cursor-col-resize transition-colors hover:bg-sky-500/40"
+          />
+        )}
         <PrepChat
           storageId={slug}
+          slug={slug}
           context={context}
           onCollapse={() => setOpen(false)}
-          intro={`Chat with Claude Code about ${companyName} — the loop, a specific question, comp, or anything else. It has your tracker, postings, and résumé tools.`}
-          placeholder={`Ask about ${companyName}…`}
+          intro={`Your interview-prep coach for ${companyName}. It reads this company's research files (below) — ask it to quiz you, pressure-test an answer, or dig into a weak spot.`}
+          placeholder={`Prep for ${companyName}…`}
         />
       </aside>
     </>

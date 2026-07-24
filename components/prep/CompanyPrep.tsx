@@ -30,33 +30,17 @@ const TRACKER_IDS = new Set([LEETCODE, SYSDESIGN, OTHER]);
 // (ConfidenceTag) shows which is which + why, so no separate tier headers are needed.
 const confRank = (q: PrepQuestion) => (q.companyConfidence === "confirmed" ? 0 : 1);
 
-// Build the scope the company chat is seeded with — the company, the loop, and every tracked
-// question (grouped by tracker) — so the docked agent can talk about anything on the page. It also
-// has the jobhunt MCP tools for deeper lookups.
-function companyContext(profile: CompanyProfile, byTracker: Map<string, PrepQuestion[]>): string {
-  const rounds = profile.rounds
-    .map((r) => `${r.name}${r.format ? ` (${r.format})` : ""}${r.focus ? ` — ${r.focus}` : ""}`)
-    .join("; ");
-  const group = (id: string) => {
-    const qs = byTracker.get(id) ?? [];
-    if (!qs.length) return "";
-    const list = qs
-      .map((q) => `- ${q.name}${q.leetcodeNum ? ` (LC ${q.leetcodeNum})` : ""} [${q.companyConfidence ?? "likely"}]`)
-      .join("\n");
-    return `${TRACKER_LABEL[id]} questions:\n${list}`;
-  };
+// Seed the locked-down prep chat's system prompt. The chat's working directory IS this company's
+// interview-prep folder, and its research outputs are already on disk there — so instead of dumping
+// the whole question bank inline, we point the coach at the files (the source of truth) and fence its
+// scope to interview prep only. It has read-only file access and no other tools.
+function companyContext(profile: CompanyProfile): string {
   return [
-    `You are an interview-prep coach helping the candidate prepare for their interviews at ${profile.name}.`,
-    profile.overview ? `Company / product:\n${profile.overview}` : "",
-    profile.process ? `Interview process:\n${profile.process}` : "",
-    rounds ? `Rounds: ${rounds}` : "",
-    group(LEETCODE),
-    group(SYSDESIGN),
-    group(OTHER),
-    "You have the jobhunt MCP tools (the candidate's tracker, postings, résumé, and this prep profile) — use them when helpful. Be concise and practical: help them practice, pressure-test answers, surface patterns, suggest variations, and refine the prep when asked.",
-  ]
-    .filter(Boolean)
-    .join("\n\n");
+    `You are an interview-prep coach for ${profile.name}. Helping the candidate prepare for their interviews at ${profile.name} is your ONLY job — do not do anything unrelated to that.`,
+    `Your working directory is this company's prep folder. Its research outputs are already on disk as markdown: context.md (everything Landed knows — the loop, rounds, fit assessment, JD, the candidate's own intel, and the question set), questions.md (the researched question bank with confidence + sources), and a transcripts/ folder for interview recordings. Read these files to ground yourself before answering — they are the source of truth.`,
+    `If you need cross-company or general interview-readiness material, you may read up into the parent interview-prep/ folder (its GLOBAL/ subfolder holds that). Never read outside interview-prep/.`,
+    `You are a conversational prep chatbot — a coach the candidate talks to, not an agent that does tasks. Just reply in chat: quiz the candidate, pressure-test answers, surface patterns, suggest variations, and dig into weak spots. Do NOT try to act, edit files, run commands, or change anything. Your only tools are reading these prep files and searching the web to look things up — use the web when a fact would help, otherwise just answer. Be concise and practical.`,
+  ].join("\n\n");
 }
 
 // Company prep, organized into LeetCode / System Design / Other trackers. Each question renders in
@@ -135,8 +119,8 @@ export default function CompanyPrep({ profile, lastDumpedAt }: { profile: Compan
         </PrepShell>
       </div>
 
-      {/* Docked, collapsible chat with Claude Code — scoped to this company. */}
-      <CompanyChatPanel slug={profile.slug} companyName={profile.name} context={companyContext(profile, byTracker)} />
+      {/* Docked, collapsible chat with Claude Code — locked down to this company's prep folder. */}
+      <CompanyChatPanel slug={profile.slug} companyName={profile.name} context={companyContext(profile)} />
     </div>
   );
 }

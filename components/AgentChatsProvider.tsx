@@ -22,12 +22,16 @@ export type ChatState = {
   contextTokens?: number;
   model?: string;
   costUsd?: number;
+  // Per-agent auto-drain switch. undefined/true = this agent auto-works its queue; false = PAUSED —
+  // set when you manually Stop it, so a stopped agent stays stopped even with items queued. Re-armed
+  // by "Work queue" (a bare drain) or the header toggle. Read by AutoWorkController.
+  autoDrain?: boolean;
 };
 const EMPTY: ChatState = { entries: [], sessionId: null, running: false };
 
 const ENTRIES_PREFIX = "landed.agent.entries.";
 const SESSION_PREFIX = "landed.agent.session.";
-const META_PREFIX = "landed.agent.meta."; // { contextTokens, model, costUsd } — the context meter
+const META_PREFIX = "landed.agent.meta."; // { contextTokens, model, costUsd, autoDrain } — meter + auto-drain
 
 // Rehydrate all persisted chats from localStorage at mount (keys written below).
 function loadInitial(): Record<string, ChatState> {
@@ -41,7 +45,7 @@ function loadInitial(): Record<string, ChatState> {
     try { const a = JSON.parse(localStorage.getItem(k) || "[]"); if (Array.isArray(a)) entries = a; } catch { /* ignore */ }
     let meta: Partial<ChatState> = {};
     try { meta = JSON.parse(localStorage.getItem(META_PREFIX + type) || "{}"); } catch { /* ignore */ }
-    out[type] = { entries, sessionId: localStorage.getItem(SESSION_PREFIX + type), running: false, contextTokens: meta.contextTokens, model: meta.model, costUsd: meta.costUsd };
+    out[type] = { entries, sessionId: localStorage.getItem(SESSION_PREFIX + type), running: false, contextTokens: meta.contextTokens, model: meta.model, costUsd: meta.costUsd, autoDrain: meta.autoDrain };
   }
   return out;
 }
@@ -54,6 +58,7 @@ type Ctx = {
   start: (type: string, message?: string) => void;
   stop: (type: string) => void;
   clear: (type: string) => void;
+  setAutoDrain: (type: string, on: boolean) => void; // arm/pause this agent's auto-drain
 };
 
 const AgentChatsContext = createContext<Ctx | null>(null);
@@ -82,7 +87,7 @@ export default function AgentChatsProvider({ children }: { children: React.React
         try {
           localStorage.setItem(ENTRIES_PREFIX + type, JSON.stringify(c.entries.slice(-400)));
           if (c.sessionId) localStorage.setItem(SESSION_PREFIX + type, c.sessionId);
-          localStorage.setItem(META_PREFIX + type, JSON.stringify({ contextTokens: c.contextTokens, model: c.model, costUsd: c.costUsd }));
+          localStorage.setItem(META_PREFIX + type, JSON.stringify({ contextTokens: c.contextTokens, model: c.model, costUsd: c.costUsd, autoDrain: c.autoDrain }));
         } catch { /* quota — skip */ }
       }
     }, 400);
@@ -127,6 +132,14 @@ export default function AgentChatsProvider({ children }: { children: React.React
           }
           return { ...c, entries: es };
         });
+        break;
+      case "usage":
+        // Live per-turn context figure (see the live route) — keeps the token meter current even for
+        // a long run that never reaches a terminal `result`.
+        patch(type, (c) => ({
+          ...c,
+          contextTokens: typeof e.contextTokens === "number" ? (e.contextTokens as number) : c.contextTokens,
+        }));
         break;
       case "result":
         patch(type, (c) => ({
@@ -176,7 +189,9 @@ export default function AgentChatsProvider({ children }: { children: React.React
       const entries = [...c.entries];
       if (freshDrain && c.sessionId) entries.push({ id: nextId(), role: "note", text: "↻ fresh session — a drain doesn't carry the previous context" });
       if (message) entries.push({ id: nextId(), role: "user", text: message });
-      return { ...c, running: true, entries, ...(freshDrain ? { sessionId: null, contextTokens: undefined } : {}) };
+      // A bare "Work queue" drain re-arms auto-drain (this IS the "click Work queue to turn it back
+      // on" gesture). A typed steer leaves the paused/armed state as-is.
+      return { ...c, running: true, entries, ...(freshDrain ? { sessionId: null, contextTokens: undefined, autoDrain: true } : {}) };
     });
     // One connection to the run: consume the SSE stream until it ends. Returns whether the server
     // closed it cleanly (an `exit` frame) or the stream just dropped — the run is DECOUPLED from this
@@ -259,7 +274,13 @@ export default function AgentChatsProvider({ children }: { children: React.React
     // Aborting the fetch only stops US watching — the run is detached, so it keeps going. Tell the
     // server to actually kill it (fire-and-forget).
     fetch("/api/agents/live", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ type, action: "stop" }) }).catch(() => {});
-    patch(type, (c) => ({ ...c, running: false }));
+    // Manual Stop = pause auto-drain: a stopped agent stays stopped even with items queued, until you
+    // re-arm it with "Work queue" or the header toggle.
+    patch(type, (c) => ({ ...c, running: false, autoDrain: false }));
+  }, [patch]);
+
+  const setAutoDrain = useCallback((type: string, on: boolean) => {
+    patch(type, (c) => ({ ...c, autoDrain: on }));
   }, [patch]);
 
   const clear = useCallback((type: string) => {
@@ -276,7 +297,7 @@ export default function AgentChatsProvider({ children }: { children: React.React
   const lastEventAt = useCallback((type: string) => lastEventRef.current[type], []);
 
   return (
-    <AgentChatsContext.Provider value={{ get, lastEventAt, open, setOpen, start, stop, clear }}>
+    <AgentChatsContext.Provider value={{ get, lastEventAt, open, setOpen, start, stop, clear, setAutoDrain }}>
       {children}
     </AgentChatsContext.Provider>
   );

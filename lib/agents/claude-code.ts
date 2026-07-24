@@ -36,11 +36,23 @@ export function claudeEnv(): NodeJS.ProcessEnv {
   return env;
 }
 
-// Flags shared by every headless run: which MCP servers (only jobhunt), no interactive permission
-// prompts, and write access to the asset folder for résumé tailoring.
+// Flags shared by the FULL agent runs (drain runner + the general "do anything" chat): the jobhunt
+// MCP server, no interactive permission prompts, and write access to the whole asset folder.
 export const baseArgs = (mcp: string): string[] => [
   "--mcp-config", mcp,
   "--strict-mcp-config",
   "--permission-mode", "bypassPermissions",
   "--add-dir", ASSET_ROOT,
+];
+
+// Flags for the per-company interview-prep chat: a LOCKED-DOWN agent, the opposite of baseArgs.
+// It's a conversational prep COACH, not a doer — the allowed tools are read-only (read the folder's
+// research files) plus web lookup (WebSearch/WebFetch, to look things up while prepping). No jobhunt
+// MCP, no bypass, and nothing that writes or acts. The filesystem is bounded to the interview-prep
+// tree: the caller sets cwd to the company's own subfolder (so its research .md files are right
+// there); `--add-dir <interview-prep root>` lifts the ceiling to sibling companies + GLOBAL/ readiness
+// material, but no higher.
+export const prepChatArgs = (prepRoot: string): string[] => [
+  "--add-dir", prepRoot,
+  "--allowedTools", "Read,Glob,Grep,WebSearch,WebFetch",
 ];

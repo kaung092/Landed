@@ -21,7 +21,9 @@ import { ResTh } from "@/components/ResizableTable";
 import { DISCOVERY_SPINE as SPINE, DISCOVERY_ARCHIVE as ARCHIVE, stepCount, type SpineStep } from "@/lib/discovery";
 import type { Comment, Posting, FitAssessment, RedoTurn, Status } from "@/lib/types";
 import { JobStatusChip, type WorkStatus } from "@/components/JobStatus";
-import { ago } from "@/lib/format";
+import { ago, fmtTs } from "@/lib/format";
+import { usePersistentState } from "@/hooks/usePersistentState";
+import { shouldAutoSyncInbox, INBOX_DAILY_SYNC_KEY } from "@/lib/inbox-schedule";
 
 const FUNNEL_LABEL: Record<string, string> = { sel: "", company: "Company", title: "Title", location: "Location", fit: "Fit", lvl: "Lvl", comment: "Note", gaps: "Gaps", resume: "Resume", status: "Status", applied: "Applied", updated: "Last updated", act: "Action" };
 // The table is `table-layout: fixed` (frozen columns need their declared widths to be authoritative,
@@ -323,7 +325,7 @@ export default function Pipeline() {
     postings, loading, reload, setStatus, setInterviewed, setCompanyTier,
     setWatchlist, setField, renameCompany, moveJob, deleteJob,
   } = useApplications();
-  const { jobs, add, bump, redoNoteFor, isWorking, isQueued } = useCoWorkQueue();
+  const { jobs, add, bump, redoNoteFor, isWorking, isQueued, inboxLastSynced } = useCoWorkQueue();
   // Moving a posting into "Applied" opens a small prompt to capture (or update) the real applied
   // date — kept distinct from the status change itself. `askAppliedDate` resolves with the chosen
   // date, or null if the user cancels (which aborts the whole move).
@@ -388,6 +390,25 @@ export default function Pipeline() {
   // the polled queue, not a render-driving loop.
   // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => { if (inboxSyncQueued) setSyncing(false); }, [inboxSyncQueued]);
+
+  // Daily auto-sync: opt-in configured on /settings (this page only reflects the state + runs the
+  // timer). When on, an in-app timer queues an inbox-sync once the local calendar day rolls over
+  // (never stacking a second — the outstanding guard). The app is always-on, so an hourly tick + a
+  // check on mount is enough; the decision is the pure `shouldAutoSyncInbox`, keeping the effect a
+  // thin trigger. AutoWorkController drains what it queues.
+  const [dailySync] = usePersistentState<boolean>(INBOX_DAILY_SYNC_KEY, false);
+  useEffect(() => {
+    const tick = () => {
+      if (shouldAutoSyncInbox({ enabled: dailySync, lastSynced: inboxLastSynced, outstanding: inboxSyncQueued || syncing, now: new Date() })) {
+        setSyncing(true);
+        add({ type: "inbox-sync" });
+        pendo.track("inbox_sync_queued", { auto: true });
+      }
+    };
+    tick(); // check on mount / whenever inputs change (day rolled over, sync drained, toggle flipped)
+    const iv = setInterval(tick, 3_600_000); // hourly — catch the midnight rollover without a tab focus
+    return () => clearInterval(iv);
+  }, [dailySync, inboxLastSynced, inboxSyncQueued, syncing, add]);
   // A stable signature of the live queue — changes only when a job is added/removed/drained, not on
   // every poll. Deleting a queued fit/tailoring job un-queues its candidate server-side (fit_queue →
   // review, tailoring → assessed), so the funnel must re-read to move that row out of its stage.
@@ -1030,15 +1051,28 @@ export default function Pipeline() {
               )}
               {/* Queue an inbox-sync job for CoWork (read Gmail → update statuses/interviews/dates).
                   Disabled while one is already outstanding so clicks don't stack duplicates. */}
+              {/* Sync inbox. The subtext shows last-synced + whether daily auto-sync is configured
+                  (a read-only reflection — configure it on /settings). */}
               {(() => { const queued = inboxSyncQueued || syncing; return (
               <button
                 onClick={() => { if (!queued) { setSyncing(true); add({ type: "inbox-sync" }); pendo.track("inbox_sync_queued"); } }}
                 disabled={queued}
-                title={queued ? "An inbox sync is already queued — run your CoWork queue" : "Queue an inbox sync for CoWork"}
-                className="flex shrink-0 items-center gap-1.5 rounded-md px-2.5 py-1.5 text-[13px] font-medium text-zinc-300 ring-1 ring-inset ring-zinc-800 transition hover:text-zinc-100 hover:ring-zinc-700 disabled:cursor-default disabled:text-zinc-600 disabled:ring-zinc-800/60 disabled:hover:text-zinc-600"
+                title={queued ? "An inbox sync is already queued — run your CoWork queue" : `Queue an inbox sync for CoWork — last synced ${fmtTs(inboxLastSynced)}${dailySync ? " · daily auto-sync on" : ""}`}
+                className="flex shrink-0 items-center gap-1.5 rounded-md px-2.5 py-1 text-zinc-300 ring-1 ring-inset ring-zinc-800 transition hover:text-zinc-100 hover:ring-zinc-700 disabled:cursor-default disabled:text-zinc-600 disabled:ring-zinc-800/60 disabled:hover:text-zinc-600"
               >
                 <Mail size={13} className={queued ? "text-zinc-600" : "text-sky-300"} />
-                {queued ? "Sync queued" : "Sync inbox"}
+                <span className="flex flex-col items-start leading-tight">
+                  <span className="text-[13px] font-medium">{queued ? "Sync queued" : "Sync inbox"}</span>
+                  <span className="flex items-center gap-1 text-[10px] font-normal text-zinc-500">
+                    {dailySync && (
+                      <span className="inline-flex items-center gap-0.5 text-sky-300/90" title="Daily auto-sync is on (configured in Settings)">
+                        <span className="h-1 w-1 rounded-full bg-sky-400" />Daily
+                      </span>
+                    )}
+                    {dailySync && <span className="text-zinc-700">·</span>}
+                    {queued ? "in CoWork queue" : inboxLastSynced ? `Synced ${ago(inboxLastSynced)}` : "Never synced"}
+                  </span>
+                </span>
               </button>
               ); })()}
               {/* Filter as deletable tags: type a company → Enter pins it as a chip; the filter
