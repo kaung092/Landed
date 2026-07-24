@@ -28,7 +28,7 @@ MCP server.
 
 ## Getting started
 
-Prerequisites: Node.js 20+ and npm.
+Prerequisites: Node.js 24+ (see [.nvmrc](.nvmrc); the lockfile + native modules are built on 24) and npm.
 
 ```bash
 git clone <your-fork-url> landed
@@ -47,9 +47,10 @@ npm run seed:prep
 
 ### Configuration
 
-Most day-to-day configuration lives on the in-app **Settings** page (connections, your
-candidate profile + leveling reference, the base résumé, and a browser for the asset
-folder). Machine-level settings are environment variables in `.env` — see
+Day-to-day configuration is split across two in-app pages: the **Profile** page holds your
+candidate profile, leveling reference, and base résumé (the biggest drivers of fit); the
+**Settings** page holds connections and a read-only view of the asset folder (path + "Open in
+Finder"). Machine-level settings are environment variables in `.env` — see
 [.env.example](.env.example) for the full list. The most important one is `ASSET_ROOT`:
 the folder the app and the agent share for your base résumé, tailored-resume folders,
 and the tailor queue. It defaults to `./asset-root` inside the repo so a fresh clone
@@ -62,9 +63,10 @@ Two things ship with generic placeholder defaults that you should personalize �
 the biggest drivers of how the app assesses fit:
 
 - **Your search profile** — level baseline, included/excluded disciplines, locations, and the
-  candidate résumé the fit/leveling playbooks judge against. Edit it on the **Settings** page
+  candidate résumé the fit/leveling playbooks judge against. Edit it on the **Profile** page
   (stored per install in the DB). The shipped defaults in [lib/db/profile.ts](lib/db/profile.ts)
-  and [lib/fitlab/seed.ts](lib/fitlab/seed.ts) are illustrative only.
+  and [lib/fitlab/seed.ts](lib/fitlab/seed.ts) are generic, fictional placeholders — uploading a
+  base résumé (.docx) auto-adopts its text as your Fit Lab profile.
 - **Target companies** — the list that decides whether a newly-seen company starts in the
   "target" vs "practice" tier. It's a single starter list in
   [lib/targets.mjs](lib/targets.mjs) — edit it for your own search. (You can also re-tier any

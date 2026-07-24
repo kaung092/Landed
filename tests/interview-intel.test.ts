@@ -14,7 +14,7 @@ beforeEach(() => reset());
 test("comp + teamNotes round-trip through updateApplication → getPosting", () => {
   const id = seedApp({ company: "Acme", role: "Backend Engineer", status: "interview" });
 
-  updateApplication(id, { comp: "60M Series A · 10yr runway · 200-250k base · 15% bonus", teamNotes: "Rewards platform for renters." });
+  updateApplication(id, { comp: "60M Series A · 10yr runway · 200-250k base · 15% bonus", teamNotes: "Rewards platform." });
   let p = getPosting(id)!;
   assert.match(p.comp!, /Series A/);
   assert.match(p.teamNotes!, /Rewards platform/);
@@ -59,7 +59,7 @@ test("queuePrepResearch queues prep-research with the posting's intel as params.
 
   const out = queuePrepResearch(id)!;
   assert.ok(out.jobId.startsWith("prep-research-"));
-  assert.equal(out.slug, "bilt");
+  assert.equal(out.slug, "acme");
 
   const job = db.select().from(jobs).where(eq(jobs.id, out.jobId)).get()!;
   assert.equal(job.type, "prep-research");

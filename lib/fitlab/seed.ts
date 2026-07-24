@@ -15,7 +15,7 @@ export const STARTER_CRITERIA: Omit<Criterion, "active">[] = [
     weight: 0,
     sortOrder: 0,
     definition:
-      "Is the role workable from the candidate's location (NYC / US-remote)? Onsite/hybrid in another metro, or non-US only, is a miss. US-remote or NYC-based is met. If location is unstated, mark unclear.",
+      "Is the role workable from the candidate's location (from the profile's locations)? Onsite/hybrid in a metro the candidate can't work, or a region they're not eligible for, is a miss; a matching location or remote-in-region is met. If location is unstated, mark unclear.",
   },
   {
     key: "yoe-floor",
@@ -24,7 +24,7 @@ export const STARTER_CRITERIA: Omit<Criterion, "active">[] = [
     weight: 0,
     sortOrder: 1,
     definition:
-      "Does the candidate clear the posting's minimum years-of-experience requirement? The candidate has ~9 years. Only an unusually high floor (e.g. 12+) or a domain-specific YoE the candidate lacks is a miss. No floor stated → met.",
+      "Does the candidate clear the posting's minimum years-of-experience requirement? Compare the posting's floor against the candidate's years of experience (from the profile). Only an unusually high floor, or a domain-specific YoE the candidate lacks, is a miss. No floor stated → met.",
   },
   {
     key: "level-match",
@@ -33,7 +33,7 @@ export const STARTER_CRITERIA: Omit<Criterion, "active">[] = [
     weight: 3,
     sortOrder: 2,
     definition:
-      "Does the posting's level match the candidate's level (Senior / Staff, ex-Amazon L6)? Staff/Senior/L6-L7 is met. Principal/Director or a clear under-level (new-grad/L4) is unmet; an adjacent stretch is partial.",
+      "Does the posting's level match the candidate's level (from the profile — e.g. Senior / Staff)? The candidate's band or an adjacent one is met/partial. Well above (Principal/Director) or a clear under-level (new-grad) is unmet; an adjacent stretch is partial.",
   },
   {
     key: "must-have-coverage",
@@ -51,7 +51,7 @@ export const STARTER_CRITERIA: Omit<Criterion, "active">[] = [
     weight: 1,
     sortOrder: 4,
     definition:
-      "How relevant is the candidate's domain background (large-scale distributed systems, ads/trust/risk, recommendations, ML platform / agentic systems) to the posting's domain? Strong overlap = met, adjacent = partial, unrelated = unmet.",
+      "How relevant is the candidate's domain background (from the profile) to the posting's domain? Strong overlap = met, adjacent = partial, unrelated = unmet.",
   },
   {
     key: "seniority-signal",
@@ -65,8 +65,30 @@ export const STARTER_CRITERIA: Omit<Criterion, "active">[] = [
 ];
 
 // The candidate profile the Detect stage judges against — plain text so the LLM reads it directly
-// (no PDF parsing in the request path). Seeded from the base reference resume; editable on the page,
-// stored under the config key below. Keep it the SOURCE OF TRUTH the assessor sees.
+// (no PDF parsing in the request path). This is a GENERIC, fictional placeholder: the app replaces it
+// with YOUR résumé automatically the first time you upload a base résumé (see /api/resume/upload,
+// which auto-adopts the extracted text while the profile is still this untouched seed), or you can
+// edit it on the page. Stored under the config key below. Do NOT commit a real résumé here.
 export const PROFILE_CONFIG_KEY = "fitlab_profile";
 
-export const PROFILE_SEED = `REDACTED-RESUME`;
+export const PROFILE_SEED = `YOUR NAME — City, Region (or Remote)
+Senior Software Engineer · ~6 years building customer-facing systems at scale. Replace this
+placeholder with your own résumé — upload a base résumé (.docx) on the Profile page and the app
+adopts its text here automatically, or edit this text directly.
+
+EXPERIENCE
+Senior Software Engineer · Example Corp (20XX – present)
+- Owned an end-to-end service used by a large customer base; led design across backend and frontend.
+- Drove a cross-team technical initiative and mentored other engineers.
+
+Software Engineer · Another Company (20XX – 20XX)
+- Shipped production features and built data/ML or platform pipelines with measurable impact.
+
+PROJECTS
+- A notable side project or open-source contribution.
+
+SKILLS
+Languages: (your languages). Backend / Cloud / Frontend / AI: (your stack).
+
+EDUCATION
+Degree · School.`;

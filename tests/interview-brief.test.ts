@@ -23,7 +23,7 @@ test("ingestInterviewBrief appends v1 and projects onto the posting (latest fiel
     expectations: { text: "distributed-systems depth", source: "recruiter" },
     nextStep: { text: "System design round with the platform lead — next Tue", source: "recruiter" },
     gaps: [{ area: "Distributed rate limiting", why: "flagged weak in screen", severity: "high", source: "recruiter" }],
-    summary: "Rewards platform for renters; loop is 4 rounds.",
+    summary: "Rewards platform; loop is 4 rounds.",
     materials: ["context.md", "2 transcripts"],
   }]);
   assert.equal(res.updated, 1);
@@ -98,15 +98,15 @@ test("enqueueInterviewBrief queues an interview-brief job with the posting id + 
   const id = seedApp({ company: "Acme", role: "Backend Engineer", status: "interview" });
   const out = enqueueInterviewBrief(id)!;
   assert.equal(out.jobId, `interview-brief-${id}`);
-  assert.equal(out.slug, "bilt");
+  assert.equal(out.slug, "acme");
 
   const job = db.select().from(jobs).where(eq(jobs.id, out.jobId)).get()!;
   assert.equal(job.type, "interview-brief");
   assert.equal(job.status, "queued");
   const params = JSON.parse(job.params!);
   assert.equal(params.id, id);
-  assert.equal(params.slug, "bilt");
-  assert.match(job.task!, /interview-prep\/bilt\//);
+  assert.equal(params.slug, "acme");
+  assert.match(job.task!, /interview-prep\/acme\//);
   assert.match(job.task!, /context\.md/);
 });
 
@@ -114,16 +114,16 @@ test("enqueueInterviewEmails queues a company-keyed asset-capture job with a 3-m
   const id = seedApp({ company: "Acme", role: "Backend Engineer", status: "interview" });
   const out = enqueueInterviewEmails(id)!;
   assert.match(out.jobId, /^interview-emails-\d+$/);
-  assert.equal(out.slug, "bilt");
+  assert.equal(out.slug, "acme");
 
   const job = db.select().from(jobs).where(eq(jobs.id, out.jobId)).get()!;
   assert.equal(job.type, "interview-emails");
   assert.equal(job.status, "queued");
   const params = JSON.parse(job.params!);
   assert.equal(params.company, "Acme");
-  assert.equal(params.slug, "bilt");
+  assert.equal(params.slug, "acme");
   assert.match(params.since, /^\d{4}\/\d{2}\/\d{2}$/); // Gmail-style YYYY/MM/DD, ~3 months back
-  assert.match(job.task!, /interview-prep\/bilt\//);
+  assert.match(job.task!, /interview-prep\/acme\//);
   assert.match(job.task!, /downloadGmailAttachments/);
 });
 

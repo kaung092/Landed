@@ -33,7 +33,7 @@ agent, via MCP) — and every change is attributed to one of them.
   *claimed* (lease-based), and their results *ingested* back into the DB. `store.ts` is the core;
   `registry.ts` maps agent result records onto postings/companies.
 - **Agent surface** — [mcp/jobhunt-server.mjs](mcp/jobhunt-server.mjs) exposes MCP tools; CoWork is
-  briefed by `ASSET_ROOT/instructions/README.md` (see the sync rule above).
+  briefed by `INSTRUCTIONS_ROOT/README.md` (defaults to `./instructions`; see the sync rule above).
 - **Untyped boundaries** — agent/JSON results arrive as `unknown`. Coerce them through
   [lib/coerce.ts](lib/coerce.ts) (`num` never returns NaN; `str` maps empty→undefined). Don't
   hand-roll `Number(x)` on agent input — it re-introduces the NaN-defeats-`?? fallback` bug.

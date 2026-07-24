@@ -17,7 +17,7 @@ never calls a model provider directly. Those paths need the agent wired in (see 
 
 ## Setup
 
-Prerequisites: Node.js 20+ and npm.
+Prerequisites: Node.js 24+ (see [.nvmrc](.nvmrc)) and npm.
 
 ```bash
 git clone <your-fork-url> landed

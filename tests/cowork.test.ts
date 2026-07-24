@@ -119,7 +119,7 @@ test("a rejection never inserts a new posting when the company has one — it ra
   // match against the existing posting for the user to confirm.
   submitJobResult({
     type: "inbox-sync",
-    jobId: "inbox-sync-percepta",
+    jobId: "inbox-sync-globex",
     records: [{ company: "Globex", role: "Software Engineer", status: "rejected" }],
   });
 

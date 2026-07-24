@@ -18,7 +18,7 @@ const setIntel = (id: number, patch: { comp?: string; note?: string; teamNotes?:
 test("gatherPeerInputs returns interview/offer roles with their comp + JD, excludes applied", () => {
   const a = seedApp({ company: "Acme", role: "Backend Engineer", status: "interview" });
   const b = seedApp({ company: "Initech", role: "Staff Software Engineer", status: "offer" });
-  const c = seedApp({ company: "Stripe", role: "SWE", status: "applied" }); // excluded
+  const c = seedApp({ company: "Umbrella", role: "SWE", status: "applied" }); // excluded
   setComp(a, "≈$290k — $200k base · 15% bonus", "Acme is hiring a backend engineer…");
   setComp(b, "$220–240k base · 4k RSU");
   setComp(c, "should not appear");
@@ -26,7 +26,7 @@ test("gatherPeerInputs returns interview/offer roles with their comp + JD, exclu
   const inputs = gatherPeerInputs();
   const byCompany = Object.fromEntries(inputs.map((r) => [r.company, r]));
   assert.equal(inputs.length, 2); // interview + offer only
-  assert.ok(!("Stripe" in byCompany));
+  assert.ok(!("Umbrella" in byCompany));
   assert.equal(byCompany["Acme"].role, "Backend Engineer");
   assert.match(byCompany["Acme"].comp!, /200k base/);
   assert.match(byCompany["Acme"].jd!, /backend engineer/);
@@ -47,7 +47,7 @@ test("gatherPeerInputs captures comp jotted in the general `note` and `teamNotes
 });
 
 test("gatherPeerInputs returns [] when nothing is in the interview/offer stage", () => {
-  seedApp({ company: "Stripe", role: "SWE", status: "applied" });
+  seedApp({ company: "Umbrella", role: "SWE", status: "applied" });
   assert.deepEqual(gatherPeerInputs(), []);
 });
 
