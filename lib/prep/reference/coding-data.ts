@@ -15,8 +15,7 @@ export const PATTERNS = [
       "Two Sum / pair finding — 'find two elements that sum to k'",
       "Anagram / frequency comparison — 'same characters?'",
       "Subarray with target sum → prefix sum + map",
-      "Group by property — group anagrams, find duplicates",
-      "Databricks: dedup by key in stream, top-K frequency counting"
+      "Group by property — group anagrams, find duplicates"
     ],
     "template": "# Direct lookup\nseen = {}\nfor i, x in enumerate(arr):\n    complement = target - x\n    if complement in seen:\n        return [seen[complement], i]\n    seen[x] = i\n\n# Prefix sum + map (subarray sum = k)\ncount = {0: 1}  # critical: init before loop\nprefix = 0\nresult = 0\nfor x in arr:\n    prefix += x\n    result += count.get(prefix - k, 0)\n    count[prefix] = count.get(prefix, 0) + 1",
     "keyProblems": [
@@ -58,15 +57,14 @@ export const PATTERNS = [
       "O(n log k)",
       "k-way-merge"
     ],
-    "description": "Databricks' most tested pattern. Use when you need repeated min/max access. The k-way merge pattern (seeding a heap with the first element of each sorted source) is fundamental to external sorting and lakehouse compaction.",
+    "description": "A heavily tested pattern. Use when you need repeated min/max access. The k-way merge pattern (seeding a heap with the first element of each sorted source) is fundamental to external sorting and log/file compaction.",
     "when": [
       "Top K elements (frequent, largest) → min-heap of size k",
       "Merge K sorted sources → heap with (val, source_idx)",
       "Median from stream → two heaps (max-heap lower, min-heap upper)",
-      "Streaming aggregation with memory budget → size-bounded heap",
-      "Databricks: compaction of sorted Parquet chunks = k-way merge"
+      "Streaming aggregation with memory budget → size-bounded heap"
     ],
-    "template": "import heapq\n\n# Min-heap of size k (top-k largest)\nheap = []\nfor x in arr:\n    heapq.heappush(heap, x)\n    if len(heap) > k:\n        heapq.heappop(heap)\nreturn heap[0]  # kth largest\n\n# K-way merge (core lakehouse pattern)\n# lists = [[sorted chunk 0], [sorted chunk 1], ...]\nheap = []\nfor i, lst in enumerate(lists):\n    if lst:\n        heapq.heappush(heap, (lst[0], i, 0))\nresult = []\nwhile heap:\n    val, i, j = heapq.heappop(heap)\n    result.append(val)\n    if j + 1 < len(lists[i]):\n        heapq.heappush(heap, (lists[i][j+1], i, j+1))\n\n# Two heaps for streaming median\nlower = []  # max-heap (negate)\nupper = []  # min-heap\ndef add(num):\n    heapq.heappush(lower, -num)\n    heapq.heappush(upper, -heapq.heappop(lower))\n    if len(upper) > len(lower):\n        heapq.heappush(lower, -heapq.heappop(upper))\ndef median():\n    if len(lower) > len(upper): return -lower[0]\n    return (-lower[0] + upper[0]) / 2",
+    "template": "import heapq\n\n# Min-heap of size k (top-k largest)\nheap = []\nfor x in arr:\n    heapq.heappush(heap, x)\n    if len(heap) > k:\n        heapq.heappop(heap)\nreturn heap[0]  # kth largest\n\n# K-way merge (core external-sort pattern)\n# lists = [[sorted chunk 0], [sorted chunk 1], ...]\nheap = []\nfor i, lst in enumerate(lists):\n    if lst:\n        heapq.heappush(heap, (lst[0], i, 0))\nresult = []\nwhile heap:\n    val, i, j = heapq.heappop(heap)\n    result.append(val)\n    if j + 1 < len(lists[i]):\n        heapq.heappush(heap, (lists[i][j+1], i, j+1))\n\n# Two heaps for streaming median\nlower = []  # max-heap (negate)\nupper = []  # min-heap\ndef add(num):\n    heapq.heappush(lower, -num)\n    heapq.heappush(upper, -heapq.heappop(lower))\n    if len(upper) > len(lower):\n        heapq.heappush(lower, -heapq.heappop(upper))\ndef median():\n    if len(lower) > len(upper): return -lower[0]\n    return (-lower[0] + upper[0]) / 2",
     "keyProblems": [
       {
         "name": "Merge K Sorted Lists",
@@ -105,14 +103,12 @@ export const PATTERNS = [
       "variable-window",
       "dedup-stream"
     ],
-    "description": "Maintain a window that expands right and contracts from left. Variable window: shrink when condition violated. Databricks uses this for time-window deduplication and sessionization — knowing this pattern cold matters.",
+    "description": "Maintain a window that expands right and contracts from left. Variable window: shrink when condition violated. Common in time-window deduplication and sessionization — knowing this pattern cold matters.",
     "when": [
       "Longest/shortest subarray satisfying a condition",
-      "Substring with constraint (at most K distinct, no repeats)",
-      "Databricks: dedup events within a time window T",
-      "Databricks: sessionize — break into sessions when gap > G"
+      "Substring with constraint (at most K distinct, no repeats)"
     ],
-    "template": "# Variable window (generic)\nleft = 0\nwindow = {}\nresult = 0\nfor right in range(len(s)):\n    window[s[right]] = window.get(s[right], 0) + 1\n    while not_valid(window):\n        window[s[left]] -= 1\n        if window[s[left]] == 0: del window[s[left]]\n        left += 1\n    result = max(result, right - left + 1)\n\n# Time-window dedup (Databricks pattern)\n# events = [(id, timestamp)] sorted by timestamp\nlast_seen = {}  # id -> last accepted timestamp\nresult = []\nfor event_id, ts in events:\n    if event_id not in last_seen or ts - last_seen[event_id] > T:\n        result.append((event_id, ts))\n        last_seen[event_id] = ts\n\n# Sessionization (Databricks pattern)\n# events per user, sorted by timestamp\nsessions = []\nif not events: return sessions\nsession_start = events[0][1]\nprev_ts = events[0][1]\nfor _, ts in events[1:]:\n    if ts - prev_ts > G:\n        sessions.append((session_start, prev_ts))\n        session_start = ts\n    prev_ts = ts\nsessions.append((session_start, prev_ts))",
+    "template": "# Variable window (generic)\nleft = 0\nwindow = {}\nresult = 0\nfor right in range(len(s)):\n    window[s[right]] = window.get(s[right], 0) + 1\n    while not_valid(window):\n        window[s[left]] -= 1\n        if window[s[left]] == 0: del window[s[left]]\n        left += 1\n    result = max(result, right - left + 1)\n\n# Time-window dedup (streaming pattern)\n# events = [(id, timestamp)] sorted by timestamp\nlast_seen = {}  # id -> last accepted timestamp\nresult = []\nfor event_id, ts in events:\n    if event_id not in last_seen or ts - last_seen[event_id] > T:\n        result.append((event_id, ts))\n        last_seen[event_id] = ts\n\n# Sessionization (streaming pattern)\n# events per user, sorted by timestamp\nsessions = []\nif not events: return sessions\nsession_start = events[0][1]\nprev_ts = events[0][1]\nfor _, ts in events[1:]:\n    if ts - prev_ts > G:\n        sessions.append((session_start, prev_ts))\n        session_start = ts\n    prev_ts = ts\nsessions.append((session_start, prev_ts))",
     "keyProblems": [
       {
         "name": "Minimum Window Substring",
@@ -152,13 +148,11 @@ export const PATTERNS = [
       "topological-sort",
       "connected-components"
     ],
-    "description": "Graph problems at Databricks often have a 'scale' twist — high-degree nodes (data skew), large connected components (file metadata graphs), or dependency ordering (job scheduling). Union-Find with path compression is preferred over naive BFS for repeated connectivity queries.",
+    "description": "Graph problems often have a 'scale' twist — high-degree nodes (data skew), large connected components (file metadata graphs), or dependency ordering (job scheduling). Union-Find with path compression is preferred over naive BFS for repeated connectivity queries.",
     "when": [
       "Connected components → Union-Find or BFS/DFS",
       "Cycle detection / dependency order → topological sort",
-      "Shortest path (unweighted) → BFS",
-      "Databricks: file or partition dependency graphs",
-      "Databricks: 'heavy node' variants — high-degree nodes skew BFS performance"
+      "Shortest path (unweighted) → BFS"
     ],
     "template": "# Union-Find (path compression + union by rank)\nparent = list(range(n))\nrank = [0] * n\n\ndef find(x):\n    if parent[x] != x:\n        parent[x] = find(parent[x])  # path compression\n    return parent[x]\n\ndef union(x, y):\n    px, py = find(x), find(y)\n    if px == py: return False  # already connected\n    if rank[px] < rank[py]: px, py = py, px\n    parent[py] = px\n    if rank[px] == rank[py]: rank[px] += 1\n    return True\n\n# Topological sort (Kahn's BFS)\nfrom collections import deque, defaultdict\nin_degree = [0] * n\ngraph = defaultdict(list)\n# build edges...\nqueue = deque(i for i in range(n) if in_degree[i] == 0)\norder = []\nwhile queue:\n    node = queue.popleft()\n    order.append(node)\n    for nei in graph[node]:\n        in_degree[nei] -= 1\n        if in_degree[nei] == 0:\n            queue.append(nei)\n# len(order) != n → cycle exists",
     "keyProblems": [
@@ -199,12 +193,11 @@ export const PATTERNS = [
       "answer-space",
       "monotonic"
     ],
-    "description": "Databricks is known for integrating binary search into non-obvious problems. The advanced form searches on the ANSWER SPACE — binary search on what you're trying to minimize/maximize. Any problem with a monotonic feasibility check is a candidate.",
+    "description": "Binary search often hides inside non-obvious problems. The advanced form searches on the ANSWER SPACE — binary search on what you're trying to minimize/maximize. Any problem with a monotonic feasibility check is a candidate.",
     "when": [
       "Sorted array lookup / first-last occurrence",
       "Rotated sorted array",
-      "Minimize/maximize a value with a feasibility check → search on answer space",
-      "Databricks: find optimal batch size, partition boundary, memory threshold"
+      "Minimize/maximize a value with a feasibility check → search on answer space"
     ],
     "template": "# Standard\nlo, hi = 0, len(arr) - 1\nwhile lo <= hi:\n    mid = lo + (hi - lo) // 2\n    if arr[mid] == target: return mid\n    elif arr[mid] < target: lo = mid + 1\n    else: hi = mid - 1\n\n# Biased left (first occurrence)\nlo, hi = 0, len(arr) - 1\nresult = -1\nwhile lo <= hi:\n    mid = (lo + hi) // 2\n    if arr[mid] == target:\n        result = mid\n        hi = mid - 1  # keep searching left\n    elif arr[mid] < target: lo = mid + 1\n    else: hi = mid - 1\n\n# Answer space (minimize X such that can_do(X) is True)\nlo, hi = min_possible, max_possible\nwhile lo < hi:\n    mid = (lo + hi) // 2\n    if can_do(mid): hi = mid     # mid works, try smaller\n    else: lo = mid + 1\nreturn lo",
     "keyProblems": [
@@ -382,7 +375,7 @@ export const PATTERNS = [
       "1D-dp",
       "2D-dp"
     ],
-    "description": "Overlapping subproblems + optimal substructure. Define the state clearly first. 1D DP for linear sequences. 2D DP for two-sequence alignment (LCS, edit distance). Databricks OA occasionally includes DP but it's less common than heaps/graphs.",
+    "description": "Overlapping subproblems + optimal substructure. Define the state clearly first. 1D DP for linear sequences. 2D DP for two-sequence alignment (LCS, edit distance). Assessments occasionally include DP but it's less common than heaps/graphs.",
     "when": [
       "Optimization (min/max) over a sequence of choices",
       "Counting paths or ways to reach an outcome",
@@ -517,7 +510,7 @@ export const COMPLEXITY = {
       "name": "K-way Merge",
       "time": "O(n log K)",
       "space": "O(K)",
-      "note": "n total elements across K sorted lists. Core lakehouse pattern."
+      "note": "n total elements across K sorted lists. Core external-sort pattern."
     },
     {
       "name": "Topological Sort",
@@ -583,7 +576,7 @@ export const COMPLEXITY = {
       "worst": "O(n log n)",
       "space": "O(B)",
       "stable": "Yes",
-      "note": "B = buffer size. Databricks compaction is essentially this."
+      "note": "B = buffer size. Log/file compaction is essentially this."
     },
     {
       "name": "Counting Sort",
@@ -600,8 +593,8 @@ export const SIGNALS = [
   {
     "icon": "◈",
     "signal": "Scale thinking from the start",
-    "detail": "State time AND space complexity proactively. Then go further: 'At 10TB this would need external sort — the k-way merge pattern handles that.' Databricks explicitly evaluates data-at-scale reasoning.",
-    "level": "DB CRITICAL"
+    "detail": "State time AND space complexity proactively. Then go further: 'At 10TB this would need external sort — the k-way merge pattern handles that.' Data-at-scale reasoning is a strong signal.",
+    "level": "CRITICAL"
   },
   {
     "icon": "◇",
@@ -618,20 +611,20 @@ export const SIGNALS = [
   {
     "icon": "⚡",
     "signal": "Talk through trade-offs",
-    "detail": "For every design choice: what are you giving up? 'Min-heap gives O(n log K) vs O(n log n) for full sort — the trade-off is K extra space. At K=1000 and n=1B rows, that's worthwhile.' Databricks weighs trade-off articulation heavily.",
+    "detail": "For every design choice: what are you giving up? 'Min-heap gives O(n log K) vs O(n log n) for full sort — the trade-off is K extra space. At K=1000 and n=1B rows, that's worthwhile.' Trade-off articulation is weighed heavily.",
     "level": "SENIOR+"
   },
   {
     "icon": "◎",
     "signal": "Production-quality code and edge cases",
     "detail": "OA code may be reviewed in live rounds. Write clean code, name variables well, add a comment for non-obvious invariants. Test: empty input, single element, K > n, duplicate keys, exact boundary timestamps.",
-    "level": "DB SPECIFIC"
+    "level": "SENIOR+"
   },
   {
     "icon": "⬡",
-    "signal": "Connect to lakehouse reality",
-    "detail": "When relevant, name the real-world analogue: 'This k-way merge is exactly how Delta Lake compaction works.' 'This dedup pattern is what streaming exactly-once semantics rely on.' Shows you're not just solving puzzles.",
-    "level": "DB SPECIFIC"
+    "signal": "Connect to real-world systems",
+    "detail": "When relevant, name the real-world analogue: 'This k-way merge is exactly how log-structured compaction works.' 'This dedup pattern is what streaming exactly-once semantics rely on.' Shows you're not just solving puzzles.",
+    "level": "SENIOR+"
   }
 ] as const;
 
@@ -677,16 +670,16 @@ export const META = [
   {
     "icon": "◇",
     "title": "Always articulate the scale implication",
-    "detail": "'This is O(n) space — at 1B events that's ~8GB. If that's a problem, I'd switch to a streaming approach with a bounded buffer.' Databricks wants engineers who think about memory and I/O cost naturally."
+    "detail": "'This is O(n) space — at 1B events that's ~8GB. If that's a problem, I'd switch to a streaming approach with a bounded buffer.' Strong candidates think about memory and I/O cost naturally."
   },
   {
     "icon": "△",
     "title": "K-way merge is their signature pattern",
-    "detail": "Understand it deeply: seed heap with one element per source, pop minimum, push next from same source. This is external sort, Delta compaction, and Spark's merge sort shuffle — all the same idea."
+    "detail": "Understand it deeply: seed heap with one element per source, pop minimum, push next from same source. This is external sort, log compaction, and merge-sort shuffle — all the same idea."
   },
   {
     "icon": "⚡",
     "title": "OA code will be reviewed — write like it",
-    "detail": "Databricks interviewers use your OA submission as a code sample. Name variables clearly, add a comment for invariants ('lower heap always >= upper'), and handle edge cases explicitly. Don't write throwaway code."
+    "detail": "Interviewers often use your submission as a code sample. Name variables clearly, add a comment for invariants ('lower heap always >= upper'), and handle edge cases explicitly. Don't write throwaway code."
   }
 ] as const;

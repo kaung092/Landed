@@ -30,7 +30,7 @@ export function fmtTime(sec?: number): string {
   return s === 0 ? `${m}m` : m === 0 ? `${s}s` : `${m}m${s}s`;
 }
 
-// Signal-level badge color (e.g. "DB CRITICAL", "TABLE STAKES", "SENIOR+").
+// Signal-level badge color (e.g. "CRITICAL", "TABLE STAKES", "SENIOR+").
 export function levelCls(level?: string): string {
   const l = (level ?? "").toLowerCase();
   if (l.includes("critical")) return "text-rose-300 bg-rose-500/10 ring-rose-500/25";

@@ -150,7 +150,7 @@ export type Posting = {
   interviewed?: boolean; // reached an interview → drives reapply cooldown after rejection
   needsReview?: boolean; // flagged by an automated source — awaits your confirm
   pinned?: boolean; // user-pinned → floats to the top of its stage table
-  resumeDir?: string; // per-app tailoring folder (latest version), e.g. databricks-senior-123/v2
+  resumeDir?: string; // per-app tailoring folder (latest version), e.g. acme-senior-123/v2
   chosenResume?: string | null; // the résumé chosen to submit: "base" or a version slug (null = undecided)
   editedResumes?: string[]; // version slugs you've manually edited by hand (per-version flag)
   redoLog?: RedoTurn[]; // the fit/tailor redo conversation + version history

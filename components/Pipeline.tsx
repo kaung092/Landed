@@ -223,7 +223,7 @@ function shortDay(iso?: string | null): string | null {
   return `${MONTHS[d.getUTCMonth()]} ${d.getUTCDate()}`;
 }
 
-// Friendly label for a résumé slug (e.g. "databricks-senior-123/v2" → "tailored-v2"). The full slug
+// Friendly label for a résumé slug (e.g. "acme-senior-123/v2" → "tailored-v2"). The full slug
 // stays in the cell's title for reference; the version suffix is the only part worth showing inline.
 function resumeLabel(dir: string): string {
   const m = dir.match(/v(\d+)\s*$/i);

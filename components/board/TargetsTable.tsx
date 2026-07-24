@@ -22,7 +22,7 @@ const FETCH_META: Record<string, { label: string; desc: string }> = {
 };
 
 // Host + path of a board URL, minus the protocol / "www." / query — for the Fetch column's
-// "<method> on <where>" line (e.g. "https://www.databricks.com/careers?x=1" → "databricks.com/careers").
+// "<method> on <where>" line (e.g. "https://www.acme.com/careers?x=1" → "acme.com/careers").
 function shortUrl(u: string): string {
   try {
     const url = new URL(u);

@@ -75,11 +75,9 @@ export const PREP_SEED: PrepSeed[] = [
     "tags": [
       "Hash Map / Frequency"
     ],
-    "companies": [
-      "databricks"
-    ],
+    "companies": [],
     "content": {
-      "note": "Key = sorted string. Group by key in map. DB-adjacent.  ·  Databricks: Key = sorted string. HashMap groups."
+      "note": "Key = sorted string. Group by key in map."
     },
     "plan": {
       "day": 1,
@@ -100,11 +98,9 @@ export const PREP_SEED: PrepSeed[] = [
     "tags": [
       "Hash Map / Frequency"
     ],
-    "companies": [
-      "databricks"
-    ],
+    "companies": [],
     "content": {
-      "note": "Prefix sum + map. count[0]=1 init critical. Reported on DB OA.  ·  Databricks: Prefix sum + map. count[0]=1 init critical."
+      "note": "Prefix sum + map. count[0]=1 init critical."
     },
     "plan": {
       "day": 1,
@@ -125,11 +121,9 @@ export const PREP_SEED: PrepSeed[] = [
     "tags": [
       "Heap / Priority Queue"
     ],
-    "companies": [
-      "databricks"
-    ],
+    "companies": [],
     "content": {
-      "note": "Min-heap of size k. Top = kth largest. Know quickselect too.  ·  Databricks: Min-heap size k. Know quickselect too."
+      "note": "Min-heap of size k. Top = kth largest. Know quickselect too."
     },
     "plan": {
       "day": 2,
@@ -150,11 +144,9 @@ export const PREP_SEED: PrepSeed[] = [
     "tags": [
       "Heap / Priority Queue"
     ],
-    "companies": [
-      "databricks"
-    ],
+    "companies": [],
     "content": {
-      "note": "Freq map → min-heap. Or bucket sort O(n). DB OA reported.  ·  Databricks: Freq map → min-heap of size k. Or bucket sort O(n)."
+      "note": "Freq map → min-heap. Or bucket sort O(n)."
     },
     "plan": {
       "day": 2,
@@ -175,11 +167,9 @@ export const PREP_SEED: PrepSeed[] = [
     "tags": [
       "Heap / Priority Queue"
     ],
-    "companies": [
-      "databricks"
-    ],
+    "companies": [],
     "content": {
-      "note": "THE k-way merge. Include list idx in heap tuple. DB CORE.  ·  Databricks: Direct K-way merge. Include list idx in heap tuple."
+      "note": "THE k-way merge. Include list idx in heap tuple."
     },
     "plan": {
       "day": 2,
@@ -200,11 +190,9 @@ export const PREP_SEED: PrepSeed[] = [
     "tags": [
       "Heap / Priority Queue"
     ],
-    "companies": [
-      "databricks"
-    ],
+    "companies": [],
     "content": {
-      "note": "Two heaps. Rebalance after every insert. DB reported.  ·  Databricks: Two heaps. Rebalance after every insert."
+      "note": "Two heaps. Rebalance after every insert."
     },
     "plan": {
       "day": 2,
@@ -225,11 +213,9 @@ export const PREP_SEED: PrepSeed[] = [
     "tags": [
       "Sliding Window"
     ],
-    "companies": [
-      "databricks"
-    ],
+    "companies": [],
     "content": {
-      "note": "Two freq maps. 'formed' counter. DB OA reported.  ·  Databricks: Two freq maps. 'formed' counter. Know cold."
+      "note": "Two freq maps. 'formed' counter."
     },
     "plan": {
       "day": 3,
@@ -365,11 +351,9 @@ export const PREP_SEED: PrepSeed[] = [
     "tags": [
       "Binary Search"
     ],
-    "companies": [
-      "databricks"
-    ],
+    "companies": [],
     "content": {
-      "note": "One half always sorted. Check if target in sorted half. DB reported.  ·  Databricks: One half always sorted. Check if target in that half."
+      "note": "One half always sorted. Check if target in sorted half."
     },
     "plan": {
       "day": 4,
@@ -392,7 +376,7 @@ export const PREP_SEED: PrepSeed[] = [
     ],
     "companies": [],
     "content": {
-      "note": "Answer space BS. canFinish(speed) monotonic. DB reported."
+      "note": "Answer space BS. canFinish(speed) monotonic."
     },
     "plan": {
       "day": 4,
@@ -436,11 +420,9 @@ export const PREP_SEED: PrepSeed[] = [
     "tags": [
       "Graphs / Union-Find"
     ],
-    "companies": [
-      "databricks"
-    ],
+    "companies": [],
     "content": {
-      "note": "Topological sort. len(result)==n → no cycle. DB reported.  ·  Databricks: Topological sort. len(result)==n → no cycle."
+      "note": "Topological sort. len(result)==n → no cycle."
     },
     "plan": {
       "day": 5,
@@ -461,11 +443,9 @@ export const PREP_SEED: PrepSeed[] = [
     "tags": [
       "Graphs / Union-Find"
     ],
-    "companies": [
-      "databricks"
-    ],
+    "companies": [],
     "content": {
-      "note": "Union-Find. First edge joining already-connected nodes. DB reported.  ·  Databricks: Union-Find. First edge that joins already-connected nodes."
+      "note": "Union-Find. First edge joining already-connected nodes."
     },
     "plan": {
       "day": 5,
@@ -486,11 +466,9 @@ export const PREP_SEED: PrepSeed[] = [
     "tags": [
       "Graphs / Union-Find"
     ],
-    "companies": [
-      "databricks"
-    ],
+    "companies": [],
     "content": {
-      "note": "Weighted graph BFS. Build a/b and b/a edges. DB reported.  ·  Databricks: Weighted graph BFS. Build a/b and b/a edges."
+      "note": "Weighted graph BFS. Build a/b and b/a edges."
     },
     "plan": {
       "day": 5,
@@ -603,11 +581,9 @@ export const PREP_SEED: PrepSeed[] = [
     "tags": [
       "Stack / Monotonic"
     ],
-    "companies": [
-      "databricks"
-    ],
+    "companies": [],
     "content": {
-      "note": "Monotonic decreasing deque. Expire from front (out-of-window), evict smaller from back, record front as max.  ·  Databricks: Monotonic deque. Front = max of current window."
+      "note": "Monotonic decreasing deque. Expire from front (out-of-window), evict smaller from back, record front as max."
     },
     "plan": {
       "day": 7,
@@ -766,11 +742,9 @@ export const PREP_SEED: PrepSeed[] = [
     "tags": [
       "Design Problems"
     ],
-    "companies": [
-      "databricks"
-    ],
+    "companies": [],
     "content": {
-      "note": "HashMap + DLL. O(1) get/put. Implement DLL yourself. DB reported.  ·  Databricks: HashMap + DLL. Implement DLL yourself."
+      "note": "HashMap + DLL. O(1) get/put. Implement DLL yourself."
     },
     "plan": {
       "day": 10,
@@ -860,11 +834,9 @@ export const PREP_SEED: PrepSeed[] = [
     "tags": [
       "Intervals + Merge"
     ],
-    "companies": [
-      "databricks"
-    ],
+    "companies": [],
     "content": {
-      "note": "Sort by start. Extend end if overlap. DB OA reported.  ·  Databricks: Sort by start. Extend end if overlap."
+      "note": "Sort by start. Extend end if overlap."
     },
     "plan": {
       "day": 11,
@@ -1037,7 +1009,7 @@ export const PREP_SEED: PrepSeed[] = [
     "sortOrder": 42
   },
   {
-    "id": "dbq-kway",
+    "id": "scenario-kway",
     "track": "coding",
     "name": "External K-Way Merge",
     "prompt": "Given K sorted arrays (representing pre-sorted chunks from disk), merge them into one sorted array efficiently. Memory budget: you can only hold O(K) elements at a time.",
@@ -1046,14 +1018,11 @@ export const PREP_SEED: PrepSeed[] = [
     "tags": [
       "heap",
       "k-way-merge",
-      "external-sort",
-      "lakehouse"
+      "external-sort"
     ],
-    "companies": [
-      "databricks"
-    ],
+    "companies": [],
     "content": {
-      "why": "This is the core of Delta Lake compaction and Parquet file merging. Databricks engineers live in this pattern.",
+      "why": "A classic merge pattern that shows up in log/file compaction, external sorting, and streaming systems. Worth knowing cold.",
       "approach": [
         "Seed a min-heap with the first element from each of the K lists: (val, list_idx, element_idx)",
         "Pop the minimum, add to result, push next element from the same list",
@@ -1076,7 +1045,7 @@ export const PREP_SEED: PrepSeed[] = [
     "sortOrder": 43
   },
   {
-    "id": "dbq-topk",
+    "id": "scenario-topk",
     "track": "coding",
     "name": "Top-K Frequent Keys in Log Stream",
     "prompt": "Given a stream of string events (or a large log file), return the K most frequent keys. Optimize for both time and memory. Follow-up: streaming version where you can't store all events.",
@@ -1088,11 +1057,9 @@ export const PREP_SEED: PrepSeed[] = [
       "streaming",
       "heavy-hitter"
     ],
-    "companies": [
-      "databricks"
-    ],
+    "companies": [],
     "content": {
-      "why": "Databricks runs analytics over billions of log events. Top-K with memory constraints is a bread-and-butter problem.",
+      "why": "Analytics over billions of log events. Top-K with memory constraints is a bread-and-butter problem.",
       "approach": [
         "Batch version: Counter(stream) → heapq.nlargest(K, counts.items(), key=lambda x: x[1])",
         "Min-heap of size K: for each new (key, count) pair, push if count > heap[0][0], then pop if size > K",
@@ -1115,7 +1082,7 @@ export const PREP_SEED: PrepSeed[] = [
     "sortOrder": 44
   },
   {
-    "id": "dbq-dedup",
+    "id": "scenario-dedup",
     "track": "coding",
     "name": "Deduplicate Events Within Time Window",
     "prompt": "Each event has (event_id, timestamp). Remove duplicates where the same event_id occurs within T seconds of a previous accepted occurrence. Return the deduplicated list.",
@@ -1127,11 +1094,9 @@ export const PREP_SEED: PrepSeed[] = [
       "idempotency",
       "streaming"
     ],
-    "companies": [
-      "databricks"
-    ],
+    "companies": [],
     "content": {
-      "why": "Exactly-once semantics and deduplication are core to Delta Lake and streaming pipelines. This tests whether you understand idempotency at scale.",
+      "why": "Exactly-once semantics and deduplication are core to streaming pipelines. This tests whether you understand idempotency at scale.",
       "approach": [
         "Sort events by timestamp if not already sorted — O(n log n)",
         "Maintain last_accepted = {} mapping event_id → timestamp of last accepted event",
@@ -1154,7 +1119,7 @@ export const PREP_SEED: PrepSeed[] = [
     "sortOrder": 45
   },
   {
-    "id": "dbq-session",
+    "id": "scenario-session",
     "track": "coding",
     "name": "Sessionize Clickstream",
     "prompt": "Given user click events as (user_id, timestamp) sorted by timestamp, break each user's events into sessions where a new session starts when the gap between consecutive events exceeds G seconds. Return total session count and duration per session.",
@@ -1166,11 +1131,9 @@ export const PREP_SEED: PrepSeed[] = [
       "sessionization",
       "analytics"
     ],
-    "companies": [
-      "databricks"
-    ],
+    "companies": [],
     "content": {
-      "why": "Sessionization is a fundamental analytics transformation in data engineering. Databricks runs this at massive scale in Spark.",
+      "why": "Sessionization is a fundamental analytics transformation in data engineering, run at massive scale in distributed systems.",
       "approach": [
         "Group events by user_id — use defaultdict(list) or sort by (user_id, timestamp)",
         "For each user's events (sorted): walk linearly, track session_start and prev_ts",
@@ -1193,7 +1156,7 @@ export const PREP_SEED: PrepSeed[] = [
     "sortOrder": 46
   },
   {
-    "id": "dbq-components",
+    "id": "scenario-components",
     "track": "coding",
     "name": "Connected Components with Heavy Nodes",
     "prompt": "Given an undirected graph, return the list of connected components (as sets of nodes). Some nodes are 'heavy' with very high degree. Ensure your solution remains efficient under skewed degree distribution.",
@@ -1205,11 +1168,9 @@ export const PREP_SEED: PrepSeed[] = [
       "data-skew",
       "O(alpha)"
     ],
-    "companies": [
-      "databricks"
-    ],
+    "companies": [],
     "content": {
-      "why": "File metadata graphs in Delta Lake can have highly skewed degree distributions (one table with thousands of partitions). Naive BFS degrades badly; Union-Find doesn't.",
+      "why": "File metadata graphs can have highly skewed degree distributions (one table with thousands of partitions). Naive BFS degrades badly; Union-Find doesn't.",
       "approach": [
         "Union-Find with path compression + union by rank — near O(1) per operation",
         "For each edge (u, v): call union(u, v)",
@@ -1232,7 +1193,7 @@ export const PREP_SEED: PrepSeed[] = [
     "sortOrder": 47
   },
   {
-    "id": "dbq-lrucache",
+    "id": "scenario-lrucache",
     "track": "coding",
     "name": "LRU Cache / Time-Bounded Cache",
     "prompt": "Implement an LRU cache with get(key) and put(key, value). Both O(1). Follow-up: add TTL — entries expire after T seconds.",
@@ -1244,11 +1205,9 @@ export const PREP_SEED: PrepSeed[] = [
       "hashmap",
       "O(1)"
     ],
-    "companies": [
-      "databricks"
-    ],
+    "companies": [],
     "content": {
-      "why": "Caching is pervasive in Databricks (query result cache, Delta cache, metadata cache). LRU + TTL tests your ability to combine data structures.",
+      "why": "Caching is pervasive in data systems (query result cache, block cache, metadata cache). LRU + TTL tests your ability to combine data structures.",
       "approach": [
         "HashMap of key → node for O(1) lookup",
         "Doubly linked list for O(1) move-to-front (most recent) and evict-from-tail (least recent)",
@@ -1272,7 +1231,7 @@ export const PREP_SEED: PrepSeed[] = [
     "sortOrder": 48
   },
   {
-    "id": "dbq-streammedian",
+    "id": "scenario-streammedian",
     "track": "coding",
     "name": "Streaming Median with Memory Constraint",
     "prompt": "Design a data structure that accepts a stream of integers and returns the running median after each insertion. Follow-up: the stream is partitioned — compute per-partition medians, then merge approximate global median.",
@@ -1284,11 +1243,9 @@ export const PREP_SEED: PrepSeed[] = [
       "median",
       "memory-aware"
     ],
-    "companies": [
-      "databricks"
-    ],
+    "companies": [],
     "content": {
-      "why": "Percentile/median computation over large data streams is a core analytics primitive. Databricks uses approximate algorithms (t-digest) at scale.",
+      "why": "Percentile/median computation over large data streams is a core analytics primitive. Production systems use approximate algorithms (t-digest) at scale.",
       "approach": [
         "Two heaps: max-heap (lower half) and min-heap (upper half)",
         "Invariant: lower.size >= upper.size, lower.size - upper.size <= 1",

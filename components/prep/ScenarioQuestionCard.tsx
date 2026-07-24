@@ -8,9 +8,9 @@ import AttemptControl from "./AttemptControl";
 import ConfidenceTag from "./ConfidenceTag";
 import { Badge, diffCls } from "./ui";
 
-// Databricks bespoke scenario question: prompt + why-it-matters, then approach,
+// Bespoke scenario question: prompt + why-it-matters, then approach,
 // follow-ups, and gotchas on expand. Tracked via AttemptControl.
-export default function DBQuestionCard({
+export default function ScenarioQuestionCard({
   q,
   onLog,
   onUndo,

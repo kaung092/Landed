@@ -13,7 +13,7 @@ export default function PatternsRef() {
     <div>
       <SectionTitle
         title="Algorithm Patterns"
-        sub="Databricks heavily tests heap / k-way merge, binary search, and sliding window. Master these."
+        sub="Heap / k-way merge, binary search, and sliding window come up constantly. Master these."
       />
       <div className="space-y-2">
         {PATTERNS.map((p) => {

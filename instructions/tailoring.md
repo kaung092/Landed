@@ -73,7 +73,7 @@ is the rare exception (see 2c). Work every zone below for every posting.
 
    Save to the **exact folder the app gives you** — `resume/<params.postings[].slug>/` — with the
    **generic filenames** the helper writes (`resume.docx`, `resume.pdf`). The app dictates the slug
-   (a versioned path like `databricks-senior-123/v2`); **don't invent your own** — pass the one in
+   (a versioned path like `acme-senior-123/v2`); **don't invent your own** — pass the one in
    `params` and echo it back unchanged. Each redo is a new `v<N>` folder, so a prior version's files
    are never overwritten.
 

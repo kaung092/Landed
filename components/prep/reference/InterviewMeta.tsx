@@ -3,7 +3,7 @@
 import { SIGNALS, TIME_BUDGET, META } from "@/lib/prep/reference/coding-data";
 import { Badge, levelCls, SectionTitle } from "../ui";
 
-// Coding interview meta: what signals Databricks evaluates, the OA time budget, and
+// Coding interview meta: what signals interviewers evaluate, the OA time budget, and
 // strategy reminders.
 export default function InterviewMeta() {
   return (

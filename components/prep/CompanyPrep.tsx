@@ -9,7 +9,7 @@ import { usePersistentState } from "@/hooks/usePersistentState";
 import PrepShell from "./PrepShell";
 import QuestionRow from "./QuestionRow";
 import QuestionCard from "./QuestionCard";
-import DBQuestionCard from "./DBQuestionCard";
+import ScenarioQuestionCard from "./ScenarioQuestionCard";
 import CompanyChatPanel from "./CompanyChatPanel";
 import { COMPANY_EXTRAS } from "./reference/companyExtras";
 import { SectionTitle } from "./ui";
@@ -104,7 +104,7 @@ export default function CompanyPrep({ profile, lastDumpedAt }: { profile: Compan
     if (kind === "coding")
       return <QuestionRow key={q.id} q={q} onLog={logAttempt} onUndo={undoLast} onNoted={setNoted} onRedo={setRedo} />;
     if (kind === "system_design") return <QuestionCard key={q.id} q={q} onLog={logAttempt} onUndo={undoLast} />;
-    return <DBQuestionCard key={q.id} q={q} onLog={logAttempt} onUndo={undoLast} />;
+    return <ScenarioQuestionCard key={q.id} q={q} onLog={logAttempt} onUndo={undoLast} />;
   };
 
   return (

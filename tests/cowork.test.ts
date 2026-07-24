@@ -162,8 +162,8 @@ test("updateApplication attributes the change-log event to the passed actor (CoW
 // --- deleting a queued tailoring job un-queues a stuck candidate --------------------------
 
 test("deleting a first-time tailoring job un-queues its candidate tailoring → assessed", () => {
-  const id = seedCandidate({ company: "Databricks", title: "Senior SWE", state: "tailoring" });
-  createJob({ id: `tailoring-app-${id}`, type: "tailoring", createdBy: "You", params: { postings: [{ id, company: "Databricks", role: "Senior SWE" }] } });
+  const id = seedCandidate({ company: "Vertex", title: "Senior SWE", state: "tailoring" });
+  createJob({ id: `tailoring-app-${id}`, type: "tailoring", createdBy: "You", params: { postings: [{ id, company: "Vertex", role: "Senior SWE" }] } });
 
   assert.equal(deleteQueuedJob(`tailoring-app-${id}`), true);
   assert.equal(stateOf(id), "assessed"); // no longer stranded in "Queued for tailoring…"
@@ -380,37 +380,37 @@ test("createJob queues a fit job that listFitQueue surfaces, and submitJobResult
 test("upsertCompanies inserts new records with config and patches existing ones by canonical name", () => {
   // insert with full scrape config + criteria
   const ins = upsertCompanies([
-    { name: "Databricks", tier: "tier2", ats: "greenhouse", slug: "databricks", titles: ["Senior"], location: "NYC|remote" },
+    { name: "Vertex", tier: "tier2", ats: "greenhouse", slug: "vertex", titles: ["Senior"], location: "NYC|remote" },
   ]);
   assert.equal(ins.inserted, 1);
   const db1 = ins.upserted[0];
   assert.equal(db1.ats, "greenhouse");
-  assert.equal(db1.slug, "databricks");
+  assert.equal(db1.slug, "vertex");
   assert.equal(db1.targetTitles, JSON.stringify(["Senior"]));
   assert.equal(db1.watchlist, false, "upsert does not touch the watchlist");
 
   // partial update: only endpoint changes; tier/slug/titles untouched
-  const upd = upsertCompanies([{ name: "Databricks", endpoint: "https://boards-api.greenhouse.io/databricks" }]);
+  const upd = upsertCompanies([{ name: "Vertex", endpoint: "https://boards-api.greenhouse.io/vertex" }]);
   assert.equal(upd.inserted, 0);
   assert.equal(upd.updated, 1);
   const after = upd.upserted[0];
-  assert.equal(after.endpoint, "https://boards-api.greenhouse.io/databricks");
-  assert.equal(after.slug, "databricks", "slug preserved on partial update");
+  assert.equal(after.endpoint, "https://boards-api.greenhouse.io/vertex");
+  assert.equal(after.slug, "vertex", "slug preserved on partial update");
   assert.equal(after.tier, "tier2", "tier preserved on partial update");
 });
 
 test("watchlist is separate from company records: setWatchlist toggles membership, upsert leaves it alone", () => {
   // a curated company is NOT on the watchlist by default
-  upsertCompanies([{ name: "Databricks", tier: "tier2", slug: "databricks" }]);
+  upsertCompanies([{ name: "Vertex", tier: "tier2", slug: "vertex" }]);
   assert.equal(listWatchlist().length, 0, "upsert doesn't add to the watchlist");
 
   // add it to the watchlist (scan list) — independent of its record
-  const added = setWatchlist("Databricks", true);
+  const added = setWatchlist("Vertex", true);
   assert.equal(added?.watchlist, true);
-  assert.deepEqual(listWatchlist().map((c) => c.name), ["Databricks"]);
+  assert.deepEqual(listWatchlist().map((c) => c.name), ["Vertex"]);
 
   // re-upserting config must NOT drop it from the watchlist
-  upsertCompanies([{ name: "Databricks", endpoint: "https://x" }]);
+  upsertCompanies([{ name: "Vertex", endpoint: "https://x" }]);
   assert.equal(listWatchlist().length, 1, "upsert preserves watchlist membership");
 
   // adding an untracked company creates a minimal record + watchlists it
@@ -419,9 +419,9 @@ test("watchlist is separate from company records: setWatchlist toggles membershi
   assert.ok(listCompanies().some((c) => c.name === "Acme Robotics"), "minimal record created");
 
   // remove from the watchlist; the company record stays
-  setWatchlist("Databricks", false);
-  assert.equal(listWatchlist().some((c) => c.name === "Databricks"), false, "off the scan list");
-  assert.ok(listCompanies().some((c) => c.name === "Databricks"), "record retained");
+  setWatchlist("Vertex", false);
+  assert.equal(listWatchlist().some((c) => c.name === "Vertex"), false, "off the scan list");
+  assert.ok(listCompanies().some((c) => c.name === "Vertex"), "record retained");
 });
 
 test("enqueueFit ensures a fit_queue candidate and queues the fit job", () => {
