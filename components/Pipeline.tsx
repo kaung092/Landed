@@ -364,6 +364,15 @@ export default function Pipeline() {
   // `syncing` covers the gap between clicking and the queue re-fetch so a fast double-click can't
   // stack two jobs; it clears once the queued job actually shows up.
   const [syncing, setSyncing] = useState(false);
+  // Inbox sync needs Gmail wired — grey the button out until it is. Start `true` to avoid a disabled
+  // flash before the check resolves; re-check on focus (so connecting Gmail elsewhere frees it).
+  const [gmailReady, setGmailReady] = useState(true);
+  useEffect(() => {
+    const check = () => fetch("/api/gmail").then((r) => r.json()).then((d) => setGmailReady(!!d.connected)).catch(() => {});
+    check();
+    window.addEventListener("focus", check);
+    return () => window.removeEventListener("focus", check);
+  }, []);
   // One-click "Update interview status" fan-out — POST the orchestrator, then refresh queue + board.
   const [updating, setUpdating] = useState(false);
   const [updateNote, setUpdateNote] = useState<string | null>(null);
@@ -1053,24 +1062,24 @@ export default function Pipeline() {
                   Disabled while one is already outstanding so clicks don't stack duplicates. */}
               {/* Sync inbox. The subtext shows last-synced + whether daily auto-sync is configured
                   (a read-only reflection — configure it on /settings). */}
-              {(() => { const queued = inboxSyncQueued || syncing; return (
+              {(() => { const queued = inboxSyncQueued || syncing; const noGmail = !gmailReady; const off = queued || noGmail; return (
               <button
-                onClick={() => { if (!queued) { setSyncing(true); add({ type: "inbox-sync" }); pendo.track("inbox_sync_queued"); } }}
-                disabled={queued}
-                title={queued ? "An inbox sync is already queued — run your agent queue" : `Queue an inbox sync for the agent — last synced ${fmtTs(inboxLastSynced)}${dailySync ? " · daily auto-sync on" : ""}`}
-                className="flex shrink-0 items-center gap-1.5 rounded-md px-2.5 py-1 text-zinc-300 ring-1 ring-inset ring-zinc-800 transition hover:text-zinc-100 hover:ring-zinc-700 disabled:cursor-default disabled:text-zinc-600 disabled:ring-zinc-800/60 disabled:hover:text-zinc-600"
+                onClick={() => { if (!off) { setSyncing(true); add({ type: "inbox-sync" }); pendo.track("inbox_sync_queued"); } }}
+                disabled={off}
+                title={noGmail ? "Connect Gmail on the Settings page to sync your inbox" : queued ? "An inbox sync is already queued — run your agent queue" : `Queue an inbox sync for the agent — last synced ${fmtTs(inboxLastSynced)}${dailySync ? " · daily auto-sync on" : ""}`}
+                className="flex shrink-0 items-center gap-1.5 rounded-md px-2.5 py-1 text-zinc-300 ring-1 ring-inset ring-zinc-800 transition hover:text-zinc-100 hover:ring-zinc-700 disabled:cursor-not-allowed disabled:text-zinc-600 disabled:ring-zinc-800/60 disabled:hover:text-zinc-600"
               >
-                <Mail size={13} className={queued ? "text-zinc-600" : "text-sky-300"} />
+                <Mail size={13} className={off ? "text-zinc-600" : "text-sky-300"} />
                 <span className="flex flex-col items-start leading-tight">
                   <span className="text-[13px] font-medium">{queued ? "Sync queued" : "Sync inbox"}</span>
                   <span className="flex items-center gap-1 text-[10px] font-normal text-zinc-500">
-                    {dailySync && (
+                    {dailySync && !noGmail && (
                       <span className="inline-flex items-center gap-0.5 text-sky-300/90" title="Daily auto-sync is on (configured in Settings)">
                         <span className="h-1 w-1 rounded-full bg-sky-400" />Daily
                       </span>
                     )}
-                    {dailySync && <span className="text-zinc-700">·</span>}
-                    {queued ? "in the agent queue" : inboxLastSynced ? `Synced ${ago(inboxLastSynced)}` : "Never synced"}
+                    {dailySync && !noGmail && <span className="text-zinc-700">·</span>}
+                    {noGmail ? "Gmail not connected" : queued ? "in the agent queue" : inboxLastSynced ? `Synced ${ago(inboxLastSynced)}` : "Never synced"}
                   </span>
                 </span>
               </button>
