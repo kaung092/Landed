@@ -10,8 +10,8 @@ This version has breaking changes — APIs, conventions, and file structure may 
 resolves to ([lib/config.ts](lib/config.ts)) — is the **single source of truth** that briefs the
 CoWork agent on how this system works. It is consumed by a live agent, not just humans — a stale
 brief makes CoWork act on the wrong model. The playbooks are generic repo source (candidate-specific
-detail lives in the profile config, not the prose); the in-app Guides editor writes back to these
-tracked files.
+detail lives in the profile config, not the prose). Edit them **in the repo** — the in-app Guides /
+Instructions views are read-only (playbooks carry the agents' MCP wiring, so the UI never writes them).
 
 When you change code that the brief describes, update `instructions/README.md` in the same change:
 - **MCP tools** added/removed/renamed in [mcp/jobhunt-server.mjs](mcp/jobhunt-server.mjs) → update the tool lists.
