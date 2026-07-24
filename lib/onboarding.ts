@@ -1,0 +1,26 @@
+import { existsSync } from "node:fs";
+import { sql } from "drizzle-orm";
+import { db } from "@/lib/db";
+import { postings, agentRuns } from "@/lib/db/schema";
+import { getConfig } from "@/lib/db/config-store";
+import { PATHS } from "@/lib/config";
+import { gmailCredentials } from "@/lib/gmail";
+import type { OnboardingStatus } from "@/lib/onboarding-shared";
+
+export { onboardingComplete, ONBOARDING_ESSENTIALS, type OnboardingStatus } from "@/lib/onboarding-shared";
+
+// First-run setup state, driving the Home "Get started" checklist. Each flag is derived from real
+// data so a step ticks the moment it's actually done (no separate progress bookkeeping to drift).
+// Server-only (reads the DB + filesystem + Gmail creds); the client imports the type/helpers from
+// lib/onboarding-shared instead.
+export function onboardingStatus(): OnboardingStatus {
+  const count = (table: typeof postings | typeof agentRuns): number =>
+    db.select({ n: sql<number>`count(*)` }).from(table).get()?.n ?? 0;
+  return {
+    profile: getConfig("profile") != null,
+    resume: existsSync(PATHS.baseResume("docx")),
+    firstJob: count(postings) > 0,
+    gmail: !!gmailCredentials(),
+    agent: count(agentRuns) > 0,
+  };
+}
