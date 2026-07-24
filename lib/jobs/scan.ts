@@ -279,7 +279,7 @@ function classifyJob(
 // Persist every fetched job to scanned_postings (the triage store), upserting by (company,
 // atsId). Refresh the verdict/fields each scan but PRESERVE the triage state: a manual
 // decision (matched/queued/dismissed) sticks; a `dedup` (now an application) becomes `queued`.
-function persistScan(companyId: number, verdicts: { j: ScannedJob; reason: ScanReason }[], prior: Map<string, string>): void {
+function persistScan(companyId: number, verdicts: { j: ScannedJob; reason: ScanReason }[], prior: Map<string, string>, seenRoles: Set<string>, seenUrls: Set<string>): void {
   const at = new Date().toISOString();
   db.transaction((tx) => {
     for (const { j, reason } of verdicts) {
@@ -294,6 +294,11 @@ function persistScan(companyId: number, verdicts: { j: ScannedJob; reason: ScanR
       const PRESERVE = new Set(["matched", "review", "dismissed", "fit_queue", "assessed", "apply_later", "tailoring", "tailored", "applied"]);
       const raw = prior.get(j.atsId);
       const prev = raw === "tracked" || raw === "queued" ? "fit_queue" : raw;
+      // A FRESH listing (new ATS id, no prior row) whose role/url already sits in a triaged /
+      // in-pipeline / discarded pile is a re-post of something you've already handled — don't file
+      // it as a new scan result. (Same-id rows are preserved via `prev`; applied-role matches are
+      // handled earlier by classifyJob's `dedup`.)
+      if (!prev && reason === "kept" && (seenRoles.has(norm(j.title)) || (j.url != null && seenUrls.has(j.url)))) continue;
       const state = (prev && PRESERVE.has(prev)
         ? prev
         : reason === "dedup" ? "applied" : reason === "kept" ? "matched" : "filtered") as "filtered" | "matched" | "review" | "dismissed" | "fit_queue" | "assessed" | "apply_later" | "tailoring" | "tailored" | "applied";
@@ -347,17 +352,27 @@ export async function scanCompany(name: string, withJd = true): Promise<ScanResu
     const { lTok, usOnly } = locFilter();
     const quant = isQuant(co.notes);
 
-    // dedup keys from this company's already-tracked postings (by role/title or url)
-    const apps = db.select().from(postings).where(and(eq(postings.companyId, co.id), inArray(postings.state, [...TRACKER_STAGES]))).all();
+    // This company's existing postings — one fetch drives prior-state preservation, application
+    // dedup, and re-post dedup.
+    const existing = db.select().from(postings).where(eq(postings.companyId, co.id)).all();
+    const prior = new Map(existing.map((r) => [r.atsId ?? "", r.state]));
+
+    // Application dedup: a fetched job matching a TRACKED application (applied+) by role/url →
+    // classifyJob marks it `dedup` (filed as applied, not a new result).
+    const apps = existing.filter((r) => (TRACKER_STAGES as readonly string[]).includes(r.state));
     const roleSet = new Set(apps.map((a) => norm(a.title ?? "")));
     const urlSet = new Set(apps.map((a) => a.url).filter(Boolean) as string[]);
 
-    // classify every fetched job, then persist all to the scan store (preserving prior state)
-    const prior = new Map(
-      db.select().from(postings).where(eq(postings.companyId, co.id)).all().map((r) => [r.atsId ?? "", r.state])
-    );
+    // Re-post dedup: everything already TRIAGED / in-pipeline / discarded (the candidate states). A
+    // fresh listing (new ATS id) matching one of these by role/url is dropped in persistScan, so a
+    // role you've already handled doesn't resurface as a new scan result.
+    const SEEN_STATES = ["matched", "review", "dismissed", "fit_queue", "assessed", "apply_later", "tailoring", "tailored"];
+    const seen = existing.filter((r) => SEEN_STATES.includes(r.state));
+    const seenRoles = new Set(seen.map((r) => norm(r.title ?? "")));
+    const seenUrls = new Set(seen.map((r) => r.url).filter(Boolean) as string[]);
+
     const verdicts = jobs.map((j) => ({ j, reason: classifyJob(j, { tTok, lTok, usOnly, quant, roleSet, urlSet }) }));
-    persistScan(co.id, verdicts, prior);
+    persistScan(co.id, verdicts, prior, seenRoles, seenUrls);
     // Non-local roles are never filed (persistScan skips the "location" reason); also clear any that
     // lingered in this company's Filtered / Discarded piles from before this rule (or now off the feed).
     purgeNonLocal(co.id, lTok, usOnly);
